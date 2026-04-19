@@ -45,6 +45,11 @@ export default function Login() {
       login({
         token: data.token,
         usuario: data.usuario,
+        nombre: data.nombre ?? null,
+        primerNombre: data.primerNombre ?? null,
+        primerApellido: data.primerApellido ?? null,
+        segundoApellido: data.segundoApellido ?? null,
+        fotoUrl: data.fotoUrl ?? null,
         rol: data.rol,
         permisos: data.permisos || [],
         bodegaId: data.bodegaId ?? null,
@@ -54,6 +59,9 @@ export default function Login() {
       Swal.fire({
         icon: "success",
         title: "Bienvenido",
+        timer: 3000,
+        timerProgressBar: true,
+        showConfirmButton: false,
       });
 
       navigate(getFirstAccessiblePath(data.rol, data.permisos || []));
@@ -184,17 +192,6 @@ export default function Login() {
                   }}
                 />
                 <Typography
-                  sx={{
-                    color: alpha("#526b84", 0.92),
-                    fontSize: 13,
-                    letterSpacing: "0.16em",
-                    textTransform: "uppercase",
-                    fontWeight: 800,
-                  }}
-                >
-                  Uniforma Gestion central
-                </Typography>
-                <Typography
                   variant="h3"
                   sx={{
                     fontWeight: 800,
@@ -203,7 +200,7 @@ export default function Login() {
                     color: "#243c58",
                   }}
                 >
-                  Iniciar sesion
+                  Iniciar sesión
                 </Typography>
                 <Typography
                   sx={{
@@ -212,7 +209,7 @@ export default function Login() {
                     lineHeight: 1.6,
                   }}
                 >
-                  Ingresa con tu correo y contrasena para acceder a tu panel de trabajo.
+                  Ingresa con tu correo y contraseña.
                 </Typography>
               </Stack>
 
@@ -249,7 +246,7 @@ export default function Login() {
                 />
 
                 <TextField
-                  label="Contrasena"
+                  label="Contraseña"
                   name="password"
                   type="password"
                   fullWidth
@@ -292,7 +289,6 @@ export default function Login() {
                   fontWeight: 800,
                   textTransform: "none",
                   background: "linear-gradient(90deg, #d10f28 0%, #f04545 100%)",
-                  boxShadow: "0 14px 30px rgba(209,15,40,0.18)",
                   "&:hover": {
                     background: "linear-gradient(90deg, #bf1126 0%, #df3d3d 100%)",
                   },
@@ -310,7 +306,7 @@ export default function Login() {
                   textTransform: "uppercase",
                 }}
               >
-                Uniforma ERP
+                Uniforma E.R.P.
               </Typography>
             </Stack>
           </Box>

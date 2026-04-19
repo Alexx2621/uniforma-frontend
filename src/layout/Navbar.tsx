@@ -1,4 +1,5 @@
 // src/layout/Navbar.tsx
+import { useEffect, useState } from "react";
 import {
   AppBar,
   Toolbar,
@@ -14,17 +15,97 @@ import SettingsIcon from "@mui/icons-material/Settings";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useNavigate } from "react-router-dom";
 import uniformaLogo from "../assets/uniforma-logo.png";
+import { api } from "../api/axios";
 
 export default function Navbar() {
-  const { usuario, bodegaNombre, logout } = useAuthStore();
+  const { usuario, nombre, primerNombre, primerApellido, segundoApellido, fotoUrl, bodegaNombre, logout } = useAuthStore();
   const navigate = useNavigate();
+  const [perfil, setPerfil] = useState<{
+    usuario?: string | null;
+    nombre?: string | null;
+    primerNombre?: string | null;
+    primerApellido?: string | null;
+    segundoApellido?: string | null;
+    fotoUrl?: string | null;
+    bodegaNombre?: string | null;
+  } | null>(null);
 
   const handleLogout = () => {
     logout();
     window.location.href = "/login";
   };
 
-  const initials = (usuario || "U").slice(0, 2).toUpperCase();
+  useEffect(() => {
+    let active = true;
+
+    const cargarPerfil = async () => {
+      try {
+        const { data } = await api.get("/auth/me");
+        if (active) {
+          setPerfil(data);
+        }
+      } catch {
+        try {
+          const { data } = await api.get("/usuarios");
+          const usuarios = Array.isArray(data) ? data : [];
+          const encontrado = usuarios.find(
+            (item: any) =>
+              typeof item?.usuario === "string" &&
+              typeof usuario === "string" &&
+              item.usuario.trim().toUpperCase() === usuario.trim().toUpperCase()
+          );
+          if (active) {
+            setPerfil(encontrado || null);
+          }
+        } catch {
+          if (active) {
+            setPerfil(null);
+          }
+        }
+      }
+    };
+
+    void cargarPerfil();
+
+    return () => {
+      active = false;
+    };
+  }, [usuario]);
+
+  const sourceNombre = perfil?.nombre ?? nombre;
+  const sourcePrimerNombre = perfil?.primerNombre ?? primerNombre;
+  const sourcePrimerApellido = perfil?.primerApellido ?? primerApellido;
+  const sourceSegundoApellido = perfil?.segundoApellido ?? segundoApellido;
+  const sourceFotoUrl = perfil?.fotoUrl ?? fotoUrl;
+  const sourceBodegaNombre = perfil?.bodegaNombre ?? bodegaNombre;
+
+  const normalizedPrimerNombre = (sourcePrimerNombre || "").trim();
+  const normalizedPrimerApellido = (sourcePrimerApellido || "").trim();
+  const normalizedSegundoApellido = (sourceSegundoApellido || "").trim();
+  const nombreParts = (sourceNombre || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  const fallbackPrimerNombre = nombreParts[0] || "";
+  const fallbackPrimerApellido = nombreParts[2] || nombreParts[1] || "";
+
+  const displayName =
+    [normalizedPrimerNombre || fallbackPrimerNombre, normalizedPrimerApellido || fallbackPrimerApellido]
+      .filter(Boolean)
+      .join(" ") || "Usuario";
+
+  const initials = `${
+    (normalizedPrimerNombre || fallbackPrimerNombre || "U").charAt(0)
+  }${
+    (normalizedPrimerApellido || fallbackPrimerApellido || normalizedSegundoApellido).charAt(0)
+  }`
+    .trim()
+    .toUpperCase() || "U";
+  const profileImageUrl = sourceFotoUrl
+    ? sourceFotoUrl.startsWith("http://") || sourceFotoUrl.startsWith("https://")
+      ? sourceFotoUrl
+      : `${api.defaults.baseURL || ""}${sourceFotoUrl}`
+    : "";
 
   return (
     <AppBar
@@ -32,9 +113,9 @@ export default function Navbar() {
       elevation={0}
       sx={{
         zIndex: 2000,
-        background: "linear-gradient(90deg, #0f172a 0%, #1f2937 60%, #111827 100%)",
-        color: "#f8fafc",
-        borderBottom: "1px solid #1f2937",
+        background: "#ffffff",
+        color: "#1f2937",
+        borderBottom: "1px solid #e5e7eb",
       }}
     >
       <Toolbar sx={{ minHeight: 64, px: 3 }}>
@@ -56,16 +137,17 @@ export default function Navbar() {
         <Stack direction="row" spacing={2} alignItems="center">
           <Box textAlign="right">
             <Typography variant="body1" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
-              {usuario || "Usuario"}
+              {displayName}
             </Typography>
-            <Typography variant="body2" color="#cbd5e1">
-              {bodegaNombre || "Sin bodega"}
+            <Typography variant="body2" color="#6b7280">
+              {sourceBodegaNombre || "Sin bodega"}
             </Typography>
           </Box>
 
           <Avatar
+            src={profileImageUrl}
             sx={{
-              bgcolor: "#4f46e5",
+              bgcolor: "#1B2852",
               color: "#fff",
               width: 40,
               height: 40,
@@ -73,7 +155,7 @@ export default function Navbar() {
               fontSize: 14,
             }}
           >
-            {initials}
+            {!profileImageUrl ? initials : null}
           </Avatar>
 
           <Tooltip title="Configuración">
