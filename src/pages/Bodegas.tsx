@@ -25,6 +25,7 @@ import WarehouseOutlined from "@mui/icons-material/WarehouseOutlined";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
+import { hasPermission } from "../auth/permissions";
 
 interface Bodega {
   id: number;
@@ -39,8 +40,10 @@ export default function Bodegas() {
   const [editing, setEditing] = useState<Bodega | null>(null);
   const [nombre, setNombre] = useState("");
   const [ubicacion, setUbicacion] = useState("");
-  const { rol } = useAuthStore();
+  const { rol, permisos } = useAuthStore();
   const denyAlertShown = useRef(false);
+  const canView = hasPermission(rol, permisos, "bodegas.view");
+  const canManage = hasPermission(rol, permisos, "bodegas.manage");
 
   const cargar = async () => {
     try {
@@ -55,21 +58,22 @@ export default function Bodegas() {
   };
 
   useEffect(() => {
-    if (rol !== "ADMIN") {
+    if (!canView) {
       if (!denyAlertShown.current) {
         denyAlertShown.current = true;
         Swal.fire("Acceso restringido", "No tienes permisos para ingresar a Bodegas", "warning");
       }
       return;
     }
-    cargar();
-  }, [rol]);
+    void cargar();
+  }, [canView]);
 
-  if (rol !== "ADMIN") {
+  if (!canView) {
     return <Navigate to="/" replace />;
   }
 
   const abrirNuevo = () => {
+    if (!canManage) return;
     setEditing(null);
     setNombre("");
     setUbicacion("");
@@ -77,6 +81,7 @@ export default function Bodegas() {
   };
 
   const abrirEditar = (b: Bodega) => {
+    if (!canManage) return;
     setEditing(b);
     setNombre(b.nombre);
     setUbicacion(b.ubicacion || "");
@@ -84,9 +89,14 @@ export default function Bodegas() {
   };
 
   const guardar = async () => {
+    if (!canManage) {
+      Swal.fire("Acceso restringido", "No tienes permisos para modificar bodegas", "warning");
+      return;
+    }
+
     const payload = { nombre: nombre.trim(), ubicacion: ubicacion.trim() || null };
     if (!payload.nombre) {
-      Swal.fire("Validación", "Ingresa el nombre de la bodega", "info");
+      Swal.fire("Validacion", "Ingresa el nombre de la bodega", "info");
       return;
     }
 
@@ -106,15 +116,21 @@ export default function Bodegas() {
   };
 
   const eliminar = async (b: Bodega) => {
+    if (!canManage) {
+      Swal.fire("Acceso restringido", "No tienes permisos para eliminar bodegas", "warning");
+      return;
+    }
+
     const confirm = await Swal.fire({
-      title: "¿Eliminar bodega?",
-      text: `Se eliminará "${b.nombre}".`,
+      title: "Eliminar bodega",
+      text: `Se eliminara "${b.nombre}".`,
       icon: "warning",
       showCancelButton: true,
-      confirmButtonText: "Sí, eliminar",
+      confirmButtonText: "Si, eliminar",
       cancelButtonText: "Cancelar",
     });
     if (!confirm.isConfirmed) return;
+
     try {
       await api.delete(`/bodegas/${b.id}`);
       Swal.fire("Eliminado", "Bodega eliminada", "success");
@@ -137,6 +153,7 @@ export default function Bodegas() {
             variant="contained"
             size="small"
             onClick={abrirNuevo}
+            disabled={!canManage}
           >
             Nueva bodega
           </Button>
@@ -153,7 +170,7 @@ export default function Bodegas() {
       </Stack>
 
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-        Listado de bodegas registradas. (Creación/edición se pueden añadir luego.)
+        Listado de bodegas registradas.
       </Typography>
 
       <TableContainer>
@@ -162,7 +179,7 @@ export default function Bodegas() {
             <TableRow>
               <TableCell>ID</TableCell>
               <TableCell>Nombre</TableCell>
-              <TableCell>Ubicación</TableCell>
+              <TableCell>Ubicacion</TableCell>
               <TableCell align="right">Acciones</TableCell>
             </TableRow>
           </TableHead>
@@ -178,6 +195,7 @@ export default function Bodegas() {
                       variant="text"
                       size="small"
                       startIcon={<EditOutlined />}
+                      disabled={!canManage}
                       onClick={() => abrirEditar(b)}
                     >
                       Editar
@@ -187,6 +205,7 @@ export default function Bodegas() {
                       size="small"
                       color="error"
                       startIcon={<DeleteOutline />}
+                      disabled={!canManage}
                       onClick={() => eliminar(b)}
                     >
                       Eliminar
@@ -216,18 +235,20 @@ export default function Bodegas() {
               onChange={(e) => setNombre(e.target.value)}
               fullWidth
               autoFocus
+              disabled={!canManage}
             />
             <TextField
-              label="Ubicación"
+              label="Ubicacion"
               value={ubicacion}
               onChange={(e) => setUbicacion(e.target.value)}
               fullWidth
+              disabled={!canManage}
             />
           </Stack>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpenForm(false)}>Cancelar</Button>
-          <Button variant="contained" onClick={guardar}>
+          <Button variant="contained" onClick={guardar} disabled={!canManage}>
             Guardar
           </Button>
         </DialogActions>

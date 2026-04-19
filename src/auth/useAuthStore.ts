@@ -4,6 +4,7 @@ interface AuthState {
   token: string | null;
   usuario: string | null;
   rol: string | null;
+  permisos: string[];
   bodegaId: string | null;
   bodegaNombre: string | null;
 
@@ -15,6 +16,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   token: localStorage.getItem('token'),
   usuario: localStorage.getItem('usuario'),
   rol: localStorage.getItem('rol'),
+  permisos: JSON.parse(localStorage.getItem('permisos') || '[]'),
   bodegaId: localStorage.getItem('bodegaId'),
   bodegaNombre: localStorage.getItem('bodegaNombre'),
 
@@ -22,6 +24,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     localStorage.setItem('token', data.token);
     localStorage.setItem('usuario', data.usuario);
     localStorage.setItem('rol', data.rol);
+    localStorage.setItem('permisos', JSON.stringify(data.permisos || []));
     if (data.bodegaId !== undefined) {
       localStorage.setItem('bodegaId', data.bodegaId);
     }
@@ -33,6 +36,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       token: data.token,
       usuario: data.usuario,
       rol: data.rol,
+      permisos: data.permisos ?? [],
       bodegaId: data.bodegaId ?? null,
       bodegaNombre: data.bodegaNombre ?? null,
     });
@@ -40,6 +44,6 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   logout: () => {
     localStorage.clear();
-    set({ token: null, usuario: null, rol: null, bodegaId: null, bodegaNombre: null });
+    set({ token: null, usuario: null, rol: null, permisos: [], bodegaId: null, bodegaNombre: null });
   },
 }));

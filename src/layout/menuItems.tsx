@@ -17,6 +17,7 @@ import TimelineOutlined from "@mui/icons-material/TimelineOutlined";
 import TrendingUpOutlined from "@mui/icons-material/TrendingUpOutlined";
 import PeopleAltOutlined from "@mui/icons-material/PeopleAltOutlined";
 import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
+import AdminPanelSettingsOutlined from "@mui/icons-material/AdminPanelSettingsOutlined";
 
 export interface MenuItem {
   label: string;
@@ -50,15 +51,13 @@ export const menuSections: MenuSection[] = [
       {
         label: "Productos",
         icon: <ShoppingBagOutlined />,
-        children: [
-          { label: "Listado", path: "/productos", icon: <Inventory2Outlined /> },
-        ],
+        children: [{ label: "Listado", path: "/productos", icon: <Inventory2Outlined /> }],
       },
       {
-        label: "Catálogos",
+        label: "Catalogos",
         icon: <CategoryOutlined />,
         children: [
-          { label: "Categorías", path: "/catalogos/categorias", icon: <CategoryOutlined /> },
+          { label: "Categorias", path: "/catalogos/categorias", icon: <CategoryOutlined /> },
           { label: "Telas", path: "/catalogos/telas", icon: <CheckroomOutlined /> },
           { label: "Colores", path: "/catalogos/colores", icon: <PaletteOutlined /> },
           { label: "Tallas", path: "/catalogos/tallas", icon: <StraightenOutlined /> },
@@ -69,43 +68,23 @@ export const menuSections: MenuSection[] = [
   {
     title: "INVENTARIO",
     items: [
-      {
-        label: "Ingreso",
-        icon: <AddBusinessOutlined />,
-        path: "/inventario",
-      },
-      {
-        label: "Bodegas",
-        icon: <Inventory2Outlined />,
-        path: "/bodegas",
-      },
-      {
-        label: "Resumen",
-        icon: <TableChartOutlined />,
-        path: "/inventario/resumen",
-      },
-          {
-            label: "Traslados",
-            icon: <CompareArrowsOutlined />,
-            path: "/inventario/traslados",
-          },
-        ],
-      },
-  {
-    title: "PRODUCCIÓN",
-    items: [
-      {
-        label: "Pedidos",
-        icon: <ShoppingBagOutlined />,
-        path: "/produccion",
-      },
+      { label: "Ingreso", icon: <AddBusinessOutlined />, path: "/inventario" },
+      { label: "Bodegas", icon: <Inventory2Outlined />, path: "/bodegas" },
+      { label: "Resumen", icon: <TableChartOutlined />, path: "/inventario/resumen" },
+      { label: "Traslados", icon: <CompareArrowsOutlined />, path: "/inventario/traslados" },
     ],
+  },
+  {
+    title: "PRODUCCION",
+    items: [{ label: "Pedidos", icon: <ShoppingBagOutlined />, path: "/produccion" }],
   },
   {
     title: "GESTION",
     items: [
       { label: "Clientes", icon: <PeopleOutline />, path: "/clientes" },
       { label: "Usuarios", icon: <SettingsOutlined />, path: "/usuarios" },
+      { label: "Roles", icon: <AdminPanelSettingsOutlined />, path: "/roles" },
+      { label: "Correlativos", icon: <SettingsOutlined />, path: "/correlativos" },
       { label: "Configuracion", icon: <SettingsOutlined />, path: "/admin" },
     ],
   },
@@ -117,27 +96,11 @@ export const menuSections: MenuSection[] = [
         icon: <AssessmentOutlined />,
         children: [
           { label: "Ventas diarias", path: "/reportes/ventas-diarias", icon: <TimelineOutlined /> },
-          {
-            label: "Ventas por producto",
-            path: "/reportes/ventas-producto",
-            icon: <TrendingUpOutlined />,
-          },
+          { label: "Ventas por producto", path: "/reportes/ventas-producto", icon: <TrendingUpOutlined /> },
           { label: "Top clientes", path: "/reportes/top-clientes", icon: <PeopleAltOutlined /> },
-          {
-            label: "Ingresos de inventario",
-            path: "/reportes/ingresos",
-            icon: <AddBusinessOutlined />,
-          },
-          {
-            label: "Traslados",
-            path: "/reportes/traslados",
-            icon: <CompareArrowsOutlined />,
-          },
-          {
-            label: "Stock bajo",
-            path: "/reportes/stock-bajo",
-            icon: <WarningAmberOutlined />,
-          },
+          { label: "Ingresos de inventario", path: "/reportes/ingresos", icon: <AddBusinessOutlined /> },
+          { label: "Traslados", path: "/reportes/traslados", icon: <CompareArrowsOutlined /> },
+          { label: "Stock bajo", path: "/reportes/stock-bajo", icon: <WarningAmberOutlined /> },
         ],
       },
     ],

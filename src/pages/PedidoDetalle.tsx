@@ -30,7 +30,24 @@ import { useAuthStore } from "../auth/useAuthStore";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
 
 interface Detalle {
-  producto: { codigo: string; nombre: string };
+  producto: {
+    codigo?: string;
+    nombre?: string;
+    tipo?: string | null;
+    genero?: string | null;
+    telaId?: number | null;
+    tallaId?: number | null;
+    colorId?: number | null;
+    tela_id?: number | null;
+    talla_id?: number | null;
+    color_id?: number | null;
+    tela?: { id?: number | null; nombre?: string | null } | null;
+    talla?: { id?: number | null; nombre?: string | null } | null;
+    color?: { id?: number | null; nombre?: string | null } | null;
+    telaNombre?: string | null;
+    tallaNombre?: string | null;
+    colorNombre?: string | null;
+  };
   productoId: number;
   cantidad: number;
   precioUnit: number;
@@ -113,6 +130,26 @@ export default function PedidoDetalle() {
     () => (pedido?.pagos || []).reduce((sum, p) => sum + (p.monto || 0), 0),
     [pedido]
   );
+
+  const esAnulado = `${pedido?.estado || ""}`.trim().toLowerCase() === "anulado";
+
+  const obtenerTela = (prod?: any) => {
+    if (!prod) return "N/D";
+    const telaId = prod?.telaId ?? prod?.tela_id ?? prod?.tela?.id ?? prod?.telaid ?? null;
+    return prod?.tela?.nombre || prod?.telaNombre || telas.find((t) => Number(t.id) === Number(telaId))?.nombre || "N/D";
+  };
+
+  const obtenerTalla = (prod?: any) => {
+    if (!prod) return "N/D";
+    const tallaId = prod?.tallaId ?? prod?.talla_id ?? prod?.talla?.id ?? prod?.tallaid ?? null;
+    return prod?.talla?.nombre || prod?.tallaNombre || tallas.find((t) => Number(t.id) === Number(tallaId))?.nombre || "N/D";
+  };
+
+  const obtenerColor = (prod?: any) => {
+    if (!prod) return "N/D";
+    const colorId = prod?.colorId ?? prod?.color_id ?? prod?.color?.id ?? prod?.colorid ?? null;
+    return prod?.color?.nombre || prod?.colorNombre || colores.find((c) => Number(c.id) === Number(colorId))?.nombre || "N/D";
+  };
 
   const terminar = async () => {
     if (!bodegaIngreso) {
@@ -258,6 +295,9 @@ export default function PedidoDetalle() {
     const recargo = Number((pedido as any).recargo || 0);
     const total = Number((pedido as any).totalEstimado || subtotal + recargo);
     const anticipo = Number((pedido as any).anticipo || 0);
+    const watermarkHtml = esAnulado
+      ? `<div class="watermark">ANULADO</div>`
+      : "";
     const filasHtml = pedido.detalle
       .map((d, idx) => {
         const desc = Number((d as any).descuento || 0);
@@ -288,9 +328,24 @@ export default function PedidoDetalle() {
         .totals { width: 280px; margin-left:auto; margin-top:12px; font-size:13px; }
         .totals-row { display:flex; justify-content:space-between; padding:6px 0; }
         .totals-row.total { font-weight:700; border-top:2px solid #0f172a; margin-top:4px; }
+        .watermark {
+          position: fixed;
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 110px;
+          font-weight: 800;
+          color: rgba(220, 38, 38, 0.16);
+          transform: rotate(-28deg);
+          letter-spacing: 8px;
+          pointer-events: none;
+          z-index: 9999;
+        }
       </style>
       </head>
       <body>
+        ${watermarkHtml}
         <div class="header">
           <div>
             <div class="brand">Uniforma</div>
@@ -325,27 +380,15 @@ export default function PedidoDetalle() {
   };
 
   const generarPdfPedidoProduccion = () => {
-    const obtenerTela = (prod?: any) => {
-      if (!prod) return "N/D";
-      const telaId = prod?.telaId ?? prod?.tela_id ?? prod?.tela?.id ?? prod?.telaid ?? null;
-      return prod?.tela?.nombre || prod?.telaNombre || telas.find((t) => Number(t.id) === Number(telaId))?.nombre || "N/D";
-    };
-    const obtenerTalla = (prod?: any) => {
-      if (!prod) return "N/D";
-      const tallaId = prod?.tallaId ?? prod?.talla_id ?? prod?.talla?.id ?? prod?.tallaid ?? null;
-      return prod?.talla?.nombre || prod?.tallaNombre || tallas.find((t) => Number(t.id) === Number(tallaId))?.nombre || "N/D";
-    };
-    const obtenerColor = (prod?: any) => {
-      if (!prod) return "N/D";
-      const colorId = prod?.colorId ?? prod?.color_id ?? prod?.color?.id ?? prod?.colorid ?? null;
-      return prod?.color?.nombre || prod?.colorNombre || colores.find((c) => Number(c.id) === Number(colorId))?.nombre || "N/D";
-    };
     const win = window.open("", "_blank");
     if (!win) {
       Swal.fire("Aviso", "Habilita las ventanas emergentes para ver el PDF", "info");
       return;
     }
     const fecha = new Date();
+    const watermarkHtml = esAnulado
+      ? `<div class="watermark">ANULADO</div>`
+      : "";
     const filasHtml = pedido.detalle
       .map((d: any, idx: number) => {
         const prod: any = d.producto || {};
@@ -372,9 +415,24 @@ export default function PedidoDetalle() {
         table { width:100%; border-collapse: collapse; margin-top:8px; font-size:12px; }
         th { background:#0f172a; color:#fff; text-align:left; padding:8px; }
         td { border-bottom:1px solid #e2e8f0; padding:7px; }
+        .watermark {
+          position: fixed;
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 110px;
+          font-weight: 800;
+          color: rgba(220, 38, 38, 0.16);
+          transform: rotate(-28deg);
+          letter-spacing: 8px;
+          pointer-events: none;
+          z-index: 9999;
+        }
       </style>
       </head>
       <body>
+        ${watermarkHtml}
         <div class="header">
           <div>
             <div class="brand">Uniforma</div>
@@ -406,7 +464,13 @@ export default function PedidoDetalle() {
       <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2, flexWrap: "wrap", gap: 1 }}>
         <PlaylistAddCheckOutlined color="primary" />
         <Typography variant="h4">{`Pedido P-${pedido.id}`}</Typography>
-        <Chip label={pedido.estado} color="info" size="small" />
+        <Chip
+          label={pedido.estado}
+          color={
+            esAnulado ? "error" : `${pedido.estado || ""}`.trim().toLowerCase() === "completado" ? "success" : "info"
+          }
+          size="small"
+        />
         <Stack direction="row" spacing={1} sx={{ ml: "auto" }}>
           <Button size="small" variant="outlined" startIcon={<PictureAsPdfOutlined />} onClick={generarPdfPedidoCliente}>
             PDF pedido
@@ -426,6 +490,11 @@ export default function PedidoDetalle() {
         Cliente: {productionInternalMode ? "Interno" : pedido.cliente?.nombre || "Mostrador"} | Bodega:{" "}
         {pedido.bodega?.nombre || "N/D"} | Fecha: {pedido.fecha ? new Date(pedido.fecha).toLocaleString() : ""}
       </Typography>
+      {esAnulado && (
+        <Typography variant="body2" color="error" sx={{ mb: 2, fontWeight: 600 }}>
+          Este pedido esta anulado. Solo se permite visualizar la informacion.
+        </Typography>
+      )}
 
       <Divider sx={{ mb: 2 }} />
 
@@ -437,20 +506,24 @@ export default function PedidoDetalle() {
           <TableHead>
             <TableRow>
               <TableCell>Codigo</TableCell>
-              <TableCell>Producto</TableCell>
+              <TableCell>Tipo</TableCell>
+              <TableCell>Tela</TableCell>
+              <TableCell>Talla</TableCell>
+              <TableCell>Color</TableCell>
               <TableCell>Cantidad</TableCell>
-              <TableCell>Precio</TableCell>
-              <TableCell>Subtotal</TableCell>
+              <TableCell>Observacion</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {pedido.detalle.map((d, idx) => (
               <TableRow key={idx}>
                 <TableCell>{d.producto?.codigo}</TableCell>
-                <TableCell>{d.producto?.nombre}</TableCell>
+                <TableCell>{d.producto?.tipo || d.producto?.nombre || "N/D"}</TableCell>
+                <TableCell>{obtenerTela(d.producto)}</TableCell>
+                <TableCell>{obtenerTalla(d.producto)}</TableCell>
+                <TableCell>{obtenerColor(d.producto)}</TableCell>
                 <TableCell>{d.cantidad}</TableCell>
-                <TableCell>{`Q ${Number(d.precioUnit || 0).toFixed(2)}`}</TableCell>
-                <TableCell>{`Q ${(Number(d.precioUnit || 0) * (d.cantidad || 0)).toFixed(2)}`}</TableCell>
+                <TableCell>{d.descripcion?.trim() ? d.descripcion : "-"}</TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -493,9 +566,10 @@ export default function PedidoDetalle() {
                     size="small"
                     value={pagoFinal}
                     onChange={(e) => setPagoFinal(Number(e.target.value))}
+                    disabled={esAnulado}
                     sx={{ flex: 1, minWidth: 180 }}
                   />
-                  <FormControl size="small" sx={{ minWidth: 200, flex: 1 }}>
+                  <FormControl size="small" sx={{ minWidth: 200, flex: 1 }} disabled={esAnulado}>
                     <InputLabel>Metodo</InputLabel>
                     <Select label="Metodo" value={metodoPagoFinal} onChange={(e) => setMetodoPagoFinal(e.target.value)}>
                       <MenuItem value="efectivo">Efectivo</MenuItem>
@@ -510,6 +584,7 @@ export default function PedidoDetalle() {
                       size="small"
                       value={porcRecargoFinal}
                       onChange={(e) => setPorcRecargoFinal(Number(e.target.value))}
+                      disabled={esAnulado}
                       sx={{ width: { xs: "100%", sm: 180 } }}
                     />
                   )}
@@ -518,6 +593,7 @@ export default function PedidoDetalle() {
                     size="small"
                     startIcon={<PaidOutlined />}
                     onClick={pagarSaldo}
+                    disabled={esAnulado}
                     sx={{ width: { xs: "100%", sm: "auto" }, minWidth: { sm: 150 }, mt: { xs: 1, sm: 0 } }}
                   >
                     Pagar
@@ -535,13 +611,13 @@ export default function PedidoDetalle() {
           >
             <Stack spacing={1.5}>
               <Typography variant="h6">Finalizar pedido (ingresar a inventario)</Typography>
-              <FormControl fullWidth size="small">
+              <FormControl fullWidth size="small" disabled={esAnulado}>
                 <InputLabel>Bodega ingreso</InputLabel>
                 <Select
                   label="Bodega ingreso"
                   value={bodegaIngreso === "" ? "" : bodegaIngreso}
                   onChange={(e) => setBodegaIngreso(Number(e.target.value))}
-                  disabled={!!userBodegaId && rol !== "ADMIN"}
+                  disabled={esAnulado || (!!userBodegaId && rol !== "ADMIN")}
                 >
                   {bodegas.map((b) => (
                     <MenuItem key={b.id} value={b.id}>
@@ -558,7 +634,7 @@ export default function PedidoDetalle() {
                 color="success"
                 startIcon={<DoneAllOutlined />}
                 onClick={terminar}
-                disabled={loading || (!productionInternalMode && (pedido?.saldoPendiente || 0) > 0)}
+                disabled={esAnulado || loading || (!productionInternalMode && (pedido?.saldoPendiente || 0) > 0)}
               >
                 Terminar pedido
               </Button>

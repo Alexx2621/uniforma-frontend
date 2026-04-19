@@ -17,6 +17,7 @@ import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../auth/useAuthStore";
+import { hasPermission } from "../auth/permissions";
 
 interface FormProducto {
   codigo: string;
@@ -34,8 +35,8 @@ interface FormProducto {
 
 export default function ProductoNuevo() {
   const navigate = useNavigate();
-  const { rol } = useAuthStore();
-  const canManageProducts = rol !== "VENTAS";
+  const { rol, permisos } = useAuthStore();
+  const canManageProducts = hasPermission(rol, permisos, "productos.manage");
   const [form, setForm] = useState<FormProducto>({
     codigo: "",
     nombre: "",

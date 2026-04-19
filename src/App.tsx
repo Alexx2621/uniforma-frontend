@@ -19,6 +19,8 @@ import Bodegas from "./pages/Bodegas";
 import Clientes from "./pages/Clientes";
 import Usuarios from "./pages/Usuarios";
 import Admin from "./pages/Admin";
+import Correlativos from "./pages/Correlativos";
+import Roles from "./pages/Roles";
 import Pedidos from "./pages/Pedidos";
 import PedidoNuevo from "./pages/PedidoNuevo";
 import PedidoDetalle from "./pages/PedidoDetalle";
@@ -53,7 +55,10 @@ export default function App() {
           <Route path="/bodegas" element={<Bodegas />} />
           <Route path="/clientes" element={<Clientes />} />
           <Route path="/usuarios" element={<Usuarios />} />
+          <Route path="/roles" element={<Roles />} />
           <Route path="/admin" element={<Admin />} />
+          <Route path="/correlativos" element={<Correlativos />} />
+          <Route path="/produccion/correlativos" element={<Correlativos />} />
           <Route path="/produccion" element={<Pedidos />} />
           <Route path="/produccion/nuevo" element={<PedidoNuevo />} />
           <Route path="/produccion/:id" element={<PedidoDetalle />} />

@@ -24,6 +24,8 @@ import DeleteOutline from "@mui/icons-material/DeleteOutline";
 import PeopleOutline from "@mui/icons-material/PeopleOutline";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
+import { useAuthStore } from "../auth/useAuthStore";
+import { hasPermission } from "../auth/permissions";
 
 interface Cliente {
   id: number;
@@ -46,6 +48,8 @@ export default function Clientes() {
   const [correo, setCorreo] = useState("");
   const [direccion, setDireccion] = useState("");
   const [tipoCliente, setTipoCliente] = useState("");
+  const { rol, permisos } = useAuthStore();
+  const canManage = hasPermission(rol, permisos, "clientes.manage");
 
   const cargar = async () => {
     try {
@@ -60,10 +64,11 @@ export default function Clientes() {
   };
 
   useEffect(() => {
-    cargar();
+    void cargar();
   }, []);
 
   const abrirNuevo = () => {
+    if (!canManage) return;
     setEditing(null);
     setNombre("");
     setTelefono("");
@@ -74,6 +79,7 @@ export default function Clientes() {
   };
 
   const abrirEditar = (c: Cliente) => {
+    if (!canManage) return;
     setEditing(c);
     setNombre(c.nombre);
     setTelefono(c.telefono || "");
@@ -84,6 +90,11 @@ export default function Clientes() {
   };
 
   const guardar = async () => {
+    if (!canManage) {
+      Swal.fire("Acceso restringido", "No tienes permisos para modificar clientes", "warning");
+      return;
+    }
+
     const payload = {
       nombre: nombre.trim(),
       telefono: telefono.trim() || null,
@@ -92,7 +103,7 @@ export default function Clientes() {
       tipoCliente: tipoCliente || null,
     };
     if (!payload.nombre) {
-      Swal.fire("Validación", "Ingresa el nombre del cliente", "info");
+      Swal.fire("Validacion", "Ingresa el nombre del cliente", "info");
       return;
     }
 
@@ -112,15 +123,21 @@ export default function Clientes() {
   };
 
   const eliminar = async (c: Cliente) => {
+    if (!canManage) {
+      Swal.fire("Acceso restringido", "No tienes permisos para eliminar clientes", "warning");
+      return;
+    }
+
     const confirm = await Swal.fire({
-      title: "¿Eliminar cliente?",
-      text: `Se eliminará "${c.nombre}".`,
+      title: "Eliminar cliente",
+      text: `Se eliminara "${c.nombre}".`,
       icon: "warning",
       showCancelButton: true,
-      confirmButtonText: "Sí, eliminar",
+      confirmButtonText: "Si, eliminar",
       cancelButtonText: "Cancelar",
     });
     if (!confirm.isConfirmed) return;
+
     try {
       await api.delete(`/clientes/${c.id}`);
       Swal.fire("Eliminado", "Cliente eliminado", "success");
@@ -138,16 +155,10 @@ export default function Clientes() {
           <Typography variant="h4">Clientes</Typography>
         </Stack>
         <Stack direction="row" spacing={1}>
-          <Button startIcon={<AddOutlined />} variant="contained" size="small" onClick={abrirNuevo}>
+          <Button startIcon={<AddOutlined />} variant="contained" size="small" onClick={abrirNuevo} disabled={!canManage}>
             Nuevo cliente
           </Button>
-          <Button
-            startIcon={<RefreshOutlined />}
-            variant="outlined"
-            size="small"
-            onClick={cargar}
-            disabled={loading}
-          >
+          <Button startIcon={<RefreshOutlined />} variant="outlined" size="small" onClick={cargar} disabled={loading}>
             Recargar
           </Button>
         </Stack>
@@ -163,7 +174,7 @@ export default function Clientes() {
             <TableRow>
               <TableCell>ID</TableCell>
               <TableCell>Nombre</TableCell>
-              <TableCell>Teléfono</TableCell>
+              <TableCell>Telefono</TableCell>
               <TableCell>Correo</TableCell>
               <TableCell>Tipo</TableCell>
               <TableCell align="right">Acciones</TableCell>
@@ -179,21 +190,10 @@ export default function Clientes() {
                 <TableCell>{c.tipoCliente || "N/D"}</TableCell>
                 <TableCell align="right">
                   <Stack direction="row" spacing={1} justifyContent="flex-end">
-                    <Button
-                      variant="text"
-                      size="small"
-                      startIcon={<EditOutlined />}
-                      onClick={() => abrirEditar(c)}
-                    >
+                    <Button variant="text" size="small" startIcon={<EditOutlined />} disabled={!canManage} onClick={() => abrirEditar(c)}>
                       Editar
                     </Button>
-                    <Button
-                      variant="text"
-                      size="small"
-                      color="error"
-                      startIcon={<DeleteOutline />}
-                      onClick={() => eliminar(c)}
-                    >
+                    <Button variant="text" size="small" color="error" startIcon={<DeleteOutline />} disabled={!canManage} onClick={() => eliminar(c)}>
                       Eliminar
                     </Button>
                   </Stack>
@@ -215,39 +215,11 @@ export default function Clientes() {
         <DialogTitle>{editing ? "Editar cliente" : "Nuevo cliente"}</DialogTitle>
         <DialogContent sx={{ pt: 2 }}>
           <Stack spacing={2}>
-            <TextField
-              label="Nombre"
-              value={nombre}
-              onChange={(e) => setNombre(e.target.value)}
-              fullWidth
-              autoFocus
-            />
-            <TextField
-              label="Teléfono"
-              value={telefono}
-              onChange={(e) => setTelefono(e.target.value)}
-              fullWidth
-            />
-            <TextField
-              label="Correo"
-              type="email"
-              value={correo}
-              onChange={(e) => setCorreo(e.target.value)}
-              fullWidth
-            />
-            <TextField
-              label="Dirección"
-              value={direccion}
-              onChange={(e) => setDireccion(e.target.value)}
-              fullWidth
-            />
-            <TextField
-              label="Tipo de cliente"
-              select
-              value={tipoCliente}
-              onChange={(e) => setTipoCliente(e.target.value)}
-              fullWidth
-            >
+            <TextField label="Nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} fullWidth autoFocus disabled={!canManage} />
+            <TextField label="Telefono" value={telefono} onChange={(e) => setTelefono(e.target.value)} fullWidth disabled={!canManage} />
+            <TextField label="Correo" type="email" value={correo} onChange={(e) => setCorreo(e.target.value)} fullWidth disabled={!canManage} />
+            <TextField label="Direccion" value={direccion} onChange={(e) => setDireccion(e.target.value)} fullWidth disabled={!canManage} />
+            <TextField label="Tipo de cliente" select value={tipoCliente} onChange={(e) => setTipoCliente(e.target.value)} fullWidth disabled={!canManage}>
               <MenuItem value="">Sin especificar</MenuItem>
               {tipos.map((t) => (
                 <MenuItem key={t} value={t}>
@@ -259,7 +231,7 @@ export default function Clientes() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpenForm(false)}>Cancelar</Button>
-          <Button variant="contained" onClick={guardar}>
+          <Button variant="contained" onClick={guardar} disabled={!canManage}>
             Guardar
           </Button>
         </DialogActions>

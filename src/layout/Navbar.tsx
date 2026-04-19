@@ -13,6 +13,7 @@ import LogoutIcon from "@mui/icons-material/Logout";
 import SettingsIcon from "@mui/icons-material/Settings";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useNavigate } from "react-router-dom";
+import uniformaLogo from "../assets/uniforma-logo.png";
 
 export default function Navbar() {
   const { usuario, bodegaNombre, logout } = useAuthStore();
@@ -37,19 +38,19 @@ export default function Navbar() {
       }}
     >
       <Toolbar sx={{ minHeight: 64, px: 3 }}>
-        <Stack direction="row" alignItems="center" spacing={1} sx={{ flexGrow: 1 }}>
+        <Stack direction="row" alignItems="center" spacing={1} sx={{ flexGrow: 1, minWidth: 0 }}>
           <Box
+            component="img"
+            src={uniformaLogo}
+            alt="Uniforma"
             sx={{
-              width: 10,
-              height: 10,
-              borderRadius: "50%",
-              background: "#22c55e",
-              boxShadow: "0 0 0 6px rgba(34,197,94,0.18)",
+              height: 64,
+              width: "auto",
+              display: "block",
+              maxWidth: { xs: 250, md: 360 },
+              objectFit: "contain",
             }}
           />
-          <Typography variant="h6" sx={{ letterSpacing: 1, fontWeight: 800 }}>
-            UNIFORMA
-          </Typography>
         </Stack>
 
         <Stack direction="row" spacing={2} alignItems="center">

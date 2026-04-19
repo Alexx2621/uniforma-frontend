@@ -5,13 +5,14 @@ import { useEffect } from 'react';
 import Swal from 'sweetalert2';
 import { useSystemConfigStore } from '../config/useSystemConfigStore';
 import { isModuleAccessible } from '../config/moduleAccess';
+import { getFirstAccessiblePath, getRequiredPermission, hasPermission } from './permissions';
 
 interface Props {
   children: React.ReactNode;
 }
 
 export const ProtectedRoute = ({ children }: Props) => {
-  const { token, usuario } = useAuthStore();
+  const { token, usuario, rol, permisos } = useAuthStore();
   const location = useLocation();
   const { disabledPaths, userDisabledPaths, loaded, fetchConfig } = useSystemConfigStore();
   const usuarioKey = (usuario || "").trim().toUpperCase();
@@ -20,6 +21,7 @@ export const ProtectedRoute = ({ children }: Props) => {
     ...(userDisabledPaths[usuarioKey] || []),
   ];
   const blocked = loaded && !isModuleAccessible(location.pathname, effectiveDisabledPaths);
+  const permissionBlocked = !hasPermission(rol, permisos, getRequiredPermission(location.pathname));
 
   useEffect(() => {
     if (token) {
@@ -46,7 +48,11 @@ export const ProtectedRoute = ({ children }: Props) => {
   }
 
   if (blocked) {
-    return <Navigate to="/" replace />;
+    return <Navigate to={getFirstAccessiblePath(rol, permisos)} replace />;
+  }
+
+  if (permissionBlocked) {
+    return <Navigate to={getFirstAccessiblePath(rol, permisos)} replace />;
   }
 
   return <>{children}</>;

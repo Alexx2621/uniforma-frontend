@@ -20,6 +20,8 @@ import {
   TableRow,
 } from "@mui/material";
 import PlaylistAddCheckOutlined from "@mui/icons-material/PlaylistAddCheckOutlined";
+import EditOutlined from "@mui/icons-material/EditOutlined";
+import DeleteOutline from "@mui/icons-material/DeleteOutline";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { useNavigate } from "react-router-dom";
@@ -265,6 +267,8 @@ export default function PedidoNuevo() {
   const [observaciones, setObservaciones] = useState("");
   const [detalle, setDetalle] = useState<DetalleRow[]>([]);
   const [articuloActual, setArticuloActual] = useState<CapturaArticulo>(detalleInicial);
+  const [cantidadInput, setCantidadInput] = useState("1");
+  const [editingDetalleKey, setEditingDetalleKey] = useState<number | null>(null);
   const [filtroTipo, setFiltroTipo] = useState("");
   const [filtroGenero, setFiltroGenero] = useState("");
   const [filtroTela, setFiltroTela] = useState("");
@@ -515,6 +519,8 @@ export default function PedidoNuevo() {
 
   const limpiarArticulo = () => {
     setArticuloActual(detalleInicial);
+    setCantidadInput("1");
+    setEditingDetalleKey(null);
     setCantidadAdvertida(null);
     setFiltroTipo("");
     setFiltroGenero("");
@@ -528,7 +534,7 @@ export default function PedidoNuevo() {
       Swal.fire("Validacion", "Selecciona un producto", "warning");
       return;
     }
-    const cantidad = Number(articuloActual.cantidad) || 0;
+    const cantidad = Number(cantidadInput) || 0;
 
     if (cantidad <= 0) {
       Swal.fire("Validacion", "Ingresa una cantidad mayor a 0", "warning");
@@ -536,7 +542,7 @@ export default function PedidoNuevo() {
     }
 
     const row: DetalleRow = {
-      key: Date.now(),
+      key: editingDetalleKey ?? Date.now(),
       productoId: Number(articuloActual.productoId),
       cantidad,
       precioUnit: Number(articuloActual.precioUnit) || 0,
@@ -544,13 +550,49 @@ export default function PedidoNuevo() {
       descripcion: articuloActual.descripcion || "",
     };
 
-    setDetalle((prev) => [...prev, row]);
+    setDetalle((prev) =>
+      editingDetalleKey === null ? [...prev, row] : prev.map((item) => (item.key === editingDetalleKey ? row : item))
+    );
 
     limpiarArticulo();
   };
 
+  const editarArticulo = (row: DetalleRow) => {
+    const producto = productos.find((p) => p.id === row.productoId);
+
+    setEditingDetalleKey(row.key);
+    setArticuloActual({
+      productoId: row.productoId,
+      cantidad: row.cantidad,
+      precioUnit: row.precioUnit,
+      descuento: row.descuento,
+      descripcion: row.descripcion || "",
+    });
+    setCantidadInput(String(row.cantidad));
+    setCantidadAdvertida(row.cantidad);
+    setFiltroTipo(producto?.tipo || "");
+    setFiltroGenero(producto?.genero || "");
+    setFiltroTela(obtenerTela(producto) === "N/D" ? "" : obtenerTela(producto));
+    setFiltroTalla(obtenerTalla(producto) === "N/D" ? "" : obtenerTalla(producto));
+    setFiltroColor(obtenerColor(producto) === "N/D" ? "" : obtenerColor(producto));
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const eliminarArticulo = (key: number) => {
+    setDetalle((prev) => prev.filter((item) => item.key !== key));
+    if (editingDetalleKey === key) {
+      limpiarArticulo();
+    }
+  };
+
   const handleCantidadBlur = () => {
-    const cantidad = Number(articuloActual.cantidad) || 0;
+    if (`${cantidadInput}`.trim() === "") {
+      setCantidadInput("1");
+      setArticuloActual((prev) => ({ ...prev, cantidad: 1 }));
+      return;
+    }
+
+    const cantidad = Number(cantidadInput) || 0;
 
     if (cantidad < 5 || cantidadAdvertida === cantidad) {
       return;
@@ -1013,12 +1055,16 @@ export default function PedidoNuevo() {
           <Grid size={{ xs: 12, sm: 4, md: 2 }}>
             <TextField
               label="Cantidad"
-              type="number"
+              type="text"
               fullWidth
-              value={articuloActual.cantidad}
+              inputProps={{ inputMode: "numeric", pattern: "[0-9]*" }}
+              value={cantidadInput}
               onChange={(e) => {
-                const cantidad = Number(e.target.value) || 0;
+                const raw = e.target.value.replace(/\D/g, "");
+                const normalizado = raw.replace(/^0+(?=\d)/, "");
+                const cantidad = Number(normalizado) || 0;
                 setCantidadAdvertida((prev) => (prev !== null && prev !== cantidad ? null : prev));
+                setCantidadInput(normalizado);
                 setArticuloActual((prev) => ({ ...prev, cantidad }));
               }}
               onBlur={handleCantidadBlur}
@@ -1059,21 +1105,28 @@ export default function PedidoNuevo() {
         </Grid>
 
         <Stack spacing={1.5} alignItems="center" sx={{ mt: 2 }}>
-          <Button
-            variant="contained"
-            onClick={agregarArticulo}
-            sx={{
-              backgroundColor: "#d32f2f",
-              color: "#fff",
-              px: 4,
-              fontWeight: 700,
-              "&:hover": {
-                backgroundColor: "#b71c1c",
-              },
-            }}
-          >
-            Agregar al pedido
-          </Button>
+          <Stack direction="row" spacing={1.5}>
+            <Button
+              variant="contained"
+              onClick={agregarArticulo}
+              sx={{
+                backgroundColor: "#d32f2f",
+                color: "#fff",
+                px: 4,
+                fontWeight: 700,
+                "&:hover": {
+                  backgroundColor: "#b71c1c",
+                },
+              }}
+            >
+              {editingDetalleKey === null ? "Agregar al pedido" : "Guardar cambios"}
+            </Button>
+            {editingDetalleKey !== null && (
+              <Button variant="outlined" onClick={limpiarArticulo}>
+                Cancelar edicion
+              </Button>
+            )}
+          </Stack>
         </Stack>
       </Paper>
 
@@ -1091,6 +1144,7 @@ export default function PedidoNuevo() {
               <TableCell align="center" sx={{ fontWeight: 700 }}>Color</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Cantidad</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Observacion</TableCell>
+              <TableCell align="center" sx={{ fontWeight: 700 }}>Acciones</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -1105,12 +1159,33 @@ export default function PedidoNuevo() {
                   <TableCell align="center">{obtenerColor(producto)}</TableCell>
                   <TableCell align="center">{row.cantidad}</TableCell>
                   <TableCell align="center">{row.descripcion || "-"}</TableCell>
+                  <TableCell align="center">
+                    <Stack direction="row" spacing={1} justifyContent="center">
+                      <Button
+                        size="small"
+                        variant="text"
+                        startIcon={<EditOutlined />}
+                        onClick={() => editarArticulo(row)}
+                      >
+                        Editar
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="text"
+                        color="error"
+                        startIcon={<DeleteOutline />}
+                        onClick={() => eliminarArticulo(row.key)}
+                      >
+                        Eliminar
+                      </Button>
+                    </Stack>
+                  </TableCell>
                 </TableRow>
               );
             })}
             {!detalle.length && (
               <TableRow>
-                <TableCell colSpan={7} align="center">
+                <TableCell colSpan={8} align="center">
                   Aun no has agregado articulos al pedido.
                 </TableCell>
               </TableRow>

@@ -27,6 +27,7 @@ import SearchIcon from "@mui/icons-material/Search";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
+import { hasPermission } from "../auth/permissions";
 
 interface FormProducto {
   id: number | null;
@@ -69,8 +70,8 @@ export default function Productos() {
   const [telas, setTelas] = useState<any[]>([]);
   const [colores, setColores] = useState<any[]>([]);
   const [tallas, setTallas] = useState<any[]>([]);
-  const { rol } = useAuthStore();
-  const canManageProducts = rol !== "VENTAS";
+  const { rol, permisos } = useAuthStore();
+  const canManageProducts = hasPermission(rol, permisos, "productos.manage");
 
   const cargarCatalogos = async () => {
     try {

@@ -26,6 +26,7 @@ import { api } from "../api/axios";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import { menuPathItems } from "../layout/menuItems";
 import { useAuthStore } from "../auth/useAuthStore";
+import { hasPermission } from "../auth/permissions";
 
 interface NotifConfig {
   emailTo: string;
@@ -200,7 +201,8 @@ export default function Admin() {
     setProductionInternalMode,
     fetchConfig,
   } = useSystemConfigStore();
-  const { rol } = useAuthStore();
+  const { rol, permisos } = useAuthStore();
+  const canManageAdmin = hasPermission(rol, permisos, "admin.manage");
 
   const modulesBySection = useMemo(() => {
     const grouped = new Map<string, typeof menuPathItems>();
@@ -221,7 +223,7 @@ export default function Admin() {
       setLoading(true);
       const [respConfig, respUsuarios] = await Promise.all([
         api.get("/config/notificaciones"),
-        rol === "ADMIN" ? api.get("/usuarios").catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
+        canManageAdmin ? api.get("/usuarios").catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
       ]);
       const data = respConfig.data || {};
       setConfig({
@@ -254,7 +256,7 @@ export default function Admin() {
     } finally {
       setLoading(false);
     }
-  }, [rol]);
+  }, [canManageAdmin]);
 
   useEffect(() => {
     void fetchConfig();
@@ -531,7 +533,7 @@ export default function Admin() {
       <Divider sx={{ mb: 2 }} />
 
       <Stack spacing={1.5} sx={{ mb: 2 }}>
-        {rol === "ADMIN" && (
+        {canManageAdmin && (
           <>
             <Stack direction="row" spacing={1} alignItems="center">
               <TuneOutlined color="primary" />
@@ -594,7 +596,7 @@ export default function Admin() {
         )}
       </Stack>
 
-      {rol === "ADMIN" && (
+      {canManageAdmin && (
         <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
           <Stack spacing={1.5}>
             <Typography variant="subtitle2">Modulos por usuario</Typography>
@@ -680,7 +682,7 @@ export default function Admin() {
         </Paper>
       )}
 
-      {rol === "ADMIN" && (
+      {canManageAdmin && (
         <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
           <Stack spacing={1.5}>
             <Typography variant="subtitle2">Modo interno de produccion</Typography>
@@ -705,7 +707,7 @@ export default function Admin() {
         </Paper>
       )}
 
-      {rol === "ADMIN" && (
+      {canManageAdmin && (
         <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
           <Stack spacing={1.5}>
             <Stack direction="row" spacing={1} alignItems="center">

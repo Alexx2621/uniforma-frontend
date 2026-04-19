@@ -16,6 +16,7 @@ import { DataGrid, GridColDef } from "@mui/x-data-grid";
 import AddIcon from "@mui/icons-material/Add";
 import MergeTypeOutlined from "@mui/icons-material/MergeTypeOutlined";
 import PlaylistAddCheckOutlined from "@mui/icons-material/PlaylistAddCheckOutlined";
+import BlockOutlined from "@mui/icons-material/BlockOutlined";
 import { useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
@@ -303,12 +304,46 @@ export default function Pedidos() {
   const pedidosUnificables = useMemo(() => {
     if (rol !== "ADMIN") return [];
     return filtered.filter((pedido) => {
+      const estado = `${pedido.estado || ""}`.trim().toLowerCase();
       const solicitado = `${pedido.solicitadoPor || "vendedor"}`.trim().toLowerCase();
+      if (estado === "anulado") return false;
       return solicitado === "" || solicitado.includes("vendedor");
     });
   }, [filtered, rol]);
 
-  const abrirVistaPreviaUnificada = () => {
+  const anularPedido = async (pedido: PedidoRow) => {
+    const estado = `${pedido.estado || ""}`.trim().toLowerCase();
+    if (estado === "anulado") {
+      Swal.fire("Aviso", "Este pedido ya esta anulado", "info");
+      return;
+    }
+    if (estado === "completado") {
+      Swal.fire("Aviso", "No se puede anular un pedido completado", "info");
+      return;
+    }
+
+    const confirm = await Swal.fire({
+      title: "Anular pedido",
+      text: `El pedido ${pedido.displayFolio || `P-${pedido.id}`} pasara a estado anulado y ya no se incluira en el unificado. Deseas continuar?`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Si, anular",
+      cancelButtonText: "Cancelar",
+      confirmButtonColor: "#d32f2f",
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    try {
+      await api.post(`/produccion/${pedido.id}/anular`);
+      await cargar();
+      Swal.fire("Listo", "Pedido anulado correctamente", "success");
+    } catch (error: any) {
+      Swal.fire("Error", error?.response?.data?.message || "No se pudo anular el pedido", "error");
+    }
+  };
+
+  const abrirVistaPreviaUnificada = async () => {
     if (rol !== "ADMIN") return;
 
     const agrupados = new Map<string, ArticuloUnificado>();
@@ -374,6 +409,22 @@ export default function Pedidos() {
       return;
     }
 
+    let correlativo = "";
+    try {
+      const resp = await api.post("/correlativos/produccion/generar", {
+        bodegaId: filterBodega === "all" ? null : Number(filterBodega),
+      });
+      correlativo = resp.data?.correlativo || "";
+    } catch (error: any) {
+      popup.close();
+      Swal.fire(
+        "Error",
+        error?.response?.data?.message || "No se pudo generar el correlativo del reporte unificado",
+        "error"
+      );
+      return;
+    }
+
     const escapeHtml = (value?: string | number | null) =>
       `${value ?? ""}`
         .replace(/&/g, "&amp;")
@@ -402,7 +453,7 @@ export default function Pedidos() {
       filterBodega === "all"
         ? "Todas las tiendas"
         : bodegas.find((b) => b.id === Number(filterBodega))?.nombre || "Tienda filtrada";
-    const pedidoNo = `UNI-${fechaGeneracion.getFullYear()}${String(fechaGeneracion.getMonth() + 1).padStart(2, "0")}${String(
+    const pedidoNo = correlativo || `UNI-${fechaGeneracion.getFullYear()}${String(fechaGeneracion.getMonth() + 1).padStart(2, "0")}${String(
       fechaGeneracion.getDate()
     ).padStart(2, "0")}`;
     const vendedorLabel = filtroTienda.toUpperCase();
@@ -546,7 +597,11 @@ export default function Pedidos() {
       field: "estado",
       headerName: "Estado",
       width: 140,
-      renderCell: (p) => <Chip label={p.value} size="small" color="info" />,
+      renderCell: (p) => {
+        const estado = `${p.value || ""}`.trim().toLowerCase();
+        const color = estado === "anulado" ? "error" : estado === "completado" ? "success" : "info";
+        return <Chip label={p.value} size="small" color={color} />;
+      },
     },
     {
       field: "totalEstimado",
@@ -569,12 +624,24 @@ export default function Pedidos() {
     {
       field: "acciones",
       headerName: "Acciones",
-      width: 140,
+      width: 220,
       sortable: false,
       renderCell: (p) => (
-        <Button size="small" variant="outlined" onClick={() => navigate(`/produccion/${p.row.id}`)}>
-          Ver
-        </Button>
+        <Stack direction="row" spacing={1}>
+          <Button size="small" variant="outlined" onClick={() => navigate(`/produccion/${p.row.id}`)}>
+            Ver
+          </Button>
+          <Button
+            size="small"
+            variant="outlined"
+            color="error"
+            startIcon={<BlockOutlined />}
+            disabled={["anulado", "completado"].includes(`${p.row.estado || ""}`.trim().toLowerCase())}
+            onClick={() => anularPedido(p.row)}
+          >
+            Anular
+          </Button>
+        </Stack>
       ),
     },
   ];
