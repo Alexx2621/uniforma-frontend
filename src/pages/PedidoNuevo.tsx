@@ -1235,11 +1235,11 @@ export default function PedidoNuevo() {
           variant="contained"
           onClick={guardar}
           sx={{
-            backgroundColor: "#0b1f4d",
+            backgroundColor: "#2F2C61",
             color: "#fff",
             fontWeight: 700,
             "&:hover": {
-              backgroundColor: "#081633",
+              backgroundColor: "#232148",
             },
           }}
         >
