@@ -102,7 +102,7 @@ export default function Navbar() {
     .trim()
     .toUpperCase() || "U";
   const profileImageUrl = sourceFotoUrl
-    ? sourceFotoUrl.startsWith("http://") || sourceFotoUrl.startsWith("https://")
+    ? sourceFotoUrl.startsWith("http://") || sourceFotoUrl.startsWith("https://") || sourceFotoUrl.startsWith("data:")
       ? sourceFotoUrl
       : `${api.defaults.baseURL || ""}${sourceFotoUrl}`
     : "";

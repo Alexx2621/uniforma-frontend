@@ -62,7 +62,7 @@ interface Bodega {
 
 const getImageUrl = (path?: string | null) => {
   if (!path) return "";
-  if (path.startsWith("http://") || path.startsWith("https://")) return path;
+  if (path.startsWith("http://") || path.startsWith("https://") || path.startsWith("data:")) return path;
   return `${api.defaults.baseURL || ""}${path}`;
 };
 
