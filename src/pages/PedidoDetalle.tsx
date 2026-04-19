@@ -132,6 +132,7 @@ export default function PedidoDetalle() {
   );
 
   const esAnulado = `${pedido?.estado || ""}`.trim().toLowerCase() === "anulado";
+  const esRecibido = ["recibido", "completado"].includes(`${pedido?.estado || ""}`.trim().toLowerCase());
 
   const obtenerTela = (prod?: any) => {
     if (!prod) return "N/D";
@@ -152,10 +153,6 @@ export default function PedidoDetalle() {
   };
 
   const terminar = async () => {
-    if (!bodegaIngreso) {
-      Swal.fire("Validacion", "Selecciona bodega de ingreso", "warning");
-      return;
-    }
     if (!productionInternalMode) {
       const saldo = pedido?.saldoPendiente || 0;
       const restante = Math.max(0, saldo - (Number(pagoFinal) || 0));
@@ -167,7 +164,6 @@ export default function PedidoDetalle() {
 
     try {
       await api.post(`/produccion/${id}/terminar`, {
-        bodegaId: Number(bodegaIngreso),
         pagoFinal: productionInternalMode ? 0 : pagoFinal,
         metodoPagoFinal,
         porcentajeRecargo: productionInternalMode ? 0 : porcRecargoFinal,
@@ -176,7 +172,7 @@ export default function PedidoDetalle() {
         const rec = metodoPagoFinal === "tarjeta" ? pagoFinal * ((porcRecargoFinal || 0) / 100) : 0;
         generarPdfPago(pagoFinal + rec, metodoPagoFinal, "saldo");
       }
-      Swal.fire("Listo", "Pedido finalizado y stock ingresado", "success");
+      Swal.fire("Listo", "Pedido marcado como recibido", "success");
       navigate("/produccion");
     } catch (error: any) {
       const msg = error?.response?.data?.message || error?.message || "No se pudo terminar";
@@ -467,7 +463,7 @@ export default function PedidoDetalle() {
         <Chip
           label={pedido.estado}
           color={
-            esAnulado ? "error" : `${pedido.estado || ""}`.trim().toLowerCase() === "completado" ? "success" : "info"
+            esAnulado ? "error" : esRecibido ? "success" : "info"
           }
           size="small"
         />
@@ -610,14 +606,14 @@ export default function PedidoDetalle() {
             sx={{ p: 2, height: "100%", display: "flex", flexDirection: "column", borderRadius: 2, width: "100%", boxSizing: "border-box" }}
           >
             <Stack spacing={1.5}>
-              <Typography variant="h6">Finalizar pedido (ingresar a inventario)</Typography>
-              <FormControl fullWidth size="small" disabled={esAnulado}>
+              <Typography variant="h6">Marcar pedido como recibido</Typography>
+              <FormControl fullWidth size="small" disabled={esAnulado || esRecibido}>
                 <InputLabel>Bodega ingreso</InputLabel>
                 <Select
                   label="Bodega ingreso"
                   value={bodegaIngreso === "" ? "" : bodegaIngreso}
                   onChange={(e) => setBodegaIngreso(Number(e.target.value))}
-                  disabled={esAnulado || (!!userBodegaId && rol !== "ADMIN")}
+                  disabled={esAnulado || esRecibido || (!!userBodegaId && rol !== "ADMIN")}
                 >
                   {bodegas.map((b) => (
                     <MenuItem key={b.id} value={b.id}>
@@ -627,20 +623,25 @@ export default function PedidoDetalle() {
                 </Select>
               </FormControl>
               <Typography variant="body2" color="text.secondary">
-                Al terminar se ingresara el stock producido a la bodega seleccionada.
+                Este boton solo cambiara el estado del pedido a recibido. No se movera stock al inventario.
               </Typography>
               <Button
                 variant="contained"
                 color="success"
                 startIcon={<DoneAllOutlined />}
                 onClick={terminar}
-                disabled={esAnulado || loading || (!productionInternalMode && (pedido?.saldoPendiente || 0) > 0)}
+                disabled={esAnulado || esRecibido || loading || (!productionInternalMode && (pedido?.saldoPendiente || 0) > 0)}
               >
-                Terminar pedido
+                Marcar como recibido
               </Button>
+              {esRecibido && (
+                <Typography variant="caption" color="success.main">
+                  Este pedido ya fue marcado como recibido.
+                </Typography>
+              )}
               {!productionInternalMode && (pedido?.saldoPendiente || 0) > 0 && (
                 <Typography variant="caption" color="error">
-                  Liquida el saldo antes de finalizar.
+                  Liquida el saldo antes de marcarlo como recibido.
                 </Typography>
               )}
             </Stack>

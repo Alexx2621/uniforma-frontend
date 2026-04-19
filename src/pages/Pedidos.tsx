@@ -317,8 +317,8 @@ export default function Pedidos() {
       Swal.fire("Aviso", "Este pedido ya esta anulado", "info");
       return;
     }
-    if (estado === "completado") {
-      Swal.fire("Aviso", "No se puede anular un pedido completado", "info");
+    if (["completado", "recibido"].includes(estado)) {
+      Swal.fire("Aviso", "No se puede anular un pedido recibido", "info");
       return;
     }
 
@@ -599,7 +599,7 @@ export default function Pedidos() {
       width: 140,
       renderCell: (p) => {
         const estado = `${p.value || ""}`.trim().toLowerCase();
-        const color = estado === "anulado" ? "error" : estado === "completado" ? "success" : "info";
+        const color = estado === "anulado" ? "error" : ["completado", "recibido"].includes(estado) ? "success" : "info";
         return <Chip label={p.value} size="small" color={color} />;
       },
     },
@@ -636,7 +636,7 @@ export default function Pedidos() {
             variant="outlined"
             color="error"
             startIcon={<BlockOutlined />}
-            disabled={["anulado", "completado"].includes(`${p.row.estado || ""}`.trim().toLowerCase())}
+            disabled={["anulado", "completado", "recibido"].includes(`${p.row.estado || ""}`.trim().toLowerCase())}
             onClick={() => anularPedido(p.row)}
           >
             Anular
