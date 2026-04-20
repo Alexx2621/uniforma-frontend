@@ -51,6 +51,7 @@ export default function Login() {
         segundoApellido: data.segundoApellido ?? null,
         fotoUrl: data.fotoUrl ?? null,
         rol: data.rol,
+        rolId: data.rolId ?? null,
         permisos: data.permisos || [],
         bodegaId: data.bodegaId ?? null,
         bodegaNombre: data.bodegaNombre ?? null,

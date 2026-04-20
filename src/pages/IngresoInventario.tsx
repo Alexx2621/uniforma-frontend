@@ -20,6 +20,7 @@ import AddIcon from "@mui/icons-material/Add";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
+import { useSystemConfigStore } from "../config/useSystemConfigStore";
 
 interface DetalleRow {
   key: number;
@@ -52,19 +53,22 @@ export default function IngresoInventario() {
     }
   };
 
-  const { rol, bodegaId: userBodegaId } = useAuthStore();
+  const { rol, rolId, bodegaId: userBodegaId } = useAuthStore();
+  const { crossStoreRoleIds, fetchConfig } = useSystemConfigStore();
+  const canAccessAllBodegas = rol === "ADMIN" || crossStoreRoleIds.includes(Number(rolId));
 
   useEffect(() => {
     cargarCatalogos();
-  }, []);
+    void fetchConfig();
+  }, [fetchConfig]);
 
   useEffect(() => {
-    if (userBodegaId && rol !== "ADMIN") {
+    if (userBodegaId && !canAccessAllBodegas) {
       const parsed = Number(userBodegaId);
       const exists = bodegas.some((b) => b.id === parsed);
       setBodegaId(exists ? parsed : "");
     }
-  }, [userBodegaId, rol, bodegas]);
+  }, [userBodegaId, canAccessAllBodegas, bodegas]);
 
   const addRow = () => {
     setDetalle((prev) => [
@@ -314,7 +318,7 @@ export default function IngresoInventario() {
               label="Bodega"
               value={bodegaId === "" ? "" : bodegaId}
               onChange={(e) => onBodegaChange(Number(e.target.value))}
-              disabled={!!userBodegaId && rol !== "ADMIN"}
+              disabled={!!userBodegaId && !canAccessAllBodegas}
             >
               {bodegas.map((b) => (
                 <MenuItem key={b.id} value={b.id}>

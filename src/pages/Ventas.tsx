@@ -16,6 +16,7 @@ import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../auth/useAuthStore";
+import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import LOGO_URL from "../assets/3-logos.png";
 
 interface VentaRow {
@@ -52,8 +53,10 @@ export default function Ventas() {
   const [fechaDesde, setFechaDesde] = useState(toDateOnly(new Date().toISOString()));
   const [fechaHasta, setFechaHasta] = useState(toDateOnly(new Date().toISOString()));
   const [cierreFecha, setCierreFecha] = useState(toDateOnly(new Date().toISOString()));
-  const { usuario, bodegaId: userBodegaId } = useAuthStore();
+  const { usuario, rol, rolId, bodegaId: userBodegaId } = useAuthStore();
+  const { crossStoreRoleIds, fetchConfig } = useSystemConfigStore();
   const navigate = useNavigate();
+  const canAccessAllBodegas = rol === "ADMIN" || crossStoreRoleIds.includes(Number(rolId));
   const clienteMap = useMemo(
     () => new Map(clientes.map((c) => [c.id, c.nombre])),
     [clientes]
@@ -65,7 +68,8 @@ export default function Ventas() {
 
   useEffect(() => {
     cargarVentas();
-  }, []);
+    void fetchConfig();
+  }, [fetchConfig]);
 
   const cargarVentas = async () => {
     try {
@@ -138,18 +142,27 @@ export default function Ventas() {
         const fechaVenta = toDateOnly(v.fecha);
         const dentroRango =
           (!fechaDesde || fechaVenta >= fechaDesde) && (!fechaHasta || fechaVenta <= fechaHasta);
+        const bodegaVisible =
+          canAccessAllBodegas || !userBodegaId ? true : Number(v.bodegaId) === Number(userBodegaId);
         return (
           dentroRango &&
+          bodegaVisible &&
           cliente.includes(filterCliente.toLowerCase()) &&
           codigo.includes(filterCodigo.toLowerCase())
         );
       }),
-    [ventas, filterCliente, filterCodigo, fechaDesde, fechaHasta]
+    [ventas, filterCliente, filterCodigo, fechaDesde, fechaHasta, canAccessAllBodegas, userBodegaId]
   );
 
   const ventasDelDia = useMemo(
-    () => ventas.filter((v) => toDateOnly(v.fecha) === cierreFecha),
-    [ventas, cierreFecha]
+    () =>
+      ventas.filter((v) => {
+        const mismaFecha = toDateOnly(v.fecha) === cierreFecha;
+        const bodegaVisible =
+          canAccessAllBodegas || !userBodegaId ? true : Number(v.bodegaId) === Number(userBodegaId);
+        return mismaFecha && bodegaVisible;
+      }),
+    [ventas, cierreFecha, canAccessAllBodegas, userBodegaId]
   );
 
   const formatter = (v: number) => `Q ${v.toFixed(2)}`;
@@ -370,7 +383,7 @@ export default function Ventas() {
     }
     const filtradas = ventasDelDia.filter((v) => {
       const mismoVendedor = (v.vendedor || "").trim() === usuario.trim();
-      const mismaBodega = !userBodegaId || Number(v.bodegaId) === Number(userBodegaId);
+      const mismaBodega = canAccessAllBodegas || !userBodegaId || Number(v.bodegaId) === Number(userBodegaId);
       return mismoVendedor && mismaBodega;
     });
     if (filtradas.length === 0) {
@@ -493,11 +506,13 @@ export default function Ventas() {
   };
 
   const exportCierreTienda = () => {
-    if (!userBodegaId) {
+    if (!canAccessAllBodegas && !userBodegaId) {
       Swal.fire("Aviso", "Asigna una bodega al usuario para generar el cierre por tienda", "warning");
       return;
     }
-    const filtradas = ventasDelDia.filter((v) => Number(v.bodegaId) === Number(userBodegaId));
+    const filtradas = canAccessAllBodegas
+      ? ventasDelDia
+      : ventasDelDia.filter((v) => Number(v.bodegaId) === Number(userBodegaId));
     if (filtradas.length === 0) {
       Swal.fire("Sin datos", "No hay ventas para el cierre de ese di­a", "info");
       return;
@@ -601,7 +616,7 @@ export default function Ventas() {
           <div class="meta">
             <div><strong>Fecha de corte:</strong> ${cierreFecha}</div>
             <div><strong>Generado:</strong> ${generacion.toLocaleDateString()} ${generacion.toLocaleTimeString()}</div>
-            <div><strong>Tienda:</strong> ${ventasDelDia[0]?.bodega?.nombre || "N/D"}</div>
+            <div><strong>Tienda:</strong> ${canAccessAllBodegas ? "Todas las tiendas visibles" : ventasDelDia[0]?.bodega?.nombre || "N/D"}</div>
           </div>
         </div>
         ${secciones}

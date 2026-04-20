@@ -37,7 +37,17 @@ interface AlertaInterna {
 }
 
 export default function Navbar() {
-  const { usuario, nombre, primerNombre, primerApellido, segundoApellido, fotoUrl, bodegaNombre, logout } = useAuthStore();
+  const {
+    usuario,
+    nombre,
+    primerNombre,
+    primerApellido,
+    segundoApellido,
+    fotoUrl,
+    bodegaNombre,
+    logout,
+    syncSession,
+  } = useAuthStore();
   const navigate = useNavigate();
   const [perfil, setPerfil] = useState<{
     usuario?: string | null;
@@ -117,6 +127,7 @@ export default function Navbar() {
       try {
         const { data } = await api.get("/auth/me");
         if (active) {
+          syncSession(data);
           setPerfil(data);
         }
       } catch {
@@ -145,7 +156,7 @@ export default function Navbar() {
     return () => {
       active = false;
     };
-  }, [usuario]);
+  }, [usuario, syncSession]);
 
   const cargarAlertas = async () => {
     try {

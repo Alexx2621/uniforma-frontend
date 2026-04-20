@@ -97,6 +97,7 @@ export default function Usuarios() {
   const denyAlertShown = useRef(false);
   const canView = hasPermission(rol, permisos, "usuarios.view");
   const canManage = hasPermission(rol, permisos, "usuarios.manage");
+  const canViewRoles = hasPermission(rol, permisos, "roles.view");
 
   const nombreCompleto = useMemo(
     () =>
@@ -110,16 +111,29 @@ export default function Usuarios() {
   const cargar = async () => {
     try {
       setLoading(true);
-      const [respUsers, respRoles, respBod] = await Promise.all([
+      const [respUsers, respRoles, respBod] = await Promise.allSettled([
         api.get("/usuarios"),
-        api.get("/roles"),
+        canViewRoles || canManage ? api.get("/roles") : Promise.resolve({ data: [] }),
         api.get("/bodegas"),
       ]);
-      setUsuarios(respUsers.data || []);
-      setRoles(respRoles.data || []);
-      setBodegas(respBod.data || []);
+
+      if (respUsers.status !== "fulfilled") {
+        throw new Error("usuarios");
+      }
+
+      if (respBod.status !== "fulfilled") {
+        throw new Error("bodegas");
+      }
+
+      setUsuarios(respUsers.value.data || []);
+      setBodegas(respBod.value.data || []);
+      setRoles(respRoles.status === "fulfilled" ? respRoles.value.data || [] : []);
+
+      if (respRoles.status !== "fulfilled" && (canViewRoles || canManage)) {
+        Swal.fire("Aviso", "Se cargaron los usuarios, pero no fue posible cargar el catalogo de roles.", "warning");
+      }
     } catch {
-      Swal.fire("Error", "No se pudieron cargar usuarios, roles o bodegas", "error");
+      Swal.fire("Error", "No se pudieron cargar usuarios o bodegas", "error");
     } finally {
       setLoading(false);
     }

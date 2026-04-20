@@ -23,6 +23,7 @@ import Select from "@mui/material/Select";
 import MenuItem from "@mui/material/MenuItem";
 import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
+import { useSystemConfigStore } from "../config/useSystemConfigStore";
 
 interface Venta {
   id: number;
@@ -127,7 +128,9 @@ export default function Dashboard() {
   const [rango, setRango] = useState<"7" | "30" | "90" | "all">("30");
   const [bodegaFiltro, setBodegaFiltro] = useState<"all" | number>("all");
   const [vendedorFiltro, setVendedorFiltro] = useState<"all" | string>("all");
-  const { rol, usuario, bodegaId: userBodegaId } = useAuthStore();
+  const { rol, rolId, usuario, bodegaId: userBodegaId } = useAuthStore();
+  const { crossStoreRoleIds, fetchConfig } = useSystemConfigStore();
+  const canAccessAllBodegas = rol === "ADMIN" || crossStoreRoleIds.includes(Number(rolId));
 
   useEffect(() => {
     const load = async () => {
@@ -149,18 +152,18 @@ export default function Dashboard() {
       }
     };
     load();
-  }, []);
+    void fetchConfig();
+  }, [fetchConfig]);
 
   useEffect(() => {
-    const isAdmin = rol === "ADMIN";
-    if (!isAdmin) {
+    if (!canAccessAllBodegas) {
       if (userBodegaId) setBodegaFiltro(Number(userBodegaId));
       if (usuario) setVendedorFiltro(usuario);
     } else {
       setBodegaFiltro("all");
       setVendedorFiltro("all");
     }
-  }, [rol, usuario, userBodegaId]);
+  }, [canAccessAllBodegas, usuario, userBodegaId]);
 
   const stats = useMemo(() => {
     const hoy = new Date();
@@ -277,7 +280,7 @@ export default function Dashboard() {
           </Typography>
         </Stack>
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" justifyContent="flex-end">
-          <FormControl size="small" sx={{ minWidth: 150 }} disabled={rol !== "ADMIN"}>
+          <FormControl size="small" sx={{ minWidth: 150 }} disabled={!canAccessAllBodegas}>
             <InputLabel>Filtrar por bodega</InputLabel>
             <Select
               label="Filtrar por bodega"
@@ -292,7 +295,7 @@ export default function Dashboard() {
               ))}
             </Select>
           </FormControl>
-          <FormControl size="small" sx={{ minWidth: 150 }} disabled={rol !== "ADMIN"}>
+          <FormControl size="small" sx={{ minWidth: 150 }} disabled={!canAccessAllBodegas}>
             <InputLabel>Filtrar por vendedor</InputLabel>
             <Select
               label="Filtrar por vendedor"

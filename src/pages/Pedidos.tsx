@@ -21,6 +21,7 @@ import { useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
+import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import uniformaLogo from "../assets/3-logos.png";
 
 interface ProductoCatalogo {
@@ -106,7 +107,10 @@ export default function Pedidos() {
   const [filterFechaFin, setFilterFechaFin] = useState("");
   const [filterBodega, setFilterBodega] = useState<number | "all">("all");
   const navigate = useNavigate();
-  const { rol, bodegaId: userBodegaId } = useAuthStore();
+  const { rol, rolId, bodegaId: userBodegaId } = useAuthStore();
+  const { crossStoreRoleIds, unifyOrderRoleIds, fetchConfig } = useSystemConfigStore();
+  const canAccessAllBodegas = rol === "ADMIN" || crossStoreRoleIds.includes(Number(rolId));
+  const canUnifyPedidos = rol === "ADMIN" || unifyOrderRoleIds.includes(Number(rolId));
 
   const obtenerNombreCliente = (row: any) =>
     row?.clienteDisplay ||
@@ -253,17 +257,18 @@ export default function Pedidos() {
 
   useEffect(() => {
     cargar();
-  }, []);
+    void fetchConfig();
+  }, [fetchConfig]);
 
   useEffect(() => {
-    if (rol === "ADMIN") {
+    if (canAccessAllBodegas) {
       setFilterBodega("all");
       return;
     }
 
     const parsedBodegaId = Number(userBodegaId);
     setFilterBodega(Number.isFinite(parsedBodegaId) && parsedBodegaId > 0 ? parsedBodegaId : "all");
-  }, [rol, userBodegaId]);
+  }, [canAccessAllBodegas, userBodegaId]);
 
   const filtered = useMemo(() => {
     return rows.filter((r) => {
@@ -271,9 +276,9 @@ export default function Pedidos() {
       const parsedUserBodegaId = Number(userBodegaId);
       const fechaPedido = toDateOnly(r.fecha);
       const bodegaUsuario =
-        rol !== "ADMIN" && Number.isFinite(parsedUserBodegaId) && parsedUserBodegaId > 0
+        !canAccessAllBodegas && Number.isFinite(parsedUserBodegaId) && parsedUserBodegaId > 0
           ? Number(r.bodegaId) === parsedUserBodegaId
-          : rol === "ADMIN";
+          : true;
       const bodegaSeleccionada =
         filterBodega === "all" ? true : Number(r.bodegaId) === Number(filterBodega);
       const cumpleFechaInicio = !filterFechaInicio || (!!fechaPedido && fechaPedido >= filterFechaInicio);
@@ -287,14 +292,14 @@ export default function Pedidos() {
         cumpleFechaFin
       );
     });
-  }, [rows, filterCliente, filterBodega, filterFechaInicio, filterFechaFin, rol, userBodegaId]);
+  }, [rows, filterCliente, filterBodega, filterFechaInicio, filterFechaFin, canAccessAllBodegas, userBodegaId]);
 
   const bodegasDisponibles = useMemo(() => {
-    if (rol === "ADMIN") return bodegas;
+    if (canAccessAllBodegas) return bodegas;
     const parsedUserBodegaId = Number(userBodegaId);
     if (!Number.isFinite(parsedUserBodegaId) || parsedUserBodegaId <= 0) return [];
     return bodegas.filter((b) => b.id === parsedUserBodegaId);
-  }, [bodegas, rol, userBodegaId]);
+  }, [bodegas, canAccessAllBodegas, userBodegaId]);
 
   const productosMap = useMemo(
     () => new Map<number, ProductoCatalogo>(productos.map((producto) => [Number(producto.id), producto])),
@@ -302,14 +307,14 @@ export default function Pedidos() {
   );
 
   const pedidosUnificables = useMemo(() => {
-    if (rol !== "ADMIN") return [];
+    if (!canUnifyPedidos) return [];
     return filtered.filter((pedido) => {
       const estado = `${pedido.estado || ""}`.trim().toLowerCase();
       const solicitado = `${pedido.solicitadoPor || "vendedor"}`.trim().toLowerCase();
       if (estado === "anulado") return false;
       return solicitado === "" || solicitado.includes("vendedor");
     });
-  }, [filtered, rol]);
+  }, [filtered, canUnifyPedidos]);
 
   const anularPedido = async (pedido: PedidoRow) => {
     const estado = `${pedido.estado || ""}`.trim().toLowerCase();
@@ -344,7 +349,7 @@ export default function Pedidos() {
   };
 
   const abrirVistaPreviaUnificada = async () => {
-    if (rol !== "ADMIN") return;
+    if (!canUnifyPedidos) return;
 
     const agrupados = new Map<string, ArticuloUnificado>();
 
@@ -594,6 +599,12 @@ export default function Pedidos() {
       renderCell: (p) => <span>{obtenerNombreBodega((p as any)?.row)}</span>,
     },
     {
+      field: "solicitadoPor",
+      headerName: "Registrado por",
+      width: 200,
+      renderCell: (p) => <span>{p.row.solicitadoPor || "N/D"}</span>,
+    },
+    {
       field: "estado",
       headerName: "Estado",
       width: 140,
@@ -654,7 +665,7 @@ export default function Pedidos() {
           <Typography variant="h4">Pedidos de produccion</Typography>
         </Stack>
         <Stack direction="row" spacing={1}>
-          {rol === "ADMIN" && (
+          {canUnifyPedidos && (
             <Button startIcon={<MergeTypeOutlined />} variant="outlined" onClick={abrirVistaPreviaUnificada}>
               Unificar
             </Button>
@@ -676,14 +687,14 @@ export default function Pedidos() {
           />
         </Grid>
         <Grid size={{ xs: 12, sm: 4 }}>
-          <FormControl fullWidth size="small" disabled={rol !== "ADMIN"}>
+          <FormControl fullWidth size="small" disabled={!canAccessAllBodegas}>
             <InputLabel>Tienda</InputLabel>
             <Select
               label="Tienda"
               value={filterBodega === "all" ? "all" : String(filterBodega)}
               onChange={(e) => setFilterBodega(e.target.value === "all" ? "all" : Number(e.target.value))}
             >
-              {rol === "ADMIN" && <MenuItem value="all">Todas</MenuItem>}
+              {canAccessAllBodegas && <MenuItem value="all">Todas</MenuItem>}
               {bodegasDisponibles.map((b) => (
                 <MenuItem key={b.id} value={b.id}>
                   {b.nombre}

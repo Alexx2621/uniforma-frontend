@@ -13,7 +13,6 @@ import {
   Divider,
   IconButton,
   Autocomplete,
-  Chip,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
 import AddIcon from "@mui/icons-material/Add";
@@ -22,6 +21,7 @@ import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../auth/useAuthStore";
+import { useSystemConfigStore } from "../config/useSystemConfigStore";
 
 interface Cliente {
   id: number;
@@ -74,7 +74,9 @@ export default function VentaNueva() {
   ]);
 
   const navigate = useNavigate();
-  const { usuario, rol, bodegaId: userBodegaId, bodegaNombre: authBodegaNombre } = useAuthStore();
+  const { usuario, rol, rolId, bodegaId: userBodegaId, bodegaNombre: authBodegaNombre } = useAuthStore();
+  const { crossStoreRoleIds, fetchConfig } = useSystemConfigStore();
+  const canAccessAllBodegas = rol === "ADMIN" || crossStoreRoleIds.includes(Number(rolId));
 
   const normalizarUbicacion = (val?: string | null) => {
     if (!val) return "";
@@ -100,11 +102,12 @@ export default function VentaNueva() {
 
   useEffect(() => {
     cargarCatalogos();
-  }, []);
+    void fetchConfig();
+  }, [fetchConfig]);
 
   // fijar bodega solo cuando catÃ¡logo estÃ© cargado y la bodega existe
   useEffect(() => {
-    if (userBodegaId && rol !== "ADMIN") {
+    if (userBodegaId && !canAccessAllBodegas) {
       const parsed = Number(userBodegaId);
       const exists = bodegas.some((b) => b.id === parsed);
       setBodegaId(exists ? parsed : "");
@@ -114,7 +117,7 @@ export default function VentaNueva() {
         setUbicacion(ubic || "TIENDA");
       }
     }
-  }, [userBodegaId, rol, bodegas]);
+  }, [userBodegaId, canAccessAllBodegas, bodegas]);
 
   const fetchStock = async (bodega: number, producto: number) => {
     try {
@@ -199,10 +202,6 @@ export default function VentaNueva() {
 
   const onCantidadChange = (key: number, value: number) => {
     setDetalle((prev) => prev.map((r) => (r.key === key ? { ...r, cantidad: value } : r)));
-  };
-
-  const onPrecioChange = (key: number, value: number) => {
-    setDetalle((prev) => prev.map((r) => (r.key === key ? { ...r, precio: value } : r)));
   };
 
   const onBordadoChange = (key: number, value: number) => {
@@ -447,7 +446,7 @@ export default function VentaNueva() {
               label="Bodega"
               value={bodegaId === "" ? "" : bodegaId}
               onChange={(e) => onBodegaChange(Number(e.target.value))}
-              disabled={!!userBodegaId && rol !== "ADMIN"}
+              disabled={!!userBodegaId && !canAccessAllBodegas}
             >
               {bodegas.map((b) => (
                 <MenuItem key={b.id} value={b.id}>

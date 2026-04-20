@@ -5,6 +5,8 @@ interface SystemConfigState {
   disabledPaths: string[];
   userDisabledPaths: Record<string, string[]>;
   productionInternalMode: boolean;
+  crossStoreRoleIds: number[];
+  unifyOrderRoleIds: number[];
   loaded: boolean;
   loading: boolean;
   fetchConfig: () => Promise<void>;
@@ -16,6 +18,8 @@ export const useSystemConfigStore = create<SystemConfigState>((set) => ({
   disabledPaths: [],
   userDisabledPaths: {},
   productionInternalMode: false,
+  crossStoreRoleIds: [],
+  unifyOrderRoleIds: [],
   loaded: false,
   loading: false,
 
@@ -30,6 +34,12 @@ export const useSystemConfigStore = create<SystemConfigState>((set) => ({
             ? resp.data.userDisabledPaths
             : {},
         productionInternalMode: Boolean(resp.data?.productionInternalMode),
+        crossStoreRoleIds: Array.isArray(resp.data?.crossStoreRoleIds)
+          ? resp.data.crossStoreRoleIds.map(Number).filter((value: number) => Number.isFinite(value) && value > 0)
+          : [],
+        unifyOrderRoleIds: Array.isArray(resp.data?.unifyOrderRoleIds)
+          ? resp.data.unifyOrderRoleIds.map(Number).filter((value: number) => Number.isFinite(value) && value > 0)
+          : [],
         loaded: true,
         loading: false,
       });
@@ -40,6 +50,8 @@ export const useSystemConfigStore = create<SystemConfigState>((set) => ({
         disabledPaths: [],
         userDisabledPaths: {},
         productionInternalMode: false,
+        crossStoreRoleIds: [],
+        unifyOrderRoleIds: [],
       });
     }
   },

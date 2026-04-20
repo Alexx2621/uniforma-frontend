@@ -34,6 +34,8 @@ interface NotifConfig {
   stockThreshold: number;
   highSaleThreshold: number;
   pedidoAlertRoleIds: number[];
+  crossStoreRoleIds: number[];
+  unifyOrderRoleIds: number[];
   emailEnabled: boolean;
   whatsappEnabled: boolean;
   productMassConfig?: unknown;
@@ -187,10 +189,14 @@ export default function Admin() {
     stockThreshold: 5,
     highSaleThreshold: 1000,
     pedidoAlertRoleIds: [],
+    crossStoreRoleIds: [],
+    unifyOrderRoleIds: [],
     emailEnabled: false,
     whatsappEnabled: false,
   });
   const [savedPedidoAlertRoleIds, setSavedPedidoAlertRoleIds] = useState<number[]>([]);
+  const [savedCrossStoreRoleIds, setSavedCrossStoreRoleIds] = useState<number[]>([]);
+  const [savedUnifyOrderRoleIds, setSavedUnifyOrderRoleIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
   const [usuarios, setUsuarios] = useState<UsuarioModulo[]>([]);
   const [roles, setRoles] = useState<RolOption[]>([]);
@@ -242,12 +248,20 @@ export default function Admin() {
         stockThreshold: data.stockThreshold ?? 5,
         highSaleThreshold: data.highSaleThreshold ?? 1000,
         pedidoAlertRoleIds: Array.isArray(data.pedidoAlertRoleIds) ? data.pedidoAlertRoleIds.map(Number) : [],
+        crossStoreRoleIds: Array.isArray(data.crossStoreRoleIds) ? data.crossStoreRoleIds.map(Number) : [],
+        unifyOrderRoleIds: Array.isArray(data.unifyOrderRoleIds) ? data.unifyOrderRoleIds.map(Number) : [],
         emailEnabled: Boolean(data.emailTo),
         whatsappEnabled: Boolean(data.whatsappTo),
         productMassConfig: data.productMassConfig,
       });
       setSavedPedidoAlertRoleIds(
         Array.isArray(data.pedidoAlertRoleIds) ? data.pedidoAlertRoleIds.map(Number) : [],
+      );
+      setSavedCrossStoreRoleIds(
+        Array.isArray(data.crossStoreRoleIds) ? data.crossStoreRoleIds.map(Number) : [],
+      );
+      setSavedUnifyOrderRoleIds(
+        Array.isArray(data.unifyOrderRoleIds) ? data.unifyOrderRoleIds.map(Number) : [],
       );
       setProductMassConfigDraft(mapMassConfigToDraft(data.productMassConfig || {}));
       setDisabledPathsDraft(Array.isArray(data.disabledPaths) ? data.disabledPaths : []);
@@ -329,6 +343,8 @@ export default function Admin() {
         stockThreshold: config.stockThreshold,
         highSaleThreshold: config.highSaleThreshold,
         pedidoAlertRoleIds: config.pedidoAlertRoleIds,
+        crossStoreRoleIds: config.crossStoreRoleIds,
+        unifyOrderRoleIds: config.unifyOrderRoleIds,
       });
       Swal.fire("Guardado", "Preferencias de notificacion actualizadas", "success");
     } catch {
@@ -361,6 +377,68 @@ export default function Admin() {
       Swal.fire("Guardado", "Los roles para alertas de pedidos fueron actualizados", "success");
     } catch {
       Swal.fire("Error", "No se pudieron guardar los roles de alertas de pedidos", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const guardarRolesMultiBodega = async () => {
+    try {
+      setLoading(true);
+      const payload = {
+        crossStoreRoleIds: Array.from(
+          new Set(
+            (config.crossStoreRoleIds || [])
+              .map((value) => Number(value))
+              .filter((value) => Number.isFinite(value) && value > 0),
+          ),
+        ),
+      };
+      const { data } = await api.put("/config/notificaciones", payload);
+      const nextSavedRoleIds = Array.isArray(data?.crossStoreRoleIds)
+        ? data.crossStoreRoleIds.map(Number)
+        : payload.crossStoreRoleIds;
+      setConfig((prev) => ({
+        ...prev,
+        crossStoreRoleIds: nextSavedRoleIds,
+      }));
+      setSavedCrossStoreRoleIds(nextSavedRoleIds);
+      await fetchConfig();
+      await cargar();
+      Swal.fire("Guardado", "Los roles con acceso multi-bodega fueron actualizados", "success");
+    } catch {
+      Swal.fire("Error", "No se pudieron guardar los roles con acceso multi-bodega", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const guardarRolesUnificarPedidos = async () => {
+    try {
+      setLoading(true);
+      const payload = {
+        unifyOrderRoleIds: Array.from(
+          new Set(
+            (config.unifyOrderRoleIds || [])
+              .map((value) => Number(value))
+              .filter((value) => Number.isFinite(value) && value > 0),
+          ),
+        ),
+      };
+      const { data } = await api.put("/config/notificaciones", payload);
+      const nextSavedRoleIds = Array.isArray(data?.unifyOrderRoleIds)
+        ? data.unifyOrderRoleIds.map(Number)
+        : payload.unifyOrderRoleIds;
+      setConfig((prev) => ({
+        ...prev,
+        unifyOrderRoleIds: nextSavedRoleIds,
+      }));
+      setSavedUnifyOrderRoleIds(nextSavedRoleIds);
+      await fetchConfig();
+      await cargar();
+      Swal.fire("Guardado", "Los roles con permiso para unificar pedidos fueron actualizados", "success");
+    } catch {
+      Swal.fire("Error", "No se pudieron guardar los roles con permiso para unificar pedidos", "error");
     } finally {
       setLoading(false);
     }
@@ -730,6 +808,132 @@ export default function Admin() {
                 </Grid>
               ))}
             </Grid>
+          </Stack>
+        </Paper>
+      )}
+
+      {canManageAdmin && (
+        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+          <Stack spacing={1.5}>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <NotificationsActiveOutlined color="primary" />
+              <Typography variant="subtitle2">Acceso multi-tienda por rol</Typography>
+            </Stack>
+            <Typography variant="body2" color="text.secondary">
+              Los roles seleccionados podran operar con varias tiendas y elegir bodega en pantallas donde normalmente se usa la bodega asignada al usuario.
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Roles guardados actualmente:{" "}
+              {savedCrossStoreRoleIds.length
+                ? roles
+                    .filter((role) => savedCrossStoreRoleIds.includes(role.id))
+                    .map((role) => role.nombre)
+                    .join(", ")
+                : "ninguno"}
+            </Typography>
+            <TextField
+              select
+              fullWidth
+              label="Roles con acceso multi-tienda"
+              value={config.crossStoreRoleIds}
+              onChange={(e) =>
+                setConfig({
+                  ...config,
+                  crossStoreRoleIds:
+                    typeof e.target.value === "string"
+                      ? e.target.value
+                          .split(",")
+                          .map((value) => Number(value))
+                          .filter((value) => Number.isFinite(value))
+                      : (e.target.value as number[]),
+                })
+              }
+              SelectProps={{
+                multiple: true,
+                renderValue: (selected) => {
+                  const ids = Array.isArray(selected) ? selected.map(Number) : [];
+                  return roles
+                    .filter((role) => ids.includes(role.id))
+                    .map((role) => role.nombre)
+                    .join(", ");
+                },
+              }}
+              helperText="Se aplica especificamente con el boton de abajo."
+            >
+              {roles.map((role) => (
+                <MenuItem key={role.id} value={role.id}>
+                  {role.nombre}
+                </MenuItem>
+              ))}
+            </TextField>
+            <Stack direction="row" justifyContent="flex-end">
+              <Button variant="contained" onClick={guardarRolesMultiBodega} disabled={loading}>
+                Aplicar acceso multi-tienda
+              </Button>
+            </Stack>
+          </Stack>
+        </Paper>
+      )}
+
+      {canManageAdmin && (
+        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+          <Stack spacing={1.5}>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <NotificationsActiveOutlined color="primary" />
+              <Typography variant="subtitle2">Permiso para unificar pedidos por rol</Typography>
+            </Stack>
+            <Typography variant="body2" color="text.secondary">
+              Los roles seleccionados veran habilitado el boton de unificar pedidos en produccion.
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Roles guardados actualmente:{" "}
+              {savedUnifyOrderRoleIds.length
+                ? roles
+                    .filter((role) => savedUnifyOrderRoleIds.includes(role.id))
+                    .map((role) => role.nombre)
+                    .join(", ")
+                : "ninguno"}
+            </Typography>
+            <TextField
+              select
+              fullWidth
+              label="Roles con permiso para unificar pedidos"
+              value={config.unifyOrderRoleIds}
+              onChange={(e) =>
+                setConfig({
+                  ...config,
+                  unifyOrderRoleIds:
+                    typeof e.target.value === "string"
+                      ? e.target.value
+                          .split(",")
+                          .map((value) => Number(value))
+                          .filter((value) => Number.isFinite(value))
+                      : (e.target.value as number[]),
+                })
+              }
+              SelectProps={{
+                multiple: true,
+                renderValue: (selected) => {
+                  const ids = Array.isArray(selected) ? selected.map(Number) : [];
+                  return roles
+                    .filter((role) => ids.includes(role.id))
+                    .map((role) => role.nombre)
+                    .join(", ");
+                },
+              }}
+              helperText="Se aplica especificamente con el boton de abajo."
+            >
+              {roles.map((role) => (
+                <MenuItem key={role.id} value={role.id}>
+                  {role.nombre}
+                </MenuItem>
+              ))}
+            </TextField>
+            <Stack direction="row" justifyContent="flex-end">
+              <Button variant="contained" onClick={guardarRolesUnificarPedidos} disabled={loading}>
+                Aplicar permiso de unificar pedidos
+              </Button>
+            </Stack>
           </Stack>
         </Paper>
       )}

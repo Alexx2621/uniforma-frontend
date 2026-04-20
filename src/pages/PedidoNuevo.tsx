@@ -284,10 +284,12 @@ export default function PedidoNuevo() {
     primerApellido,
     bodegaNombre: authBodegaNombre,
     rol,
+    rolId,
     bodegaId: userBodegaId,
   } = useAuthStore();
-  const { productionInternalMode, fetchConfig } = useSystemConfigStore();
+  const { productionInternalMode, crossStoreRoleIds, fetchConfig } = useSystemConfigStore();
   const navigate = useNavigate();
+  const canAccessAllBodegas = rol === "ADMIN" || crossStoreRoleIds.includes(Number(rolId));
 
   const cargarCatalogos = async () => {
     try {
@@ -316,12 +318,12 @@ export default function PedidoNuevo() {
   }, [fetchConfig]);
 
   useEffect(() => {
-    if (userBodegaId && rol !== "ADMIN") {
+    if (userBodegaId && !canAccessAllBodegas) {
       const parsed = Number(userBodegaId);
       const exists = bodegas.some((b) => b.id === parsed);
       setBodegaId(exists ? parsed : "");
     }
-  }, [userBodegaId, rol, bodegas]);
+  }, [userBodegaId, canAccessAllBodegas, bodegas]);
 
   const totals = useMemo(() => {
     const subtotal = detalle.reduce((sum, d) => {
@@ -882,7 +884,7 @@ export default function PedidoNuevo() {
               label="Bodega"
               value={bodegaId === "" ? "" : bodegaId}
               onChange={(e) => setBodegaId(Number(e.target.value))}
-              disabled={!!userBodegaId && rol !== "ADMIN"}
+              disabled={!!userBodegaId && !canAccessAllBodegas}
             >
               {bodegas.map((b) => (
                 <MenuItem key={b.id} value={b.id}>

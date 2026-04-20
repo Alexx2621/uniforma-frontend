@@ -20,6 +20,7 @@ import SwapHorizIcon from "@mui/icons-material/SwapHoriz";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
+import { useSystemConfigStore } from "../config/useSystemConfigStore";
 
 interface DetalleRow {
   key: number;
@@ -38,8 +39,10 @@ export default function Traslados() {
   const [detalle, setDetalle] = useState<DetalleRow[]>([
     { key: Date.now(), productoId: "", cantidad: 0, stockOrigen: null, stockMaxDestino: null },
   ]);
-  const { rol, bodegaId: userBodegaId } = useAuthStore();
+  const { rol, rolId, bodegaId: userBodegaId } = useAuthStore();
   const { usuario } = useAuthStore();
+  const { crossStoreRoleIds, fetchConfig } = useSystemConfigStore();
+  const canAccessAllBodegas = rol === "ADMIN" || crossStoreRoleIds.includes(Number(rolId));
 
   const cargarCatalogos = async () => {
     try {
@@ -53,15 +56,16 @@ export default function Traslados() {
 
   useEffect(() => {
     cargarCatalogos();
-  }, []);
+    void fetchConfig();
+  }, [fetchConfig]);
 
   useEffect(() => {
-    if (userBodegaId && rol !== "ADMIN") {
+    if (userBodegaId && !canAccessAllBodegas) {
       const parsed = Number(userBodegaId);
       const exists = bodegas.some((b) => b.id === parsed);
       setDesdeBodegaId(exists ? parsed : "");
     }
-  }, [userBodegaId, rol, bodegas]);
+  }, [userBodegaId, canAccessAllBodegas, bodegas]);
 
   const fetchStock = async (bodega: number, producto: number) => {
     try {
@@ -309,7 +313,7 @@ export default function Traslados() {
               label="Bodega origen"
               value={desdeBodegaId === "" ? "" : desdeBodegaId}
               onChange={(e) => onBodegaChange("desde", Number(e.target.value))}
-              disabled={!!userBodegaId && rol !== "ADMIN"}
+              disabled={!!userBodegaId && !canAccessAllBodegas}
             >
               {bodegas.map((b) => (
                 <MenuItem key={b.id} value={b.id}>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Paper,
   Typography,
@@ -83,8 +83,8 @@ interface Pedido {
 export default function PedidoDetalle() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { rol, bodegaId: userBodegaId } = useAuthStore();
-  const { productionInternalMode, fetchConfig } = useSystemConfigStore();
+  const { rol, rolId, bodegaId: userBodegaId } = useAuthStore();
+  const { productionInternalMode, crossStoreRoleIds, fetchConfig } = useSystemConfigStore();
   const [pedido, setPedido] = useState<Pedido | null>(null);
   const [loading, setLoading] = useState(false);
   const [pagoFinal, setPagoFinal] = useState(0);
@@ -95,8 +95,9 @@ export default function PedidoDetalle() {
   const [telas, setTelas] = useState<any[]>([]);
   const [tallas, setTallas] = useState<any[]>([]);
   const [colores, setColores] = useState<any[]>([]);
+  const canAccessAllBodegas = rol === "ADMIN" || crossStoreRoleIds.includes(Number(rolId));
 
-  const cargar = async () => {
+  const cargar = useCallback(async () => {
     if (!id) return;
     try {
       setLoading(true);
@@ -112,19 +113,19 @@ export default function PedidoDetalle() {
       setTelas(respTelas.data || []);
       setTallas(respTallas.data || []);
       setColores(respColores.data || []);
-      const pref = userBodegaId && rol !== "ADMIN" ? Number(userBodegaId) : "";
+      const pref = userBodegaId && !canAccessAllBodegas ? Number(userBodegaId) : "";
       setBodegaIngreso(pref || respPedido.data?.bodegaId || "");
     } catch {
       Swal.fire("Error", "No se pudo cargar el pedido", "error");
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, userBodegaId, canAccessAllBodegas]);
 
   useEffect(() => {
     void fetchConfig();
     void cargar();
-  }, [id, fetchConfig]);
+  }, [fetchConfig, cargar]);
 
   const totalPagado = useMemo(
     () => (pedido?.pagos || []).reduce((sum, p) => sum + (p.monto || 0), 0),
@@ -613,7 +614,7 @@ export default function PedidoDetalle() {
                   label="Bodega ingreso"
                   value={bodegaIngreso === "" ? "" : bodegaIngreso}
                   onChange={(e) => setBodegaIngreso(Number(e.target.value))}
-                  disabled={esAnulado || esRecibido || (!!userBodegaId && rol !== "ADMIN")}
+                  disabled={esAnulado || esRecibido || (!!userBodegaId && !canAccessAllBodegas)}
                 >
                   {bodegas.map((b) => (
                     <MenuItem key={b.id} value={b.id}>
