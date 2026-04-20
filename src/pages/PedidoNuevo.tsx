@@ -277,7 +277,15 @@ export default function PedidoNuevo() {
   const [ocultarCamposCabecera, setOcultarCamposCabecera] = useState(false);
   const [cantidadAdvertida, setCantidadAdvertida] = useState<number | null>(null);
 
-  const { rol, bodegaId: userBodegaId } = useAuthStore();
+  const {
+    usuario,
+    nombre,
+    primerNombre,
+    primerApellido,
+    bodegaNombre: authBodegaNombre,
+    rol,
+    bodegaId: userBodegaId,
+  } = useAuthStore();
   const { productionInternalMode, fetchConfig } = useSystemConfigStore();
   const navigate = useNavigate();
 
@@ -625,11 +633,18 @@ export default function PedidoNuevo() {
       return;
     }
 
+    const solicitadoPor =
+      [primerNombre?.trim(), primerApellido?.trim()].filter(Boolean).join(" ") ||
+      nombre?.trim() ||
+      usuario?.trim() ||
+      authBodegaNombre?.trim() ||
+      "usuario";
+
     const payload = {
       clienteId: productionInternalMode ? null : clienteId === "" ? null : Number(clienteId),
       bodegaId: Number(bodegaId),
       observaciones,
-      solicitadoPor: "vendedor",
+      solicitadoPor,
       totalEstimado: totals.total,
       anticipo: productionInternalMode ? 0 : Number(anticipo) || 0,
       metodoPago: productionInternalMode ? "interno" : metodoPago,

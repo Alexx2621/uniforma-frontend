@@ -33,6 +33,7 @@ interface NotifConfig {
   whatsappTo: string;
   stockThreshold: number;
   highSaleThreshold: number;
+  pedidoAlertRoleIds: number[];
   emailEnabled: boolean;
   whatsappEnabled: boolean;
   productMassConfig?: unknown;
@@ -41,6 +42,11 @@ interface NotifConfig {
 interface UsuarioModulo {
   id: number;
   usuario: string;
+  nombre: string;
+}
+
+interface RolOption {
+  id: number;
   nombre: string;
 }
 
@@ -180,11 +186,14 @@ export default function Admin() {
     whatsappTo: "",
     stockThreshold: 5,
     highSaleThreshold: 1000,
+    pedidoAlertRoleIds: [],
     emailEnabled: false,
     whatsappEnabled: false,
   });
+  const [savedPedidoAlertRoleIds, setSavedPedidoAlertRoleIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
   const [usuarios, setUsuarios] = useState<UsuarioModulo[]>([]);
+  const [roles, setRoles] = useState<RolOption[]>([]);
   const [disabledPathsDraft, setDisabledPathsDraft] = useState<string[]>([]);
   const [userDisabledPathsDraft, setUserDisabledPathsDraft] = useState<Record<string, string[]>>({});
   const [selectedUsuario, setSelectedUsuario] = useState("");
@@ -221,9 +230,10 @@ export default function Admin() {
   const cargar = useCallback(async () => {
     try {
       setLoading(true);
-      const [respConfig, respUsuarios] = await Promise.all([
+      const [respConfig, respUsuarios, respRoles] = await Promise.all([
         api.get("/config/notificaciones"),
         canManageAdmin ? api.get("/usuarios").catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
+        canManageAdmin ? api.get("/roles").catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
       ]);
       const data = respConfig.data || {};
       setConfig({
@@ -231,10 +241,14 @@ export default function Admin() {
         whatsappTo: data.whatsappTo || "",
         stockThreshold: data.stockThreshold ?? 5,
         highSaleThreshold: data.highSaleThreshold ?? 1000,
+        pedidoAlertRoleIds: Array.isArray(data.pedidoAlertRoleIds) ? data.pedidoAlertRoleIds.map(Number) : [],
         emailEnabled: Boolean(data.emailTo),
         whatsappEnabled: Boolean(data.whatsappTo),
         productMassConfig: data.productMassConfig,
       });
+      setSavedPedidoAlertRoleIds(
+        Array.isArray(data.pedidoAlertRoleIds) ? data.pedidoAlertRoleIds.map(Number) : [],
+      );
       setProductMassConfigDraft(mapMassConfigToDraft(data.productMassConfig || {}));
       setDisabledPathsDraft(Array.isArray(data.disabledPaths) ? data.disabledPaths : []);
       setUserDisabledPathsDraft(
@@ -249,6 +263,15 @@ export default function Admin() {
             id: Number(item.id),
             usuario: item.usuario,
             nombre: item.nombre || item.usuario,
+          }))
+      );
+      const rolesData = Array.isArray(respRoles.data) ? respRoles.data : [];
+      setRoles(
+        rolesData
+          .filter((item: any) => Number.isFinite(Number(item?.id)) && typeof item?.nombre === "string")
+          .map((item: any) => ({
+            id: Number(item.id),
+            nombre: item.nombre,
           }))
       );
     } catch {
@@ -305,10 +328,39 @@ export default function Admin() {
         whatsappTo: config.whatsappEnabled ? config.whatsappTo : "",
         stockThreshold: config.stockThreshold,
         highSaleThreshold: config.highSaleThreshold,
+        pedidoAlertRoleIds: config.pedidoAlertRoleIds,
       });
       Swal.fire("Guardado", "Preferencias de notificacion actualizadas", "success");
     } catch {
       Swal.fire("Error", "No se pudo guardar la configuracion", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const guardarAlertasPedido = async () => {
+    try {
+      setLoading(true);
+      const payload = {
+        pedidoAlertRoleIds: Array.from(
+          new Set(
+            (config.pedidoAlertRoleIds || [])
+              .map((value) => Number(value))
+              .filter((value) => Number.isFinite(value) && value > 0),
+          ),
+        ),
+      };
+      const { data } = await api.put("/config/notificaciones", payload);
+      const nextSavedRoleIds = Array.isArray(data?.pedidoAlertRoleIds) ? data.pedidoAlertRoleIds.map(Number) : [];
+      setConfig((prev) => ({
+        ...prev,
+        pedidoAlertRoleIds: nextSavedRoleIds,
+      }));
+      setSavedPedidoAlertRoleIds(nextSavedRoleIds);
+      await fetchConfig();
+      Swal.fire("Guardado", "Los roles para alertas de pedidos fueron actualizados", "success");
+    } catch {
+      Swal.fire("Error", "No se pudieron guardar los roles de alertas de pedidos", "error");
     } finally {
       setLoading(false);
     }
@@ -1029,6 +1081,69 @@ export default function Admin() {
       )}
 
       <Divider sx={{ my: 2 }} />
+
+      {canManageAdmin && (
+        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+          <Stack spacing={1.5}>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <NotificationsActiveOutlined color="primary" />
+              <Typography variant="subtitle2">Alertas internas de pedidos</Typography>
+            </Stack>
+            <Typography variant="body2" color="text.secondary">
+              Selecciona los roles que deben recibir una alerta interna cada vez que se genere un pedido de produccion.
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Roles guardados actualmente:{" "}
+              {savedPedidoAlertRoleIds.length
+                ? roles
+                    .filter((role) => savedPedidoAlertRoleIds.includes(role.id))
+                    .map((role) => role.nombre)
+                    .join(", ")
+                : "ninguno"}
+            </Typography>
+            <TextField
+              select
+              fullWidth
+              label="Roles a notificar por nuevo pedido"
+              value={config.pedidoAlertRoleIds}
+              onChange={(e) =>
+                setConfig({
+                  ...config,
+                  pedidoAlertRoleIds:
+                    typeof e.target.value === "string"
+                      ? e.target.value
+                          .split(",")
+                          .map((value) => Number(value))
+                          .filter((value) => Number.isFinite(value))
+                      : (e.target.value as number[]),
+                })
+              }
+              SelectProps={{
+                multiple: true,
+                renderValue: (selected) => {
+                  const ids = Array.isArray(selected) ? selected.map(Number) : [];
+                  return roles
+                    .filter((role) => ids.includes(role.id))
+                    .map((role) => role.nombre)
+                    .join(", ");
+                },
+              }}
+              helperText="Esta configuracion se guarda con el boton de abajo y aplica por rol, no por usuario individual."
+            >
+              {roles.map((role) => (
+                <MenuItem key={role.id} value={role.id}>
+                  {role.nombre}
+                </MenuItem>
+              ))}
+            </TextField>
+            <Stack direction="row" justifyContent="flex-end">
+              <Button variant="contained" onClick={guardarAlertasPedido} disabled={loading}>
+                Guardar roles de alertas
+              </Button>
+            </Stack>
+          </Stack>
+        </Paper>
+      )}
 
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, md: 6 }}>
