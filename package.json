@@ -51,6 +51,7 @@
     ]
   },
   "devDependencies": {
-    "@types/react": "^19.2.7"
+    "@types/react": "^19.2.7",
+    "yaml": "^2.8.3"
   }
 }
