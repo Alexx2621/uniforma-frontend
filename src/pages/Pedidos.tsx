@@ -308,13 +308,20 @@ export default function Pedidos() {
 
   const pedidosUnificables = useMemo(() => {
     if (!canUnifyPedidos) return [];
-    return filtered.filter((pedido) => {
+
+    const parsedUserBodegaId = Number(userBodegaId);
+    return rows.filter((pedido) => {
       const estado = `${pedido.estado || ""}`.trim().toLowerCase();
-      const solicitado = `${pedido.solicitadoPor || "vendedor"}`.trim().toLowerCase();
       if (estado === "anulado") return false;
-      return solicitado === "" || solicitado.includes("vendedor");
+
+      if (canAccessAllBodegas) {
+        return filterBodega === "all" ? true : Number(pedido.bodegaId) === Number(filterBodega);
+      }
+
+      if (!Number.isFinite(parsedUserBodegaId) || parsedUserBodegaId <= 0) return true;
+      return Number(pedido.bodegaId) === parsedUserBodegaId;
     });
-  }, [filtered, canUnifyPedidos]);
+  }, [rows, canUnifyPedidos, canAccessAllBodegas, filterBodega, userBodegaId]);
 
   const anularPedido = async (pedido: PedidoRow) => {
     const estado = `${pedido.estado || ""}`.trim().toLowerCase();
@@ -403,8 +410,8 @@ export default function Pedidos() {
       return a.nombre.localeCompare(b.nombre);
     });
 
-    if (!articulos.length) {
-      Swal.fire("Aviso", "No hay articulos para unificar con los filtros actuales", "info");
+    if (!pedidosUnificables.length) {
+      Swal.fire("Aviso", "No hay pedidos disponibles para unificar", "info");
       return;
     }
 
@@ -438,9 +445,11 @@ export default function Pedidos() {
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#39;");
 
-    const filasHtml = articulos
-      .map(
-        (item, idx) => `<tr>
+    const filasHtml =
+      articulos.length > 0
+        ? articulos
+            .map(
+              (item, idx) => `<tr>
           <td class="cantidad">${escapeHtml(item.cantidad)}</td>
           <td>${escapeHtml(item.tipo)}</td>
           <td>${escapeHtml(item.tela)}</td>
@@ -449,8 +458,12 @@ export default function Pedidos() {
           <td>${escapeHtml(item.genero)}</td>
           <td>${escapeHtml(item.descripcion === "N/D" ? "" : item.descripcion)}</td>
         </tr>`
-      )
-      .join("");
+            )
+            .join("")
+        : `<tr>
+            <td class="cantidad">-</td>
+            <td colspan="6" style="text-align:center;">No hay articulos detallados en los pedidos seleccionados</td>
+          </tr>`;
 
     const fechaGeneracion = new Date();
     const fechaDocumento = fechaGeneracion.toLocaleDateString("es-GT");

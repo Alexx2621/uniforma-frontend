@@ -195,6 +195,7 @@ export default function Ventas() {
           const precio = Number(item.precioUnit || 0);
           const bordado = Number(item.bordado || 0);
           const desc = Number(item.descuento || 0);
+          const descripcion = item.descripcion || "";
           const subtotalRow = Number(item.subtotal || 0);
           return `<tr>
             <td>${idx + 1}</td>
@@ -204,10 +205,11 @@ export default function Ventas() {
             <td>${precio.toFixed(2)}</td>
             <td>${bordado.toFixed(2)}</td>
             <td>${desc.toFixed(2)}%</td>
+            <td>${descripcion}</td>
             <td>${subtotalRow.toFixed(2)}</td>
           </tr>`;
         })
-        .join("") || `<tr><td colspan="8" style="text-align:center;color:#6b7280;">Sin detalle</td></tr>`;
+        .join("") || `<tr><td colspan="9" style="text-align:center;color:#6b7280;">Sin detalle</td></tr>`;
 
     win.document.write(`<!DOCTYPE html>
       <html>
@@ -268,6 +270,7 @@ export default function Ventas() {
                   <th>Precio</th>
                   <th>Bordado</th>
                   <th>Desc.</th>
+                  <th>Observacion</th>
                   <th>Subtotal</th>
                 </tr>
               </thead>
@@ -319,11 +322,12 @@ export default function Ventas() {
               <td>${productoMap.get(Number(d.productoId))?.codigo || d.producto?.codigo || d.productoId || ""}</td>
               <td>${d.cantidad ?? 0}</td>
               <td>${formatter(Number(d.precioUnit || 0))}</td>
+              <td>${d.descripcion || ""}</td>
               <td>${formatter(Number(d.subtotal || 0))}</td>
             </tr>`,
             )
             .join("")
-        : `<tr><td colspan="5" style="text-align:center;color:#6b7280;">Sin detalle</td></tr>`;
+        : `<tr><td colspan="6" style="text-align:center;color:#6b7280;">Sin detalle</td></tr>`;
 
     Swal.fire({
       title: "Detalle de venta",
@@ -348,6 +352,7 @@ export default function Ventas() {
                 <th style="border:1px solid #e5e7eb;padding:6px;text-align:left;">Producto</th>
                 <th style="border:1px solid #e5e7eb;padding:6px;text-align:left;">Cant.</th>
                 <th style="border:1px solid #e5e7eb;padding:6px;text-align:left;">Precio</th>
+                <th style="border:1px solid #e5e7eb;padding:6px;text-align:left;">Observacion</th>
                 <th style="border:1px solid #e5e7eb;padding:6px;text-align:left;">Subtotal</th>
               </tr>
             </thead>
