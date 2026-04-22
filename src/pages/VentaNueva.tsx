@@ -28,11 +28,19 @@ import { api } from "../api/axios";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
+import LOGO_URL from "../assets/3-logos.png";
+import { buildVentaPdfHtml } from "../utils/ventaPdf";
 
 interface Cliente {
   id: number;
   nombre: string;
 }
+
+const CLIENTE_CF_ID = -1;
+const CLIENTE_CF_OPTION: Cliente = {
+  id: CLIENTE_CF_ID,
+  nombre: "CF",
+};
 
 interface Producto {
   id: number;
@@ -135,12 +143,12 @@ export default function VentaNueva() {
   const [telas, setTelas] = useState<any[]>([]);
   const [tallas, setTallas] = useState<any[]>([]);
   const [colores, setColores] = useState<any[]>([]);
-  const [clienteId, setClienteId] = useState<number | "">("");
+  const [clienteId, setClienteId] = useState<number | "">(CLIENTE_CF_ID);
   const [bodegaId, setBodegaId] = useState<number | "">("");
   const [metodoPago, setMetodoPago] = useState<string>("efectivo");
   const [ubicacion, setUbicacion] = useState<string>("TIENDA");
   const [porcentajeRecargo, setPorcentajeRecargo] = useState<number>(0);
-  const [observaciones, setObservaciones] = useState("");
+  const [referenciaPago, setReferenciaPago] = useState("");
   const [detalle, setDetalle] = useState<DetalleRow[]>([]);
   const [articuloActual, setArticuloActual] = useState<CapturaArticulo>(detalleInicial);
   const [cantidadInput, setCantidadInput] = useState("1");
@@ -155,8 +163,14 @@ export default function VentaNueva() {
   const { usuario, rol, rolId, bodegaId: userBodegaId, bodegaNombre: authBodegaNombre } = useAuthStore();
   const { crossStoreRoleIds, fetchConfig } = useSystemConfigStore();
   const canAccessAllBodegas = rol === "ADMIN" || crossStoreRoleIds.includes(Number(rolId));
+  const metodoUsaRecargo = metodoPago === "tarjeta" || metodoPago === "visalink";
+  const metodoRequiereReferencia = metodoPago !== "efectivo";
   const stockRestanteEstimado =
     articuloActual.stock != null ? Math.max(articuloActual.stock - (Number(cantidadInput) || 0), 0) : null;
+  const clientesConCf = useMemo(() => {
+    const hasCf = clientes.some((cliente) => `${cliente.nombre || ""}`.trim().toUpperCase() === "CF");
+    return hasCf ? clientes : [CLIENTE_CF_OPTION, ...clientes];
+  }, [clientes]);
 
   const normalizarUbicacion = (val?: string | null) => {
     if (!val) return "";
@@ -489,10 +503,10 @@ export default function VentaNueva() {
           ((Number(item.precio) || 0) * (1 - (Number(item.descuento || 0) / 100)) + Number(item.bordado || 0)),
       0,
     );
-    const recargo = metodoPago === "tarjeta" ? subtotal * ((porcentajeRecargo || 0) / 100) : 0;
+    const recargo = metodoUsaRecargo ? subtotal * ((porcentajeRecargo || 0) / 100) : 0;
     const total = subtotal + recargo;
     return { subtotal, recargo, total };
-  }, [detalle, metodoPago, porcentajeRecargo]);
+  }, [detalle, metodoUsaRecargo, porcentajeRecargo]);
 
   const calcularSubtotal = (item: DetalleRow) => {
     const precioConDescuento = (Number(item.precio) || 0) * (1 - (Number(item.descuento || 0) / 100));
@@ -501,7 +515,7 @@ export default function VentaNueva() {
 
   const calcularTotalesDesdeDetalle = (detalleActual: DetalleRow[]) => {
     const subtotal = detalleActual.reduce((sum, item) => sum + calcularSubtotal(item), 0);
-    const recargoCalculado = metodoPago === "tarjeta" ? subtotal * ((porcentajeRecargo || 0) / 100) : 0;
+    const recargoCalculado = metodoUsaRecargo ? subtotal * ((porcentajeRecargo || 0) / 100) : 0;
     return { subtotal, recargo: recargoCalculado, total: subtotal + recargoCalculado };
   };
 
@@ -513,127 +527,40 @@ export default function VentaNueva() {
     }
 
     const clienteNombre =
-      clientes.find((c) => c.id === (clienteId === "" ? null : Number(clienteId)))?.nombre || "Consumidor final";
+      clientesConCf.find((c) => c.id === (clienteId === "" ? null : Number(clienteId)))?.nombre || "CF";
     const bodegaNombre = bodegas.find((b) => b.id === Number(bodegaId))?.nombre || authBodegaNombre || "N/D";
     const vendedor = usuario || "Vendedor";
     const fecha = venta?.fecha ? new Date(venta.fecha) : new Date();
     const folio = venta?.id ? `V-${venta.id}` : "Pendiente";
     const totalesPdf = calcularTotalesDesdeDetalle(detalleUsado);
 
-    const filasHtml = detalleUsado
-      .map((item, idx) => {
+    const html = buildVentaPdfHtml({
+      folio,
+      fecha,
+      cliente: clienteNombre,
+      metodoPago,
+      referenciaPago: metodoRequiereReferencia ? referenciaPago || "N/D" : "No aplica",
+      bodega: bodegaNombre,
+      ubicacion: ubicacion || "N/D",
+      vendedor,
+      subtotal: totalesPdf.subtotal,
+      recargo: totalesPdf.recargo,
+      total: totalesPdf.total,
+      recargoEtiqueta: metodoUsaRecargo ? `Recargo (${porcentajeRecargo || 0}%)` : undefined,
+      logoUrl: LOGO_URL,
+      items: detalleUsado.map((item) => {
         const producto = productos.find((p) => p.id === item.productoId);
-        return `<tr>
-            <td>${idx + 1}</td>
-            <td>${producto?.codigo || item.productoId}</td>
-            <td>${producto?.nombre || "Producto"}</td>
-            <td>${item.cantidad}</td>
-            <td>${(Number(item.precio) || 0).toFixed(2)}</td>
-            <td>${(Number(item.bordado) || 0).toFixed(2)}</td>
-            <td>${(Number(item.descuento) || 0).toFixed(2)}%</td>
-            <td>${item.descripcion || ""}</td>
-            <td>${calcularSubtotal(item).toFixed(2)}</td>
-          </tr>`;
-      })
-      .join("");
-
-    const html = `<!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="utf-8" />
-          <title>Resumen de venta</title>
-          <style>
-            body { font-family: Arial, sans-serif; margin: 24px; color: #1f2937; }
-            .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 18px; }
-            .brand { font-size: 18px; font-weight: 700; letter-spacing: 0.5px; }
-            .folio { font-size: 14px; color: #475569; }
-            .section { margin-bottom: 18px; }
-            .section h3 { margin: 0 0 8px 0; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; color: #0f172a; }
-            .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px 16px; font-size: 13px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }
-            th { background: #0f172a; color: #fff; text-align: left; padding: 8px; }
-            td { border-bottom: 1px solid #e2e8f0; padding: 7px; }
-            .totals { width: 280px; margin-left: auto; margin-top: 12px; font-size: 13px; }
-            .totals-row { display: flex; justify-content: space-between; padding: 6px 0; }
-            .totals-row.total { font-weight: 700; border-top: 2px solid #0f172a; margin-top: 4px; }
-            .footer { margin-top: 20px; font-size: 12px; color: #475569; }
-            .badge { display: inline-flex; padding: 4px 10px; border-radius: 999px; background: #e2e8f0; font-weight: 600; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <div>
-              <div class="brand">Uniforma</div>
-              <div>Uniformes y bordados</div>
-            </div>
-            <div style="text-align:right">
-              <div class="folio">${folio}</div>
-              <div>${fecha.toLocaleDateString()} ${fecha.toLocaleTimeString()}</div>
-            </div>
-          </div>
-
-          <div class="section">
-            <h3>Resumen</h3>
-            <div class="info-grid">
-              <div><strong>Cliente:</strong> ${clienteNombre}</div>
-              <div><strong>Metodo de pago:</strong> ${metodoPago}</div>
-              <div><strong>Bodega/Tienda:</strong> ${bodegaNombre}</div>
-              <div><strong>Ubicacion:</strong> ${ubicacion || "N/D"}</div>
-              <div><strong>Vendedor:</strong> ${vendedor}</div>
-              <div><strong>Observaciones:</strong> ${observaciones || "N/A"}</div>
-            </div>
-          </div>
-
-          <div class="section">
-            <h3>Articulos</h3>
-            <table>
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Codigo</th>
-                  <th>Producto</th>
-                  <th>Cant.</th>
-                  <th>Precio</th>
-                  <th>Bordado</th>
-                  <th>Desc.</th>
-                  <th>Observacion</th>
-                  <th>Subtotal</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${filasHtml}
-              </tbody>
-            </table>
-          </div>
-
-          <div class="totals">
-            <div class="totals-row">
-              <span>Subtotal</span>
-              <span>Q ${totalesPdf.subtotal.toFixed(2)}</span>
-            </div>
-            ${
-              metodoPago === "tarjeta"
-                ? `<div class="totals-row"><span>Recargo (${porcentajeRecargo || 0}%)</span><span>Q ${totalesPdf.recargo.toFixed(2)}</span></div>`
-                : ""
-            }
-            <div class="totals-row total">
-              <span>Total</span>
-              <span>Q ${totalesPdf.total.toFixed(2)}</span>
-            </div>
-          </div>
-
-          <div class="footer">
-            <div class="badge">Gracias por su compra</div>
-            <div>Generado automaticamente por Uniforma POS. Conserve este comprobante.</div>
-          </div>
-          <script>
-            window.onload = function() {
-              window.focus();
-              window.print();
-            };
-          </script>
-        </body>
-      </html>`;
+        return {
+          codigo: producto?.codigo || `${item.productoId}`,
+          nombre: producto?.nombre || "Producto",
+          cantidad: Number(item.cantidad) || 0,
+          precio: Number(item.precio) || 0,
+          bordado: Number(item.bordado) || 0,
+          descuento: Number(item.descuento) || 0,
+          subtotal: calcularSubtotal(item),
+        };
+      }),
+    });
 
     nuevaVentana.document.write(html);
     nuevaVentana.document.close();
@@ -656,14 +583,18 @@ export default function VentaNueva() {
       Swal.fire("Validacion", "Agrega al menos un producto", "warning");
       return;
     }
+    if (metodoRequiereReferencia && !`${referenciaPago}`.trim()) {
+      Swal.fire("Validacion", "Ingresa la referencia o numero de transaccion", "warning");
+      return;
+    }
 
     const payload = {
-      clienteId: clienteId === "" ? null : Number(clienteId),
+      clienteId: clienteId === "" || Number(clienteId) <= 0 ? null : Number(clienteId),
       bodegaId: Number(bodegaId),
       ubicacion,
       metodoPago,
       porcentajeRecargo,
-      observaciones: observaciones || null,
+      referenciaPago: metodoRequiereReferencia ? referenciaPago.trim() : null,
       vendedor: usuario,
         detalle: detalle.map((d) => ({
           productoId: d.productoId,
@@ -697,10 +628,10 @@ export default function VentaNueva() {
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, sm: 4 }}>
           <Autocomplete
-            options={clientes}
+            options={clientesConCf}
             getOptionLabel={(option) => option.nombre}
-            value={clientes.find((c) => c.id === clienteId) || null}
-            onChange={(_, val) => setClienteId(val ? val.id : "")}
+            value={clientesConCf.find((c) => c.id === clienteId) || CLIENTE_CF_OPTION}
+            onChange={(_, val) => setClienteId(val ? val.id : CLIENTE_CF_ID)}
             renderInput={(params) => <TextField {...params} label="Cliente" fullWidth />}
           />
         </Grid>
@@ -737,11 +668,12 @@ export default function VentaNueva() {
             <Select label="Metodo de pago" value={metodoPago} onChange={(e) => setMetodoPago(e.target.value)}>
               <MenuItem value="efectivo">Efectivo</MenuItem>
               <MenuItem value="tarjeta">Tarjeta</MenuItem>
+              <MenuItem value="visalink">Visalink</MenuItem>
               <MenuItem value="transferencia">Transferencia</MenuItem>
             </Select>
           </FormControl>
         </Grid>
-        {metodoPago === "tarjeta" && (
+        {metodoUsaRecargo && (
           <Grid size={{ xs: 12, sm: 4 }}>
             <TextField
               label="Recargo %"
@@ -752,16 +684,17 @@ export default function VentaNueva() {
             />
           </Grid>
         )}
-        <Grid size={{ xs: 12 }}>
-          <TextField
-            label="Observaciones"
-            fullWidth
-            multiline
-            rows={2}
-            value={observaciones}
-            onChange={(e) => setObservaciones(e.target.value)}
-          />
-        </Grid>
+        {metodoRequiereReferencia && (
+          <Grid size={{ xs: 12, sm: 4 }}>
+            <TextField
+              label="Referencia"
+              fullWidth
+              value={referenciaPago}
+              onChange={(e) => setReferenciaPago(e.target.value)}
+              helperText="Numero de transaccion del metodo de pago"
+            />
+          </Grid>
+        )}
       </Grid>
 
       <Divider sx={{ my: 2 }} />
@@ -911,27 +844,6 @@ export default function VentaNueva() {
               onChange={(e) => setArticuloActual((prev) => ({ ...prev, descuento: Number(e.target.value) || 0 }))}
             />
           </Grid>
-          <Grid size={{ xs: 12, md: 4 }}>
-            <TextField
-              label="Observacion del articulo"
-              fullWidth
-              value={articuloActual.descripcion}
-              onChange={(e) => setArticuloActual((prev) => ({ ...prev, descripcion: e.target.value }))}
-            />
-          </Grid>
-          <Grid size={{ xs: 12, md: 4 }}>
-            <TextField
-              label="Stock disponible"
-              fullWidth
-              disabled
-              value={articuloActual.stock ?? ""}
-              helperText={
-                articuloActual.stock != null
-                  ? `Restante estimado despues de agregar: ${stockRestanteEstimado ?? 0}`
-                  : "Selecciona bodega y producto"
-              }
-            />
-          </Grid>
         </Grid>
 
         <Stack spacing={1.5} alignItems="center" sx={{ mt: 2 }}>
@@ -976,7 +888,6 @@ export default function VentaNueva() {
               <TableCell align="center" sx={{ fontWeight: 700 }}>Precio</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Bordado</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Desc.</TableCell>
-              <TableCell align="center" sx={{ fontWeight: 700 }}>Observacion</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Stock</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Subtotal</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Acciones</TableCell>
@@ -996,7 +907,6 @@ export default function VentaNueva() {
                   <TableCell align="center">{`Q ${row.precio.toFixed(2)}`}</TableCell>
                   <TableCell align="center">{`Q ${row.bordado.toFixed(2)}`}</TableCell>
                   <TableCell align="center">{`${row.descuento.toFixed(2)}%`}</TableCell>
-                  <TableCell align="center">{row.descripcion || "-"}</TableCell>
                   <TableCell align="center">{row.stock ?? "N/D"}</TableCell>
                   <TableCell align="center">{`Q ${calcularSubtotal(row).toFixed(2)}`}</TableCell>
                   <TableCell align="center">
@@ -1020,7 +930,7 @@ export default function VentaNueva() {
             })}
             {!detalle.length && (
               <TableRow>
-                <TableCell colSpan={13} align="center">
+                <TableCell colSpan={12} align="center">
                   Aun no has agregado articulos a la venta.
                 </TableCell>
               </TableRow>
@@ -1039,7 +949,7 @@ export default function VentaNueva() {
                 <Typography>Subtotal</Typography>
                 <Typography>{`Q ${totals.subtotal.toFixed(2)}`}</Typography>
               </Stack>
-              {metodoPago === "tarjeta" && (
+              {metodoUsaRecargo && (
                 <Stack direction="row" justifyContent="space-between">
                   <Typography>Recargo</Typography>
                   <Typography>{`Q ${totals.recargo.toFixed(2)}`}</Typography>

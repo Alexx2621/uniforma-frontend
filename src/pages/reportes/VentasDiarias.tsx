@@ -37,6 +37,11 @@ interface RowDiaria {
   transferencia: number;
 }
 
+const metodoCuentaComoTarjeta = (metodo?: string | null) => {
+  const normalized = `${metodo || ""}`.trim().toLowerCase();
+  return normalized === "tarjeta" || normalized === "visalink";
+};
+
 const toDateOnly = (value: string) => {
   const d = new Date(value);
   d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
@@ -152,7 +157,7 @@ export default function VentasDiarias() {
       row.tickets += 1;
       row.total += v.total || 0;
       if (v.metodoPago === "efectivo") row.efectivo += v.total || 0;
-      else if (v.metodoPago === "tarjeta") row.tarjeta += v.total || 0;
+      else if (metodoCuentaComoTarjeta(v.metodoPago)) row.tarjeta += v.total || 0;
       else row.transferencia += v.total || 0;
     });
     return Array.from(map.values()).sort((a, b) => (a.fecha < b.fecha ? -1 : 1));

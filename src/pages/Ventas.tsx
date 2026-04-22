@@ -18,6 +18,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import LOGO_URL from "../assets/3-logos.png";
+import { buildVentaPdfHtml } from "../utils/ventaPdf";
 
 interface VentaRow {
   id: number;
@@ -36,7 +37,14 @@ interface VentaRow {
   vendedor?: string | null;
   bodegaId?: number | null;
   bodega?: { id?: number; nombre?: string };
+  pagos?: { id?: number; metodo?: string; monto?: number; referencia?: string | null }[];
+  referenciaPago?: string | null;
 }
+
+const metodoCuentaComoTarjeta = (metodo?: string | null) => {
+  const normalized = `${metodo || ""}`.trim().toUpperCase();
+  return normalized === "TARJETA" || normalized === "VISALINK";
+};
 
 const toDateOnly = (val: string) => {
   const d = new Date(val);
@@ -112,7 +120,7 @@ export default function Ventas() {
             | string
             | undefined) ||
           (typeof v?.cliente === "string" ? v.cliente : "") ||
-          "Consumidor final";
+          "CF";
         return {
           ...v,
           id,
@@ -121,6 +129,11 @@ export default function Ventas() {
           displayFolio: folioNormalizado,
           clienteNombre: clienteNombreNormalizado,
           clienteDisplay: clienteNombreNormalizado,
+          referenciaPago:
+            v?.referenciaPago ||
+            v?.referencia_pago ||
+            v?.pagos?.[0]?.referencia ||
+            null,
         };
       });
       setVentas(data);
@@ -180,127 +193,40 @@ export default function Ventas() {
     const vendedor = row.vendedor || "Vendedor";
     const ubicacion = row.ubicacion || "N/D";
     const metodo = row.metodoPago || "";
+    const referenciaPago = row.referenciaPago || row.pagos?.[0]?.referencia || "";
     const recargo = Number(row.recargo || 0);
     const detalle = Array.isArray(row.detalle) ? row.detalle : [];
     const subtotal = detalle.reduce((sum: number, d: any) => sum + Number(d.subtotal || 0), 0);
     const total = row.total != null ? Number(row.total) : subtotal + recargo;
-
-    const filasHtml =
-      detalle
-        .map((item: any, idx: number) => {
+    win.document.write(
+      buildVentaPdfHtml({
+        folio,
+        fecha,
+        cliente,
+        metodoPago: metodo,
+        referenciaPago: referenciaPago || "No aplica",
+        bodega,
+        ubicacion,
+        vendedor,
+        subtotal,
+        recargo,
+        total,
+        recargoEtiqueta: recargo ? "Recargo" : undefined,
+        logoUrl: LOGO_URL,
+        items: detalle.map((item: any) => {
           const prod = productoMap.get(Number(item.productoId));
-          const codigo = prod?.codigo || item.producto?.codigo || item.productoId || "";
-          const nombre = prod?.nombre || item.producto?.nombre || "Producto";
-          const cantidad = item.cantidad || 0;
-          const precio = Number(item.precioUnit || 0);
-          const bordado = Number(item.bordado || 0);
-          const desc = Number(item.descuento || 0);
-          const descripcion = item.descripcion || "";
-          const subtotalRow = Number(item.subtotal || 0);
-          return `<tr>
-            <td>${idx + 1}</td>
-            <td>${codigo}</td>
-            <td>${nombre}</td>
-            <td>${cantidad}</td>
-            <td>${precio.toFixed(2)}</td>
-            <td>${bordado.toFixed(2)}</td>
-            <td>${desc.toFixed(2)}%</td>
-            <td>${descripcion}</td>
-            <td>${subtotalRow.toFixed(2)}</td>
-          </tr>`;
-        })
-        .join("") || `<tr><td colspan="9" style="text-align:center;color:#6b7280;">Sin detalle</td></tr>`;
-
-    win.document.write(`<!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="utf-8" />
-          <title>Resumen de venta</title>
-          <style>
-            * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            body { font-family: Arial, sans-serif; margin: 24px; color: #1f2937; }
-            .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 18px; }
-            .brand { font-size: 18px; font-weight: 700; letter-spacing: 0.5px; }
-            .folio { font-size: 14px; color: #475569; }
-            .section { margin-bottom: 18px; }
-            .section h3 { margin: 0 0 8px 0; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; color: #0f172a; }
-            .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px 16px; font-size: 13px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }
-            th { background: #0f172a; color: #fff; text-align: left; padding: 8px; }
-            td { border-bottom: 1px solid #e2e8f0; padding: 7px; }
-            .totals { width: 280px; margin-left: auto; margin-top: 12px; font-size: 13px; }
-            .totals-row { display: flex; justify-content: space-between; padding: 6px 0; }
-            .totals-row.total { font-weight: 700; border-top: 2px solid #0f172a; margin-top: 4px; }
-            .footer { margin-top: 20px; font-size: 12px; color: #475569; }
-            .badge { display: inline-flex; padding: 4px 10px; border-radius: 999px; background: #e2e8f0; font-weight: 600; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <div>
-              <div class="brand">Uniforma</div>
-              <div>Uniformes y bordados</div>
-            </div>
-            <div style="text-align:right">
-              <div class="folio">${folio}</div>
-              <div>${fecha.toLocaleDateString()} ${fecha.toLocaleTimeString()}</div>
-            </div>
-          </div>
-
-          <div class="section">
-            <h3>Resumen</h3>
-            <div class="info-grid">
-              <div><strong>Cliente:</strong> ${cliente}</div>
-              <div><strong>Método de pago:</strong> ${metodo}</div>
-              <div><strong>Bodega/Tienda:</strong> ${bodega}</div>
-              <div><strong>Ubicación:</strong> ${ubicacion}</div>
-              <div><strong>Vendedor:</strong> ${vendedor}</div>
-            </div>
-          </div>
-
-          <div class="section">
-            <h3>Artículos</h3>
-            <table>
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Código</th>
-                  <th>Producto</th>
-                  <th>Cant.</th>
-                  <th>Precio</th>
-                  <th>Bordado</th>
-                  <th>Desc.</th>
-                  <th>Observacion</th>
-                  <th>Subtotal</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${filasHtml}
-              </tbody>
-            </table>
-          </div>
-
-          <div class="totals">
-            <div class="totals-row">
-              <span>Subtotal</span>
-              <span>Q ${subtotal.toFixed(2)}</span>
-            </div>
-            ${recargo ? `<div class="totals-row"><span>Recargo</span><span>Q ${recargo.toFixed(2)}</span></div>` : ""}
-            <div class="totals-row total">
-              <span>Total</span>
-              <span>Q ${total.toFixed(2)}</span>
-            </div>
-          </div>
-
-          <div class="footer">
-            <div class="badge">Gracias por su compra</div>
-            <div>Generado automáticamente por Uniforma POS. Conserve este comprobante.</div>
-          </div>
-          <script>
-            window.onload = function() { window.focus(); window.print(); };
-          </script>
-        </body>
-      </html>`);
+          return {
+            codigo: prod?.codigo || item.producto?.codigo || `${item.productoId || ""}`,
+            nombre: prod?.nombre || item.producto?.nombre || "Producto",
+            cantidad: Number(item.cantidad || 0),
+            precio: Number(item.precioUnit || 0),
+            bordado: Number(item.bordado || 0),
+            descuento: Number(item.descuento || 0),
+            subtotal: Number(item.subtotal || 0),
+          };
+        }),
+      }),
+    );
     win.document.close();
   };
 
@@ -311,6 +237,7 @@ export default function Ventas() {
     const metodo = row.metodoPago || "";
     const bodega = row.bodega?.nombre || row.bodegaNombre || "";
     const vendedor = row.vendedor || "";
+    const referenciaPago = row.referenciaPago || row.pagos?.[0]?.referencia || "";
     const recargo = formatter(Number(row.recargo || 0));
     const total = formatter(Number(row.total || 0));
     const detalleRows =
@@ -338,6 +265,7 @@ export default function Ventas() {
             <div><strong>Fecha:</strong> ${fecha}</div>
             <div><strong>Cliente:</strong> ${infoCliente}</div>
             <div><strong>Metodo:</strong> ${metodo}</div>
+            ${referenciaPago ? `<div><strong>Referencia:</strong> ${referenciaPago}</div>` : ""}
             <div><strong>Ubicacion:</strong> ${row.ubicacion || ""}</div>
             <div><strong>Bodega:</strong> ${bodega}</div>
             <div><strong>Vendedor:</strong> ${vendedor}</div>
@@ -377,7 +305,7 @@ export default function Ventas() {
       row?.nombre_cliente ||
       byId ||
       (typeof row?.cliente === "string" ? row?.cliente : undefined) ||
-      "Consumidor final"
+      "CF"
     );
   };
 
@@ -410,7 +338,7 @@ export default function Ventas() {
                 <td>${new Date(v.fecha).toLocaleDateString()}</td>
                 <td>V-${v.id}</td>
                 <td>${metodo === "TRANSFERENCIA" ? formatter(v.total) : ""}</td>
-                <td>${metodo === "TARJETA" ? formatter(v.total) : ""}</td>
+                <td>${metodoCuentaComoTarjeta(metodo) ? formatter(v.total) : ""}</td>
                 <td>${metodo === "EFECTIVO" ? formatter(v.total) : ""}</td>
                 <td>${formatter(v.total)}</td>
               </tr>`;
@@ -537,7 +465,7 @@ export default function Ventas() {
                 <td>${new Date(v.fecha).toLocaleDateString()}</td>
                 <td>V-${v.id}</td>
                 <td>${metodo === "TRANSFERENCIA" ? formatter(v.total) : ""}</td>
-                <td>${metodo === "TARJETA" ? formatter(v.total) : ""}</td>
+                <td>${metodoCuentaComoTarjeta(metodo) ? formatter(v.total) : ""}</td>
                 <td>${metodo === "EFECTIVO" ? formatter(v.total) : ""}</td>
                 <td>${formatter(v.total)}</td>
                 <td>${v.vendedor || "N/D"}</td>
