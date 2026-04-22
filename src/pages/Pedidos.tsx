@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Paper,
   Typography,
@@ -21,6 +21,7 @@ import { useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { io, Socket } from "socket.io-client";
 import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
@@ -122,6 +123,8 @@ const sanitizeFilename = (value: string) =>
     .replace(/[\\/:*?"<>|]+/g, "-")
     .replace(/\s+/g, "_");
 
+const PEDIDOS_AUTO_REFRESH_MS = 30000;
+
 const loadImageAsDataUrl = async (src: string) =>
   new Promise<string>((resolve, reject) => {
     const image = new Image();
@@ -206,6 +209,8 @@ export default function Pedidos() {
   const [filterBodega, setFilterBodega] = useState<number | "all">("all");
   const [generandoUnificado, setGenerandoUnificado] = useState(false);
   const navigate = useNavigate();
+  const cargandoPedidosRef = useRef(false);
+  const pedidosSocketRef = useRef<Socket | null>(null);
   const { rol, rolId, bodegaId: userBodegaId } = useAuthStore();
   const { crossStoreRoleIds, unifyOrderRoleIds, fetchConfig } = useSystemConfigStore();
   const canAccessAllBodegas = rol === "ADMIN" || crossStoreRoleIds.includes(Number(rolId));
@@ -276,7 +281,10 @@ export default function Pedidos() {
     return normalizarTexto(found);
   };
 
-  const cargar = async () => {
+  const cargar = async (silent = false) => {
+    if (cargandoPedidosRef.current) return;
+    cargandoPedidosRef.current = true;
+
     try {
       const [resp, respClientes, respBodegas, respProductos, respTelas, respTallas, respColores] = await Promise.all([
         api.get("/produccion"),
@@ -350,14 +358,63 @@ export default function Pedidos() {
       setColores(colores);
       setRows(normalizados);
     } catch {
-      Swal.fire("Error", "No se pudieron cargar pedidos", "error");
+      if (!silent) {
+        Swal.fire("Error", "No se pudieron cargar pedidos", "error");
+      }
+    } finally {
+      cargandoPedidosRef.current = false;
     }
   };
 
   useEffect(() => {
-    cargar();
+    void cargar();
     void fetchConfig();
   }, [fetchConfig]);
+
+  useEffect(() => {
+    const refrescarSilencioso = () => {
+      if (document.visibilityState !== "visible") return;
+      void cargar(true);
+    };
+
+    const intervalId = window.setInterval(refrescarSilencioso, PEDIDOS_AUTO_REFRESH_MS);
+    window.addEventListener("focus", refrescarSilencioso);
+    document.addEventListener("visibilitychange", refrescarSilencioso);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", refrescarSilencioso);
+      document.removeEventListener("visibilitychange", refrescarSilencioso);
+    };
+  }, []);
+
+  useEffect(() => {
+    const socket = io(api.defaults.baseURL || window.location.origin, {
+      withCredentials: true,
+      transports: ["websocket", "polling"],
+      reconnection: true,
+    });
+
+    pedidosSocketRef.current = socket;
+
+    const manejarPedidosActualizados = () => {
+      void cargar(true);
+    };
+
+    const manejarConexion = () => {
+      void cargar(true);
+    };
+
+    socket.on("connect", manejarConexion);
+    socket.on("produccion:pedidos-actualizados", manejarPedidosActualizados);
+
+    return () => {
+      socket.off("connect", manejarConexion);
+      socket.off("produccion:pedidos-actualizados", manejarPedidosActualizados);
+      socket.disconnect();
+      pedidosSocketRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     if (canAccessAllBodegas) {
