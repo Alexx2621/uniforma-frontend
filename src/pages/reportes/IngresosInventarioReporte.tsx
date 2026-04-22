@@ -19,14 +19,18 @@ import {
   Select,
   MenuItem,
   SelectChangeEvent,
+  IconButton,
 } from "@mui/material";
 import PictureAsPdfOutlined from "@mui/icons-material/PictureAsPdfOutlined";
 import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
 import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
 import Swal from "sweetalert2";
 import { api } from "../../api/axios";
+import LOGO_URL from "../../assets/3-logos.png";
+import { buildIngresoInventarioPdfHtml } from "../../utils/inventarioPdf";
 
 interface DetalleIngreso {
+  productoId: number;
   cantidad: number;
 }
 
@@ -41,6 +45,28 @@ interface Ingreso {
 interface Bodega {
   id: number;
   nombre: string;
+}
+
+interface Producto {
+  id: number;
+  codigo: string;
+  nombre: string;
+  tipo?: string | null;
+  genero?: string | null;
+  tela?: { id?: number; nombre?: string } | null;
+  talla?: { id?: number; nombre?: string } | null;
+  color?: { id?: number; nombre?: string } | null;
+  telaId?: number | null;
+  tallaId?: number | null;
+  colorId?: number | null;
+  tela_id?: number | null;
+  talla_id?: number | null;
+  color_id?: number | null;
+}
+
+interface CatalogoItem {
+  id: number;
+  nombre?: string | null;
 }
 
 const toDateOnly = (value: string) => {
@@ -109,6 +135,10 @@ const exportPdf = (rows: any[]) => {
 export default function IngresosInventarioReporte() {
   const [ingresos, setIngresos] = useState<Ingreso[]>([]);
   const [bodegas, setBodegas] = useState<Bodega[]>([]);
+  const [productos, setProductos] = useState<Producto[]>([]);
+  const [telas, setTelas] = useState<CatalogoItem[]>([]);
+  const [tallas, setTallas] = useState<CatalogoItem[]>([]);
+  const [colores, setColores] = useState<CatalogoItem[]>([]);
   const [bodegaId, setBodegaId] = useState<string>("");
   const [desde, setDesde] = useState("");
   const [hasta, setHasta] = useState("");
@@ -117,9 +147,20 @@ export default function IngresosInventarioReporte() {
   const cargar = async () => {
     try {
       setLoading(true);
-      const [respIng, respBod] = await Promise.all([api.get("/ingresos"), api.get("/bodegas")]);
+      const [respIng, respBod, respProd, respTelas, respTallas, respColores] = await Promise.all([
+        api.get("/ingresos"),
+        api.get("/bodegas"),
+        api.get("/productos").catch(() => ({ data: [] })),
+        api.get("/telas").catch(() => ({ data: [] })),
+        api.get("/tallas").catch(() => ({ data: [] })),
+        api.get("/colores").catch(() => ({ data: [] })),
+      ]);
       setIngresos(respIng.data || []);
       setBodegas(respBod.data || []);
+      setProductos(respProd.data || []);
+      setTelas(respTelas.data || []);
+      setTallas(respTallas.data || []);
+      setColores(respColores.data || []);
     } catch {
       Swal.fire("Error", "No se pudieron cargar ingresos o bodegas", "error");
     } finally {
@@ -130,6 +171,31 @@ export default function IngresosInventarioReporte() {
   useEffect(() => {
     cargar();
   }, []);
+
+  const obtenerTela = (prod?: Producto) => {
+    if (!prod) return "N/D";
+    const telaId =
+      prod.telaId ?? prod.tela_id ?? prod.tela?.id ?? (prod as any).telaid ?? (prod as any).tela_id ?? null;
+    return prod.tela?.nombre || (prod as any).telaNombre || telas.find((t) => Number(t.id) === Number(telaId))?.nombre || "N/D";
+  };
+
+  const obtenerTalla = (prod?: Producto) => {
+    if (!prod) return "N/D";
+    const tallaId =
+      prod.tallaId ?? prod.talla_id ?? prod.talla?.id ?? (prod as any).tallaid ?? (prod as any).talla_id ?? null;
+    return (
+      prod.talla?.nombre || (prod as any).tallaNombre || tallas.find((t) => Number(t.id) === Number(tallaId))?.nombre || "N/D"
+    );
+  };
+
+  const obtenerColor = (prod?: Producto) => {
+    if (!prod) return "N/D";
+    const colorId =
+      prod.colorId ?? prod.color_id ?? prod.color?.id ?? (prod as any).colorid ?? (prod as any).color_id ?? null;
+    return (
+      prod.color?.nombre || (prod as any).colorNombre || colores.find((c) => Number(c.id) === Number(colorId))?.nombre || "N/D"
+    );
+  };
 
   const filas = useMemo(() => {
     return ingresos
@@ -145,6 +211,7 @@ export default function IngresosInventarioReporte() {
         const bodega = bodegas.find((b) => b.id === ing.bodegaId)?.nombre || `B-${ing.bodegaId}`;
         const items = ing.detalle?.reduce((sum, d) => sum + (d.cantidad || 0), 0) || 0;
         return {
+          ingreso: ing,
           folio: `ING-${ing.id}`,
           fecha,
           bodega,
@@ -153,6 +220,41 @@ export default function IngresosInventarioReporte() {
         };
       });
   }, [ingresos, bodegas, desde, hasta, bodegaId]);
+
+  const reimprimirIngresoPdf = (row: (typeof filas)[number]) => {
+    const win = window.open("", "_blank");
+    if (!win) {
+      Swal.fire("Aviso", "Habilita ventanas emergentes para reimprimir el PDF", "info");
+      return;
+    }
+
+    const ingreso = row.ingreso;
+    const html = buildIngresoInventarioPdfHtml({
+      folio: row.folio,
+      fecha: ingreso?.fecha ? new Date(ingreso.fecha) : new Date(),
+      bodega: row.bodega,
+      responsable: "Responsable",
+      observaciones: row.observaciones || "",
+      totalItems: row.items,
+      logoUrl: LOGO_URL,
+      items: (ingreso?.detalle || []).map((item) => {
+        const producto = productos.find((p) => p.id === Number(item.productoId));
+        return {
+          codigo: producto?.codigo || `${item.productoId}`,
+          nombre: producto?.nombre || "Producto",
+          tipo: producto?.tipo || "N/D",
+          genero: producto?.genero || "N/D",
+          tela: obtenerTela(producto),
+          talla: obtenerTalla(producto),
+          color: obtenerColor(producto),
+          cantidad: Number(item.cantidad) || 0,
+        };
+      }),
+    });
+
+    win.document.write(html);
+    win.document.close();
+  };
 
   const totalItems = filas.reduce((sum, r) => sum + r.items, 0);
 
@@ -253,6 +355,7 @@ export default function IngresosInventarioReporte() {
               <TableCell>Bodega</TableCell>
               <TableCell>Items</TableCell>
               <TableCell>Observaciones</TableCell>
+              <TableCell align="center">Acciones</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -263,6 +366,11 @@ export default function IngresosInventarioReporte() {
                 <TableCell>{row.bodega}</TableCell>
                 <TableCell>{row.items}</TableCell>
                 <TableCell>{row.observaciones}</TableCell>
+                <TableCell align="center">
+                  <IconButton color="secondary" onClick={() => reimprimirIngresoPdf(row)}>
+                    <PictureAsPdfOutlined />
+                  </IconButton>
+                </TableCell>
               </TableRow>
             ))}
             <TableRow>
@@ -270,6 +378,7 @@ export default function IngresosInventarioReporte() {
               <TableCell />
               <TableCell />
               <TableCell sx={{ fontWeight: 700 }}>{totalItems}</TableCell>
+              <TableCell />
               <TableCell />
             </TableRow>
           </TableBody>

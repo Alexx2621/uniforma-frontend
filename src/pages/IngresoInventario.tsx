@@ -1,65 +1,158 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Paper,
   Typography,
   Grid,
-  TextField,
+  Alert,
   FormControl,
   InputLabel,
   Select,
   MenuItem,
+  TextField,
   Button,
   IconButton,
   Divider,
   Stack,
-  Box,
-  Autocomplete,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
 import AddIcon from "@mui/icons-material/Add";
+import EditOutlined from "@mui/icons-material/EditOutlined";
+import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
+import LOGO_URL from "../assets/3-logos.png";
+import { buildIngresoInventarioPdfHtml } from "../utils/inventarioPdf";
+
+interface Producto {
+  id: number;
+  codigo: string;
+  nombre: string;
+  tipo?: string;
+  genero?: string;
+  stockMax?: number | null;
+  tela?: { id?: number; nombre?: string } | null;
+  talla?: { id?: number; nombre?: string } | null;
+  color?: { id?: number; nombre?: string } | null;
+  telaId?: number | null;
+  tallaId?: number | null;
+  colorId?: number | null;
+  tela_id?: number | null;
+  talla_id?: number | null;
+  color_id?: number | null;
+}
+
+interface Bodega {
+  id: number;
+  nombre: string;
+}
+
+interface CatalogoItem {
+  id: number;
+  nombre?: string | null;
+}
 
 interface DetalleRow {
   key: number;
+  productoId: number;
+  cantidad: number;
+  stockMax: number | null;
+  stockActual: number | null;
+}
+
+interface CapturaArticulo {
   productoId: number | "";
   cantidad: number;
   stockMax: number | null;
   stockActual: number | null;
 }
 
+const detalleInicial: CapturaArticulo = {
+  productoId: "",
+  cantidad: 1,
+  stockMax: null,
+  stockActual: null,
+};
+
+const resolveTelaNombre = (prod: Producto | undefined, telas: CatalogoItem[]) => {
+  if (!prod) return "N/D";
+  const telaId =
+    prod.telaId ?? prod.tela_id ?? prod.tela?.id ?? (prod as any).telaid ?? (prod as any).tela_id ?? null;
+  return prod.tela?.nombre || (prod as any).telaNombre || telas.find((t) => Number(t.id) === Number(telaId))?.nombre || "N/D";
+};
+
+const resolveTallaNombre = (prod: Producto | undefined, tallas: CatalogoItem[]) => {
+  if (!prod) return "N/D";
+  const tallaId =
+    prod.tallaId ?? prod.talla_id ?? prod.talla?.id ?? (prod as any).tallaid ?? (prod as any).talla_id ?? null;
+  return (
+    prod.talla?.nombre || (prod as any).tallaNombre || tallas.find((t) => Number(t.id) === Number(tallaId))?.nombre || "N/D"
+  );
+};
+
+const resolveColorNombre = (prod: Producto | undefined, colores: CatalogoItem[]) => {
+  if (!prod) return "N/D";
+  const colorId =
+    prod.colorId ?? prod.color_id ?? prod.color?.id ?? (prod as any).colorid ?? (prod as any).color_id ?? null;
+  return (
+    prod.color?.nombre || (prod as any).colorNombre || colores.find((c) => Number(c.id) === Number(colorId))?.nombre || "N/D"
+  );
+};
+
+const uniqueSorted = (values: string[]) =>
+  Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b));
+
 export default function IngresoInventario() {
-  const [bodegas, setBodegas] = useState<any[]>([]);
-  const [productos, setProductos] = useState<any[]>([]);
+  const [bodegas, setBodegas] = useState<Bodega[]>([]);
+  const [productos, setProductos] = useState<Producto[]>([]);
+  const [telas, setTelas] = useState<CatalogoItem[]>([]);
+  const [tallas, setTallas] = useState<CatalogoItem[]>([]);
+  const [colores, setColores] = useState<CatalogoItem[]>([]);
   const [bodegaId, setBodegaId] = useState<number | "">("");
   const [observaciones, setObservaciones] = useState("");
-  const [detalle, setDetalle] = useState<DetalleRow[]>([
-    { key: Date.now(), productoId: "", cantidad: 0, stockMax: null, stockActual: null },
-  ]);
-  const { usuario } = useAuthStore();
+  const [detalle, setDetalle] = useState<DetalleRow[]>([]);
+  const [articuloActual, setArticuloActual] = useState<CapturaArticulo>(detalleInicial);
+  const [cantidadInput, setCantidadInput] = useState("1");
+  const [editingDetalleKey, setEditingDetalleKey] = useState<number | null>(null);
+  const [filtroTipo, setFiltroTipo] = useState("");
+  const [filtroGenero, setFiltroGenero] = useState("");
+  const [filtroTela, setFiltroTela] = useState("");
+  const [filtroTalla, setFiltroTalla] = useState("");
+  const [filtroColor, setFiltroColor] = useState("");
+
+  const { usuario, rol, rolId, bodegaId: userBodegaId } = useAuthStore();
+  const { crossStoreRoleIds, fetchConfig } = useSystemConfigStore();
+  const canAccessAllBodegas = rol === "ADMIN" || crossStoreRoleIds.includes(Number(rolId));
 
   const cargarCatalogos = async () => {
     try {
-      const [respBod, respProd] = await Promise.all([
+      const [respBod, respProd, respTelas, respTallas, respColores] = await Promise.all([
         api.get("/bodegas"),
         api.get("/productos"),
+        api.get("/telas").catch(() => ({ data: [] })),
+        api.get("/tallas").catch(() => ({ data: [] })),
+        api.get("/colores").catch(() => ({ data: [] })),
       ]);
-      setBodegas(respBod.data);
-      setProductos(respProd.data);
-    } catch (error) {
+      setBodegas(respBod.data || []);
+      setProductos(respProd.data || []);
+      setTelas(respTelas.data || []);
+      setTallas(respTallas.data || []);
+      setColores(respColores.data || []);
+    } catch {
       Swal.fire("Error", "No se pudieron cargar bodegas o productos", "error");
     }
   };
 
-  const { rol, rolId, bodegaId: userBodegaId } = useAuthStore();
-  const { crossStoreRoleIds, fetchConfig } = useSystemConfigStore();
-  const canAccessAllBodegas = rol === "ADMIN" || crossStoreRoleIds.includes(Number(rolId));
-
   useEffect(() => {
-    cargarCatalogos();
     void fetchConfig();
+    void cargarCatalogos();
   }, [fetchConfig]);
 
   useEffect(() => {
@@ -69,17 +162,6 @@ export default function IngresoInventario() {
       setBodegaId(exists ? parsed : "");
     }
   }, [userBodegaId, canAccessAllBodegas, bodegas]);
-
-  const addRow = () => {
-    setDetalle((prev) => [
-      ...prev,
-      { key: Date.now(), productoId: "", cantidad: 0, stockMax: null, stockActual: null },
-    ]);
-  };
-
-  const removeRow = (key: number) => {
-    setDetalle((prev) => (prev.length > 1 ? prev.filter((r) => r.key !== key) : prev));
-  };
 
   const fetchStockActual = async (bodega: number, producto: number) => {
     if (!bodega || !producto) return null;
@@ -91,57 +173,269 @@ export default function IngresoInventario() {
     }
   };
 
-  const refreshRowStock = async (key: number, productoId: number | "") => {
-    if (!bodegaId || productoId === "") {
-      setDetalle((prev) =>
-        prev.map((row) =>
-          row.key === key
-            ? { ...row, productoId, stockMax: null, stockActual: null }
-            : row
-        )
-      );
+  const obtenerTela = (prod?: Producto) => resolveTelaNombre(prod, telas);
+  const obtenerTalla = (prod?: Producto) => resolveTallaNombre(prod, tallas);
+  const obtenerColor = (prod?: Producto) => resolveColorNombre(prod, colores);
+
+  const filtrarProductos = useCallback(
+    ({
+      tipo = filtroTipo,
+      genero = filtroGenero,
+      tela = filtroTela,
+      talla = filtroTalla,
+      color = filtroColor,
+    }: {
+      tipo?: string;
+      genero?: string;
+      tela?: string;
+      talla?: string;
+      color?: string;
+    }) =>
+      productos.filter((producto) => {
+        const matchesTipo = !tipo || (producto.tipo || "").trim() === tipo;
+        const matchesGenero = !genero || (producto.genero || "").trim() === genero;
+        const matchesTela = !tela || resolveTelaNombre(producto, telas).trim() === tela;
+        const matchesTalla = !talla || resolveTallaNombre(producto, tallas).trim() === talla;
+        const matchesColor = !color || resolveColorNombre(producto, colores).trim() === color;
+        return matchesTipo && matchesGenero && matchesTela && matchesTalla && matchesColor;
+      }),
+    [productos, filtroTipo, filtroGenero, filtroTela, filtroTalla, filtroColor, telas, tallas, colores],
+  );
+
+  const tiposDisponibles = useMemo(
+    () =>
+      uniqueSorted(
+        filtrarProductos({
+          tipo: "",
+          genero: filtroGenero,
+          tela: filtroTela,
+          talla: filtroTalla,
+          color: filtroColor,
+        }).map((producto) => (producto.tipo || "").trim()),
+      ),
+    [filtrarProductos, filtroGenero, filtroTela, filtroTalla, filtroColor],
+  );
+
+  const generosDisponibles = useMemo(
+    () =>
+      uniqueSorted(
+        filtrarProductos({
+          tipo: filtroTipo,
+          genero: "",
+          tela: filtroTela,
+          talla: filtroTalla,
+          color: filtroColor,
+        }).map((producto) => (producto.genero || "").trim()),
+      ),
+    [filtrarProductos, filtroTipo, filtroTela, filtroTalla, filtroColor],
+  );
+
+  const telasDisponibles = useMemo(
+    () =>
+      uniqueSorted(
+        filtrarProductos({
+          tipo: filtroTipo,
+          genero: filtroGenero,
+          tela: "",
+          talla: filtroTalla,
+          color: filtroColor,
+        })
+          .map((producto) => resolveTelaNombre(producto, telas).trim())
+          .filter((nombre) => nombre !== "N/D"),
+      ),
+    [filtrarProductos, filtroTipo, filtroGenero, filtroTalla, filtroColor, telas],
+  );
+
+  const tallasDisponibles = useMemo(
+    () =>
+      uniqueSorted(
+        filtrarProductos({
+          tipo: filtroTipo,
+          genero: filtroGenero,
+          tela: filtroTela,
+          talla: "",
+          color: filtroColor,
+        })
+          .map((producto) => resolveTallaNombre(producto, tallas).trim())
+          .filter((nombre) => nombre !== "N/D"),
+      ),
+    [filtrarProductos, filtroTipo, filtroGenero, filtroTela, filtroColor, tallas],
+  );
+
+  const coloresDisponibles = useMemo(
+    () =>
+      uniqueSorted(
+        filtrarProductos({
+          tipo: filtroTipo,
+          genero: filtroGenero,
+          tela: filtroTela,
+          talla: filtroTalla,
+          color: "",
+        })
+          .map((producto) => resolveColorNombre(producto, colores).trim())
+          .filter((nombre) => nombre !== "N/D"),
+      ),
+    [filtrarProductos, filtroTipo, filtroGenero, filtroTela, filtroTalla, colores],
+  );
+
+  const productosBaseFiltrados = useMemo(
+    () =>
+      filtrarProductos({
+        tipo: filtroTipo,
+        genero: filtroGenero,
+        tela: filtroTela,
+        talla: "",
+        color: "",
+      }),
+    [filtrarProductos, filtroTipo, filtroGenero, filtroTela],
+  );
+
+  const productosCoincidentes = useMemo(
+    () =>
+      productosBaseFiltrados.filter((producto) => {
+        const matchesTalla = !filtroTalla || resolveTallaNombre(producto, tallas).trim() === filtroTalla;
+        const matchesColor = !filtroColor || resolveColorNombre(producto, colores).trim() === filtroColor;
+        return matchesTalla && matchesColor;
+      }),
+    [productosBaseFiltrados, tallas, colores, filtroTalla, filtroColor],
+  );
+
+  const productoDetectado = productosCoincidentes.length === 1 ? productosCoincidentes[0] : undefined;
+
+  useEffect(() => {
+    if (filtroTipo && !tiposDisponibles.includes(filtroTipo)) setFiltroTipo("");
+  }, [filtroTipo, tiposDisponibles]);
+
+  useEffect(() => {
+    if (filtroGenero && !generosDisponibles.includes(filtroGenero)) setFiltroGenero("");
+  }, [filtroGenero, generosDisponibles]);
+
+  useEffect(() => {
+    if (filtroTela && !telasDisponibles.includes(filtroTela)) setFiltroTela("");
+  }, [filtroTela, telasDisponibles]);
+
+  useEffect(() => {
+    if (filtroTalla && !tallasDisponibles.includes(filtroTalla)) setFiltroTalla("");
+  }, [filtroTalla, tallasDisponibles]);
+
+  useEffect(() => {
+    if (filtroColor && !coloresDisponibles.includes(filtroColor)) setFiltroColor("");
+  }, [filtroColor, coloresDisponibles]);
+
+  useEffect(() => {
+    const syncProducto = async () => {
+      if (!productoDetectado) {
+        setArticuloActual((prev) => ({
+          ...prev,
+          productoId: "",
+          stockMax: null,
+          stockActual: null,
+        }));
+        return;
+      }
+
+      const stockActual = bodegaId ? await fetchStockActual(Number(bodegaId), productoDetectado.id) : null;
+      setArticuloActual((prev) => ({
+        ...prev,
+        productoId: productoDetectado.id,
+        stockMax: productoDetectado.stockMax ?? null,
+        stockActual,
+      }));
+    };
+
+    void syncProducto();
+  }, [productoDetectado, bodegaId]);
+
+  const capacidadDisponibleActual = useMemo(() => {
+    const stockMax = Number(articuloActual.stockMax ?? 0);
+    const stockActual = Number(articuloActual.stockActual ?? 0);
+    if (stockMax > 0) return Math.max(stockMax - stockActual, 0);
+    return null;
+  }, [articuloActual.stockMax, articuloActual.stockActual]);
+
+  const capacidadRestanteEstimada = useMemo(() => {
+    if (capacidadDisponibleActual === null) return null;
+    return Math.max(capacidadDisponibleActual - (Number(cantidadInput) || 0), 0);
+  }, [capacidadDisponibleActual, cantidadInput]);
+
+  const limpiarArticulo = () => {
+    setArticuloActual(detalleInicial);
+    setCantidadInput("1");
+    setEditingDetalleKey(null);
+    setFiltroTipo("");
+    setFiltroGenero("");
+    setFiltroTela("");
+    setFiltroTalla("");
+    setFiltroColor("");
+  };
+
+  const capacidadDisponibleRow = (row: Pick<DetalleRow, "stockMax" | "stockActual">) => {
+    const stockMax = Number(row.stockMax ?? 0);
+    const stockActual = Number(row.stockActual ?? 0);
+    if (stockMax > 0) return Math.max(stockMax - stockActual, 0);
+    return null;
+  };
+
+  const agregarArticulo = () => {
+    if (!bodegaId) {
+      Swal.fire("Validacion", "Selecciona una bodega antes de agregar articulos", "warning");
+      return;
+    }
+    if (!articuloActual.productoId) {
+      Swal.fire("Validacion", "Selecciona un producto", "warning");
       return;
     }
 
-    const prod = productos.find((p) => p.id === Number(productoId));
-    const stockActual = await fetchStockActual(Number(bodegaId), Number(productoId));
+    const cantidad = Number(cantidadInput) || 0;
+    if (cantidad <= 0) {
+      Swal.fire("Validacion", "Ingresa una cantidad mayor a 0", "warning");
+      return;
+    }
+
+    const capacidadDisponible = capacidadDisponibleActual;
+    if (capacidadDisponible !== null && cantidad > capacidadDisponible) {
+      Swal.fire("Validacion", `Solo puedes ingresar ${capacidadDisponible} unidades mas de este producto en esta bodega`, "warning");
+      return;
+    }
+
+    const row: DetalleRow = {
+      key: editingDetalleKey ?? Date.now(),
+      productoId: Number(articuloActual.productoId),
+      cantidad,
+      stockMax: articuloActual.stockMax,
+      stockActual: articuloActual.stockActual,
+    };
 
     setDetalle((prev) =>
-      prev.map((row) =>
-        row.key === key
-          ? {
-              ...row,
-              productoId: Number(productoId),
-              stockMax: prod?.stockMax ?? null,
-              stockActual,
-            }
-          : row
-      )
+      editingDetalleKey === null ? [...prev, row] : prev.map((item) => (item.key === editingDetalleKey ? row : item)),
     );
+    limpiarArticulo();
   };
 
-  const onProductoChange = (key: number, value: number | "") => {
-    refreshRowStock(key, value);
+  const editarArticulo = (row: DetalleRow) => {
+    const producto = productos.find((p) => p.id === row.productoId);
+    setEditingDetalleKey(row.key);
+    setArticuloActual({
+      productoId: row.productoId,
+      cantidad: row.cantidad,
+      stockMax: row.stockMax,
+      stockActual: row.stockActual,
+    });
+    setCantidadInput(String(row.cantidad));
+    setFiltroTipo(producto?.tipo || "");
+    setFiltroGenero(producto?.genero || "");
+    setFiltroTela(obtenerTela(producto) === "N/D" ? "" : obtenerTela(producto));
+    setFiltroTalla(obtenerTalla(producto) === "N/D" ? "" : obtenerTalla(producto));
+    setFiltroColor(obtenerColor(producto) === "N/D" ? "" : obtenerColor(producto));
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const onCantidadChange = (key: number, value: number) => {
-    setDetalle((prev) =>
-      prev.map((row) => {
-        if (row.key !== key) return row;
-        const max = row.stockMax ?? Infinity;
-        const safe = Math.min(value, max);
-        if (value > max && max !== Infinity) {
-          Swal.fire("Aviso", `No puedes ingresar mas de ${max} unidades para este producto`, "info");
-        }
-        return { ...row, cantidad: safe };
-      })
-    );
+  const eliminarArticulo = (key: number) => {
+    setDetalle((prev) => prev.filter((item) => item.key !== key));
+    if (editingDetalleKey === key) {
+      limpiarArticulo();
+    }
   };
-
-  const totalItems = useMemo(
-    () => detalle.reduce((sum, r) => sum + (Number(r.cantidad) || 0), 0),
-    [detalle]
-  );
 
   const abrirPdfIngreso = (ingreso: any, detalleUsado: DetalleRow[]) => {
     const nuevaVentana = window.open("", "_blank");
@@ -155,89 +449,28 @@ export default function IngresoInventario() {
     const folio = ingreso?.id ? `ING-${ingreso.id}` : "Pendiente";
     const responsable = usuario || "Responsable";
 
-    const filasHtml = detalleUsado
-      .map((item, idx) => {
+    const html = buildIngresoInventarioPdfHtml({
+      folio,
+      fecha,
+      bodega: bodegaNombre,
+      responsable,
+      observaciones,
+      totalItems: detalleUsado.reduce((sum, item) => sum + item.cantidad, 0),
+      logoUrl: LOGO_URL,
+      items: detalleUsado.map((item) => {
         const producto = productos.find((p) => p.id === item.productoId);
-        return `<tr>
-            <td>${idx + 1}</td>
-            <td>${producto?.codigo || item.productoId}</td>
-            <td>${producto?.nombre || "Producto"}</td>
-            <td>${item.cantidad}</td>
-          </tr>`;
-      })
-      .join("");
-
-    const html = `<!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="utf-8" />
-          <title>Ingreso de inventario</title>
-          <style>
-            body { font-family: Arial, sans-serif; margin: 24px; color: #1f2937; }
-            .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 18px; }
-            .brand { font-size: 18px; font-weight: 700; letter-spacing: 0.5px; }
-            .folio { font-size: 14px; color: #475569; }
-            .section { margin-bottom: 18px; }
-            .section h3 { margin: 0 0 8px 0; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; color: #0f172a; }
-            .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px 16px; font-size: 13px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }
-            th { background: #0f172a; color: #fff; text-align: left; padding: 8px; }
-            td { border-bottom: 1px solid #e2e8f0; padding: 7px; }
-            .footer { margin-top: 20px; font-size: 12px; color: #475569; }
-            .badge { display: inline-flex; padding: 4px 10px; border-radius: 999px; background: #e2e8f0; font-weight: 600; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <div>
-              <div class="brand">Uniforma</div>
-              <div>Ingreso de inventario</div>
-            </div>
-            <div style="text-align:right">
-              <div class="folio">${folio}</div>
-              <div>${fecha.toLocaleDateString()} ${fecha.toLocaleTimeString()}</div>
-            </div>
-          </div>
-
-          <div class="section">
-            <h3>Resumen</h3>
-            <div class="info-grid">
-              <div><strong>Bodega:</strong> ${bodegaNombre}</div>
-              <div><strong>Total items:</strong> ${totalItems}</div>
-              <div><strong>Responsable:</strong> ${responsable}</div>
-              <div><strong>Observaciones:</strong> ${observaciones || "N/A"}</div>
-            </div>
-          </div>
-
-          <div class="section">
-            <h3>Articulos ingresados</h3>
-            <table>
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Codigo</th>
-                  <th>Producto</th>
-                  <th>Cantidad</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${filasHtml}
-              </tbody>
-            </table>
-          </div>
-
-          <div class="footer">
-            <div class="badge">Ingreso registrado</div>
-            <div>Generado automaticamente por Uniforma. Conserve este comprobante.</div>
-          </div>
-          <script>
-            window.onload = function() {
-              window.focus();
-              window.print();
-            };
-          </script>
-        </body>
-      </html>`;
+        return {
+          codigo: producto?.codigo || `${item.productoId}`,
+          nombre: producto?.nombre || "Producto",
+          tipo: producto?.tipo || "N/D",
+          genero: producto?.genero || "N/D",
+          tela: obtenerTela(producto),
+          talla: obtenerTalla(producto),
+          color: obtenerColor(producto),
+          cantidad: Number(item.cantidad) || 0,
+        };
+      }),
+    });
 
     nuevaVentana.document.write(html);
     nuevaVentana.document.close();
@@ -245,37 +478,49 @@ export default function IngresoInventario() {
 
   const onBodegaChange = async (newBodegaId: number) => {
     setBodegaId(newBodegaId);
-    // actualizar stockActual para las filas con producto ya seleccionado
+
     const updates = await Promise.all(
       detalle.map(async (row) => {
-        if (!row.productoId) return row;
-        const prod = productos.find((p) => p.id === row.productoId);
         const stockActual = await fetchStockActual(newBodegaId, row.productoId);
+        const prod = productos.find((p) => p.id === row.productoId);
         return { ...row, stockMax: prod?.stockMax ?? null, stockActual };
-      })
+      }),
     );
     setDetalle(updates);
+
+    if (articuloActual.productoId) {
+      const stockActual = await fetchStockActual(newBodegaId, Number(articuloActual.productoId));
+      const producto = productos.find((p) => p.id === Number(articuloActual.productoId));
+      setArticuloActual((prev) => ({
+        ...prev,
+        stockActual,
+        stockMax: producto?.stockMax ?? null,
+      }));
+    }
   };
 
+  const totalItems = useMemo(() => detalle.reduce((sum, r) => sum + (Number(r.cantidad) || 0), 0), [detalle]);
+
   const guardar = async () => {
-    const detalleFiltrado = detalle.filter((d) => d.productoId && d.cantidad > 0);
     if (!bodegaId) {
       Swal.fire("Validacion", "Selecciona una bodega", "warning");
       return;
     }
-    if (detalleFiltrado.length === 0) {
+    if (!detalle.length) {
       Swal.fire("Validacion", "Agrega al menos un producto con cantidad mayor a 0", "warning");
       return;
     }
 
-    const invalid = detalleFiltrado.find(
-      (d) => d.stockMax != null && d.cantidad > (d.stockMax ?? Infinity)
-    );
+    const invalid = detalle.find((d) => {
+      const stockMax = Number(d.stockMax ?? 0);
+      return stockMax > 0 && Number(d.stockActual ?? 0) + d.cantidad > stockMax;
+    });
     if (invalid) {
+      const disponible = capacidadDisponibleRow(invalid);
       Swal.fire(
         "Validacion",
-        "Hay cantidades que superan el stock maximo permitido para un producto",
-        "warning"
+        `Hay un producto que supera el stock maximo permitido. Disponible para ingreso: ${disponible ?? 0}`,
+        "warning",
       );
       return;
     }
@@ -283,7 +528,7 @@ export default function IngresoInventario() {
     const payload = {
       bodegaId: Number(bodegaId),
       observaciones: observaciones || null,
-      detalle: detalleFiltrado.map((d) => ({
+      detalle: detalle.map((d) => ({
         productoId: d.productoId,
         cantidad: d.cantidad,
       })),
@@ -292,11 +537,10 @@ export default function IngresoInventario() {
     try {
       const resp = await api.post("/ingresos", payload);
       Swal.fire("Guardado", "Ingreso registrado", "success");
-      abrirPdfIngreso(resp.data, detalleFiltrado);
-      setDetalle([
-        { key: Date.now(), productoId: "", cantidad: 0, stockMax: null, stockActual: null },
-      ]);
+      abrirPdfIngreso(resp.data, detalle);
       setObservaciones("");
+      setDetalle([]);
+      limpiarArticulo();
     } catch (error: any) {
       const msg = error?.response?.data?.message || error?.message || "No se pudo guardar";
       Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
@@ -305,9 +549,10 @@ export default function IngresoInventario() {
 
   return (
     <Paper sx={{ p: 3 }}>
-      <Typography variant="h4" gutterBottom>
-        Ingreso de inventario
-      </Typography>
+      <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2 }}>
+        <Inventory2Outlined color="primary" />
+        <Typography variant="h4">Ingreso de inventario</Typography>
+      </Stack>
       <Divider sx={{ mb: 2 }} />
 
       <Grid container spacing={2}>
@@ -317,7 +562,7 @@ export default function IngresoInventario() {
             <Select
               label="Bodega"
               value={bodegaId === "" ? "" : bodegaId}
-              onChange={(e) => onBodegaChange(Number(e.target.value))}
+              onChange={(e) => void onBodegaChange(Number(e.target.value))}
               disabled={!!userBodegaId && !canAccessAllBodegas}
             >
               {bodegas.map((b) => (
@@ -328,12 +573,10 @@ export default function IngresoInventario() {
             </Select>
           </FormControl>
         </Grid>
-        <Grid size={{ xs: 12 }}>
+        <Grid size={{ xs: 12, sm: 8 }}>
           <TextField
             label="Observaciones"
             fullWidth
-            multiline
-            rows={2}
             value={observaciones}
             onChange={(e) => setObservaciones(e.target.value)}
           />
@@ -342,57 +585,209 @@ export default function IngresoInventario() {
 
       <Divider sx={{ my: 2 }} />
 
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
-        <Typography variant="h6">Detalle</Typography>
-        <Button startIcon={<AddIcon />} onClick={addRow}>
-          Agregar linea
-        </Button>
-      </Stack>
+      <Typography variant="h6" sx={{ mb: 2 }}>
+        Agregar articulo
+      </Typography>
 
-      <Box sx={{ border: "1px solid #e0e0e0", borderRadius: 2, p: 2 }}>
-        {detalle.map((row) => (
-          <Grid container spacing={2} alignItems="center" key={row.key} sx={{ mb: 1 }}>
-            <Grid size={{ xs: 12, sm: 4 }}>
-              <Autocomplete
-                options={productos}
-                getOptionLabel={(option: any) => `${option.codigo} - ${option.nombre}`}
-                value={productos.find((p) => p.id === row.productoId) || null}
-                onChange={(_, newValue) =>
-                  onProductoChange(row.key, newValue ? newValue.id : "")
-                }
-                renderInput={(params) => <TextField {...params} label="Producto" />}
-                fullWidth
-              />
-            </Grid>
-            <Grid size={{ xs: 12, sm: 3 }}>
-              <TextField
-                label="Cantidad"
-                type="number"
-                fullWidth
-                value={row.cantidad}
-                onChange={(e) => onCantidadChange(row.key, Number(e.target.value))}
-                helperText={
-                  row.stockMax != null
-                    ? `Actual: ${row.stockActual ?? 0} | Max: ${row.stockMax}`
-                    : `Actual: ${row.stockActual ?? 0} | Sin limite definido`
-                }
-              />
-            </Grid>
-            <Grid size={{ xs: 12, sm: 3 }}>
-              <Box />
-            </Grid>
-            <Grid size={{ xs: 12, sm: 2 }} textAlign="right">
-              <IconButton
-                color="error"
-                onClick={() => removeRow(row.key)}
-                disabled={detalle.length === 1}
-              >
-                <DeleteIcon />
-              </IconButton>
-            </Grid>
+      <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+        <Stack spacing={1.5} sx={{ mb: 2 }}>
+          <Typography variant="body2" color="text.secondary">
+            Selecciona la combinacion del producto y agregalo a la lista temporal antes de guardar el ingreso.
+          </Typography>
+          {!bodegaId ? (
+            <Alert severity="info">Selecciona una bodega para consultar el stock actual y la capacidad disponible.</Alert>
+          ) : articuloActual.productoId && articuloActual.stockActual != null ? (
+            <Alert severity={capacidadDisponibleActual !== null && capacidadDisponibleActual <= 0 ? "warning" : "info"}>
+              {`Stock actual en bodega: ${articuloActual.stockActual} unidades. `}
+              {capacidadDisponibleActual !== null
+                ? `Capacidad disponible para ingreso: ${capacidadDisponibleActual} unidades. Capacidad restante estimada con esta captura: ${capacidadRestanteEstimada ?? 0} unidades.`
+                : "Este producto no tiene stock maximo definido, por lo que no hay un limite configurado para el ingreso."}
+            </Alert>
+          ) : (
+            <Alert severity="info">Completa los filtros del articulo para detectar automaticamente el producto.</Alert>
+          )}
+        </Stack>
+
+        <Grid container spacing={2}>
+          <Grid size={{ xs: 12, md: 2 }}>
+            <FormControl fullWidth>
+              <InputLabel>Tipo</InputLabel>
+              <Select label="Tipo" value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)}>
+                <MenuItem value="">Todos</MenuItem>
+                {tiposDisponibles.map((tipo) => (
+                  <MenuItem key={tipo} value={tipo}>
+                    {tipo}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
           </Grid>
-        ))}
-      </Box>
+          <Grid size={{ xs: 12, md: 2 }}>
+            <FormControl fullWidth>
+              <InputLabel>Genero</InputLabel>
+              <Select label="Genero" value={filtroGenero} onChange={(e) => setFiltroGenero(e.target.value)}>
+                <MenuItem value="">Todos</MenuItem>
+                {generosDisponibles.map((genero) => (
+                  <MenuItem key={genero} value={genero}>
+                    {genero}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid size={{ xs: 12, md: 2 }}>
+            <FormControl fullWidth>
+              <InputLabel>Tela</InputLabel>
+              <Select label="Tela" value={filtroTela} onChange={(e) => setFiltroTela(e.target.value)}>
+                <MenuItem value="">Todas</MenuItem>
+                {telasDisponibles.map((tela) => (
+                  <MenuItem key={tela} value={tela}>
+                    {tela}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid size={{ xs: 12, md: 2 }}>
+            <FormControl fullWidth>
+              <InputLabel>Talla</InputLabel>
+              <Select label="Talla" value={filtroTalla} onChange={(e) => setFiltroTalla(e.target.value)}>
+                <MenuItem value="">Todas</MenuItem>
+                {tallasDisponibles.map((talla) => (
+                  <MenuItem key={talla} value={talla}>
+                    {talla}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid size={{ xs: 12, md: 2 }}>
+            <FormControl fullWidth>
+              <InputLabel>Color</InputLabel>
+              <Select label="Color" value={filtroColor} onChange={(e) => setFiltroColor(e.target.value)}>
+                <MenuItem value="">Todos</MenuItem>
+                {coloresDisponibles.map((color) => (
+                  <MenuItem key={color} value={color}>
+                    {color}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid size={{ xs: 12, md: 2 }}>
+            <TextField
+              label="Codigo"
+              fullWidth
+              disabled
+              value={productoDetectado?.codigo || ""}
+              helperText={
+                !filtroTipo || !filtroGenero || !filtroTela || !filtroTalla || !filtroColor
+                  ? "Completa todos los filtros"
+                  : productosCoincidentes.length > 1
+                    ? "La combinacion coincide con varios productos"
+                    : productosCoincidentes.length === 0
+                      ? "No existe un producto con esa combinacion"
+                      : "Codigo detectado automaticamente"
+              }
+            />
+          </Grid>
+          <Grid size={{ xs: 12, sm: 4, md: 3 }}>
+            <TextField
+              label="Cantidad"
+              type="text"
+              fullWidth
+              inputProps={{ inputMode: "numeric", pattern: "[0-9]*" }}
+              value={cantidadInput}
+              onChange={(e) => {
+                const raw = e.target.value.replace(/\D/g, "");
+                const normalizado = raw.replace(/^0+(?=\d)/, "");
+                setCantidadInput(normalizado);
+              }}
+              helperText={
+                capacidadDisponibleActual !== null
+                  ? `Disponible para ingreso: ${capacidadDisponibleActual}`
+                  : "Sin limite configurado"
+              }
+            />
+          </Grid>
+        </Grid>
+
+        <Stack direction="row" spacing={1.5} justifyContent="flex-end" sx={{ mt: 2 }}>
+          {editingDetalleKey !== null && (
+            <Button variant="outlined" color="inherit" onClick={limpiarArticulo}>
+              Cancelar edicion
+            </Button>
+          )}
+          <Button
+            startIcon={editingDetalleKey !== null ? <EditOutlined /> : <AddIcon />}
+            variant="contained"
+            onClick={agregarArticulo}
+          >
+            {editingDetalleKey !== null ? "Actualizar articulo" : "Agregar a lista"}
+          </Button>
+        </Stack>
+      </Paper>
+
+      <Typography variant="h6" sx={{ mb: 1 }}>
+        Lista temporal
+      </Typography>
+
+      <TableContainer component={Paper} variant="outlined">
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              <TableCell align="center" sx={{ fontWeight: 700 }}>Codigo</TableCell>
+              <TableCell align="center" sx={{ fontWeight: 700 }}>Producto</TableCell>
+              <TableCell align="center" sx={{ fontWeight: 700 }}>Tipo</TableCell>
+              <TableCell align="center" sx={{ fontWeight: 700 }}>Genero</TableCell>
+              <TableCell align="center" sx={{ fontWeight: 700 }}>Tela</TableCell>
+              <TableCell align="center" sx={{ fontWeight: 700 }}>Talla</TableCell>
+              <TableCell align="center" sx={{ fontWeight: 700 }}>Color</TableCell>
+              <TableCell align="center" sx={{ fontWeight: 700 }}>Cantidad</TableCell>
+              <TableCell align="center" sx={{ fontWeight: 700 }}>Stock actual</TableCell>
+              <TableCell align="center" sx={{ fontWeight: 700 }}>Capacidad</TableCell>
+              <TableCell align="center" sx={{ fontWeight: 700 }}>Acciones</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {detalle.map((row) => {
+              const producto = productos.find((p) => p.id === row.productoId);
+              const capacidad = capacidadDisponibleRow(row);
+              return (
+                <TableRow key={row.key}>
+                  <TableCell align="center">{producto?.codigo || row.productoId}</TableCell>
+                  <TableCell align="center">{producto?.nombre || "Producto"}</TableCell>
+                  <TableCell align="center">{producto?.tipo || "N/D"}</TableCell>
+                  <TableCell align="center">{producto?.genero || "N/D"}</TableCell>
+                  <TableCell align="center">{obtenerTela(producto)}</TableCell>
+                  <TableCell align="center">{obtenerTalla(producto)}</TableCell>
+                  <TableCell align="center">{obtenerColor(producto)}</TableCell>
+                  <TableCell align="center">{row.cantidad}</TableCell>
+                  <TableCell align="center">{row.stockActual ?? "N/D"}</TableCell>
+                  <TableCell align="center">{capacidad === null ? "Sin limite" : capacidad}</TableCell>
+                  <TableCell align="center">
+                    <Stack direction="row" spacing={0.5} justifyContent="center">
+                      <IconButton color="primary" onClick={() => editarArticulo(row)}>
+                        <EditOutlined />
+                      </IconButton>
+                      <IconButton color="error" onClick={() => eliminarArticulo(row.key)}>
+                        <DeleteIcon />
+                      </IconButton>
+                    </Stack>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+            {!detalle.length && (
+              <TableRow>
+                <TableCell colSpan={11} align="center">
+                  Aun no has agregado articulos al ingreso.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </TableContainer>
 
       <Stack direction="row" justifyContent="space-between" sx={{ mt: 2 }}>
         <Typography>Total items: {totalItems}</Typography>
