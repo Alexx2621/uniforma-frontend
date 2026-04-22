@@ -19,6 +19,8 @@ import PlaylistAddCheckOutlined from "@mui/icons-material/PlaylistAddCheckOutlin
 import BlockOutlined from "@mui/icons-material/BlockOutlined";
 import { useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
@@ -93,7 +95,103 @@ interface ArticuloUnificado {
   color: string;
   descripcion: string;
   cantidad: number;
+  fuentes: {
+    pedidoId: number;
+    folio: string;
+    solicitadoPor: string;
+    cantidad: number;
+  }[];
 }
+
+const getTodayDateInputValue = () => {
+  const today = new Date();
+  today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
+  return today.toISOString().slice(0, 10);
+};
+
+const formatDateForFilename = (date = new Date()) => {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const sanitizeFilename = (value: string) =>
+  value
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, "-")
+    .replace(/\s+/g, "_");
+
+const loadImageAsDataUrl = async (src: string) =>
+  new Promise<string>((resolve, reject) => {
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = image.naturalWidth;
+        canvas.height = image.naturalHeight;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("No se pudo preparar el logo"));
+          return;
+        }
+        ctx.drawImage(image, 0, 0);
+        resolve(canvas.toDataURL("image/png"));
+      } catch (error) {
+        reject(error);
+      }
+    };
+    image.onerror = () => reject(new Error("No se pudo cargar el logo"));
+    image.src = src;
+  });
+
+const buildResumenUnificacion = (
+  articulos: ArticuloUnificado[],
+  pedidos: PedidoRow[],
+  bodegaId: number | null,
+  filtroTienda: string
+) => ({
+  bodegaId,
+  filtroTienda,
+  pedidos: [...pedidos]
+    .map((pedido) => ({
+      id: Number(pedido.id) || 0,
+      folio: pedido.displayFolio || `P-${pedido.id}`,
+      fecha: pedido.fecha || "",
+      solicitadoPor: `${pedido.solicitadoPor || ""}`.trim(),
+      bodegaId: pedido.bodegaId ?? null,
+    }))
+    .sort((a, b) => a.id - b.id),
+  articulos: [...articulos].map((articulo) => ({
+    key: articulo.key,
+    codigo: articulo.codigo,
+    nombre: articulo.nombre,
+    tipo: articulo.tipo,
+    genero: articulo.genero,
+    tela: articulo.tela,
+    talla: articulo.talla,
+    color: articulo.color,
+    descripcion: articulo.descripcion,
+    cantidad: articulo.cantidad,
+    fuentes: [...articulo.fuentes]
+      .map((fuente) => ({
+        pedidoId: Number(fuente.pedidoId) || 0,
+        folio: fuente.folio,
+        solicitadoPor: fuente.solicitadoPor,
+        cantidad: Number(fuente.cantidad) || 0,
+      }))
+      .sort((a, b) => {
+        const porPedido = a.pedidoId - b.pedidoId;
+        if (porPedido !== 0) return porPedido;
+        const porFolio = a.folio.localeCompare(b.folio);
+        if (porFolio !== 0) return porFolio;
+        const porUsuario = a.solicitadoPor.localeCompare(b.solicitadoPor);
+        if (porUsuario !== 0) return porUsuario;
+        return a.cantidad - b.cantidad;
+      }),
+  })),
+});
 
 export default function Pedidos() {
   const [rows, setRows] = useState<PedidoRow[]>([]);
@@ -103,9 +201,10 @@ export default function Pedidos() {
   const [tallas, setTallas] = useState<CatalogoItem[]>([]);
   const [colores, setColores] = useState<CatalogoItem[]>([]);
   const [filterCliente, setFilterCliente] = useState("");
-  const [filterFechaInicio, setFilterFechaInicio] = useState("");
-  const [filterFechaFin, setFilterFechaFin] = useState("");
+  const [filterFechaInicio, setFilterFechaInicio] = useState(() => getTodayDateInputValue());
+  const [filterFechaFin, setFilterFechaFin] = useState(() => getTodayDateInputValue());
   const [filterBodega, setFilterBodega] = useState<number | "all">("all");
+  const [generandoUnificado, setGenerandoUnificado] = useState(false);
   const navigate = useNavigate();
   const { rol, rolId, bodegaId: userBodegaId } = useAuthStore();
   const { crossStoreRoleIds, unifyOrderRoleIds, fetchConfig } = useSystemConfigStore();
@@ -346,220 +445,273 @@ export default function Pedidos() {
     }
   };
 
+  const descargarArchivoUnificado = async (
+    articulos: ArticuloUnificado[],
+    fileName: string,
+    pedidoNo: string,
+    filtroTienda: string,
+    totalPedidos: number
+  ) => {
+    const doc = new jsPDF({
+      orientation: "landscape",
+      unit: "mm",
+      format: "letter",
+    });
+    const pageWidth = doc.internal.pageSize.getWidth();
+
+    const fechaGeneracion = new Date();
+    const fechaDocumento = fechaGeneracion.toLocaleDateString("es-GT");
+    const logoDataUrl = await loadImageAsDataUrl(uniformaLogo);
+
+    doc.addImage(logoDataUrl, "PNG", 4, 4, 24, 24);
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(23);
+    doc.setTextColor(20, 55, 125);
+    const titleLabel = "PEDIDO No.:";
+    const titleY = 14;
+    const titleWidth = doc.getTextWidth(titleLabel);
+    doc.setFontSize(23);
+    doc.setTextColor(214, 0, 0);
+    const correlativoWidth = doc.getTextWidth(` ${pedidoNo}`);
+    const titleStartX = (pageWidth - (titleWidth + correlativoWidth)) / 2;
+
+    doc.setTextColor(20, 55, 125);
+    doc.text(titleLabel, titleStartX, titleY);
+    doc.setTextColor(214, 0, 0);
+    doc.text(` ${pedidoNo}`, titleStartX + titleWidth, titleY);
+
+    doc.setFontSize(13);
+    doc.setTextColor(0, 0, 0);
+    doc.text(fechaDocumento, pageWidth - 6, 12, { align: "right" });
+
+    doc.setFontSize(17);
+    doc.setTextColor(214, 0, 0);
+    doc.text("VENDEDOR", pageWidth / 2, 33, { align: "center" });
+
+    const sellerBoxY = 37;
+    const sellerBoxHeight = 15;
+    const sellerLeftWidth = 50;
+    const sellerRightWidth = 45;
+    const sellerLeftX = (pageWidth - (sellerLeftWidth + sellerRightWidth)) / 2;
+    doc.setFillColor(18, 48, 114);
+    doc.rect(sellerLeftX, sellerBoxY, sellerLeftWidth, sellerBoxHeight, "F");
+    doc.setFillColor(255, 32, 10);
+    doc.rect(sellerLeftX + sellerLeftWidth, sellerBoxY, sellerRightWidth, sellerBoxHeight, "F");
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11.4);
+    doc.setTextColor(255, 255, 255);
+    doc.text(filtroTienda.toUpperCase(), sellerLeftX + sellerLeftWidth / 2, sellerBoxY + 9.5, { align: "center" });
+    doc.text("RECIBIDO CONFORME", sellerLeftX + sellerLeftWidth + sellerRightWidth / 2, sellerBoxY + 9.5, {
+      align: "center",
+    });
+
+    autoTable(doc, {
+      startY: 61,
+      theme: "grid",
+      head: [["CANT", "PEDIDO", "TELA", "COLOR", "TALLA", "SEXO", "OBSERVACIONES"]],
+      body: articulos.length
+        ? articulos.map((item) => [
+            item.cantidad,
+            item.tipo,
+            item.tela,
+            item.color,
+            item.talla,
+            item.genero,
+            item.descripcion === "N/D" ? "" : item.descripcion,
+          ])
+        : [["-", "No hay articulos detallados en los pedidos seleccionados", "", "", "", "", ""]],
+      styles: {
+        fontSize: 9.5,
+        cellPadding: { top: 3.2, right: 2.8, bottom: 3.2, left: 2.8 },
+        minCellHeight: 13,
+        halign: "center",
+        valign: "middle",
+        lineColor: [0, 0, 0],
+        lineWidth: 0.08,
+        textColor: [0, 0, 0],
+        overflow: "hidden",
+        fillColor: [255, 255, 255],
+        fontStyle: "normal",
+      },
+      headStyles: {
+        fillColor: [26, 62, 132],
+        textColor: [255, 255, 255],
+        fontStyle: "bold",
+        fontSize: 11.2,
+        lineColor: [0, 0, 0],
+        lineWidth: 0,
+      },
+      bodyStyles: {
+        fillColor: [255, 255, 255],
+        textColor: [0, 0, 0],
+        lineColor: [0, 0, 0],
+        lineWidth: 0.08,
+      },
+      alternateRowStyles: {
+        fillColor: [255, 255, 255],
+        textColor: [0, 0, 0],
+      },
+      columnStyles: {
+        0: { cellWidth: 17 },
+        1: { cellWidth: 46 },
+        2: { cellWidth: 22 },
+        3: { cellWidth: 28, overflow: "linebreak" },
+        4: { cellWidth: 20 },
+        5: { cellWidth: 25 },
+        6: { cellWidth: "auto", halign: "left", overflow: "linebreak" },
+      },
+      margin: { left: 4, right: 4 },
+    });
+
+    const finalY = (doc as any).lastAutoTable?.finalY || 61;
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(75, 85, 99);
+    doc.text(
+      `Generado con ${totalPedidos} pedidos visibles y filtro de tienda: ${filtroTienda}.`,
+      4,
+      Math.min(finalY + 8, 205)
+    );
+
+    doc.save(fileName);
+  };
+
   const abrirVistaPreviaUnificada = async () => {
-    if (!canUnifyPedidos) return;
-
-    const agrupados = new Map<string, ArticuloUnificado>();
-
-    pedidosUnificables.forEach((pedido) => {
-      (pedido.detalle || []).forEach((detalle) => {
-        const producto = detalle.producto || productosMap.get(Number(detalle.productoId));
-        const codigo = normalizarTexto(producto?.codigo);
-        const nombre = normalizarTexto(producto?.nombre);
-        const tipo = normalizarTexto(producto?.tipo);
-        const genero = normalizarTexto(producto?.genero);
-        const tela = buscarNombreCatalogo(producto, "tela");
-        const talla = buscarNombreCatalogo(producto, "talla");
-        const color = buscarNombreCatalogo(producto, "color");
-        const descripcion = normalizarTexto(detalle.descripcion);
-        const key = [
-          Number(detalle.productoId) || 0,
-          codigo,
-          nombre,
-          tipo,
-          genero,
-          tela,
-          talla,
-          color,
-          descripcion,
-        ].join("|");
-
-        const existente = agrupados.get(key);
-        if (existente) {
-          existente.cantidad += Number(detalle.cantidad) || 0;
-          return;
-        }
-
-        agrupados.set(key, {
-          key,
-          codigo,
-          nombre,
-          tipo,
-          genero,
-          tela,
-          talla,
-          color,
-          descripcion,
-          cantidad: Number(detalle.cantidad) || 0,
-        });
-      });
-    });
-
-    const articulos = Array.from(agrupados.values()).sort((a, b) => {
-      const porCodigo = a.codigo.localeCompare(b.codigo);
-      if (porCodigo !== 0) return porCodigo;
-      return a.nombre.localeCompare(b.nombre);
-    });
-
+    if (!canUnifyPedidos || generandoUnificado) return;
     if (!pedidosUnificables.length) {
       Swal.fire("Aviso", "No hay pedidos disponibles para unificar", "info");
       return;
     }
 
-    const popup = window.open("", "_blank", "width=1280,height=840");
-    if (!popup) {
-      Swal.fire("Aviso", "Habilita las ventanas emergentes para ver la vista previa", "info");
-      return;
-    }
+    setGenerandoUnificado(true);
 
-    let correlativo = "";
     try {
+      const agrupados = new Map<string, ArticuloUnificado>();
+
+      pedidosUnificables.forEach((pedido) => {
+        (pedido.detalle || []).forEach((detalle) => {
+          const producto = detalle.producto || productosMap.get(Number(detalle.productoId));
+          const codigo = normalizarTexto(producto?.codigo);
+          const nombre = normalizarTexto(producto?.nombre);
+          const tipo = normalizarTexto(producto?.tipo);
+          const genero = normalizarTexto(producto?.genero);
+          const tela = buscarNombreCatalogo(producto, "tela");
+          const talla = buscarNombreCatalogo(producto, "talla");
+          const color = buscarNombreCatalogo(producto, "color");
+          const descripcion = normalizarTexto(detalle.descripcion);
+          const key = [
+            Number(detalle.productoId) || 0,
+            codigo,
+            nombre,
+            tipo,
+            genero,
+            tela,
+            talla,
+            color,
+            descripcion,
+          ].join("|");
+
+          const fuente = {
+            pedidoId: pedido.id,
+            folio: pedido.displayFolio || `P-${pedido.id}`,
+            solicitadoPor: normalizarTexto(pedido.solicitadoPor),
+            cantidad: Number(detalle.cantidad) || 0,
+          };
+
+          const existente = agrupados.get(key);
+          if (existente) {
+            existente.cantidad += Number(detalle.cantidad) || 0;
+            existente.fuentes.push(fuente);
+            return;
+          }
+
+          agrupados.set(key, {
+            key,
+            codigo,
+            nombre,
+            tipo,
+            genero,
+            tela,
+            talla,
+            color,
+            descripcion,
+            cantidad: Number(detalle.cantidad) || 0,
+            fuentes: [fuente],
+          });
+        });
+      });
+
+      const articulos = Array.from(agrupados.values()).sort((a, b) => {
+        const porCodigo = a.codigo.localeCompare(b.codigo);
+        if (porCodigo !== 0) return porCodigo;
+        return a.nombre.localeCompare(b.nombre);
+      });
+
+      const bodegaCorrelativo = filterBodega === "all" ? null : Number(filterBodega);
+      const filtroTienda =
+        filterBodega === "all"
+          ? "Todas las tiendas"
+          : bodegas.find((b) => b.id === Number(filterBodega))?.nombre || "Tienda filtrada";
+      const resumenCorrelativo = buildResumenUnificacion(articulos, pedidosUnificables, bodegaCorrelativo, filtroTienda);
+      const pedidoIds = pedidosUnificables
+        .map((pedido) => Number(pedido.id))
+        .filter((pedidoId) => Number.isInteger(pedidoId) && pedidoId > 0);
+
+      let correlativo = "";
       const resp = await api.post("/correlativos/produccion/generar", {
-        bodegaId: filterBodega === "all" ? null : Number(filterBodega),
+        bodegaId: bodegaCorrelativo,
+        pedidoIds,
+        resumen: resumenCorrelativo,
       });
       correlativo = resp.data?.correlativo || "";
+
+      const fechaGeneracion = new Date();
+      const fechaArchivo = formatDateForFilename(fechaGeneracion);
+      const pedidoNo = correlativo || `UNI-${fechaGeneracion.getFullYear()}${String(fechaGeneracion.getMonth() + 1).padStart(2, "0")}${String(
+        fechaGeneracion.getDate()
+      ).padStart(2, "0")}`;
+      const fileName = `${sanitizeFilename(pedidoNo)}_${fechaArchivo}.pdf`;
+      const articulosUnificados = articulos.filter((articulo) => articulo.fuentes.length > 1);
+
+      const pedidosHtml = articulosUnificados.length
+        ? `<div style="text-align:left;max-height:260px;overflow:auto;">
+          <p style="margin:0 0 10px 0;">Se detectaron ${articulosUnificados.length} articulo(s) unificados:</p>
+          <ul style="margin:0;padding-left:18px;">
+            ${articulosUnificados
+              .map((articulo) => {
+                const usuarios = Array.from(new Set(articulo.fuentes.map((fuente) => fuente.solicitadoPor))).join(", ");
+                const pedidos = Array.from(new Set(articulo.fuentes.map((fuente) => fuente.folio))).join(", ");
+                const nombreArticulo = [articulo.tipo, articulo.tela, articulo.color, articulo.talla, articulo.genero]
+                  .filter((value) => value && value !== "N/D")
+                  .join(" / ");
+                const descripcion = articulo.descripcion !== "N/D" ? ` | ${articulo.descripcion}` : "";
+                return `<li><strong>${nombreArticulo || articulo.nombre}</strong>${descripcion}<br/>Usuarios: ${usuarios}<br/>Pedidos: ${pedidos}</li>`;
+              })
+              .join("")}
+          </ul>
+        </div>`
+        : `<p style="margin:0;">Los pedidos se unificaron, pero no hubieron articulos unificados. Se descargara el PDF igualmente.</p>`;
+
+      await Swal.fire({
+        title: articulosUnificados.length ? "Articulos unificados" : "Sin articulos unificados",
+        html: pedidosHtml,
+        icon: articulosUnificados.length ? "success" : "info",
+        confirmButtonText: "Descargar PDF",
+        width: 640,
+      });
+
+      await descargarArchivoUnificado(articulos, fileName, pedidoNo, filtroTienda, pedidosUnificables.length);
     } catch (error: any) {
-      popup.close();
       Swal.fire(
         "Error",
         error?.response?.data?.message || "No se pudo generar el correlativo del reporte unificado",
         "error"
       );
-      return;
+    } finally {
+      setGenerandoUnificado(false);
     }
-
-    const escapeHtml = (value?: string | number | null) =>
-      `${value ?? ""}`
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#39;");
-
-    const filasHtml =
-      articulos.length > 0
-        ? articulos
-            .map(
-              (item, idx) => `<tr>
-          <td class="cantidad">${escapeHtml(item.cantidad)}</td>
-          <td>${escapeHtml(item.tipo)}</td>
-          <td>${escapeHtml(item.tela)}</td>
-          <td>${escapeHtml(item.color)}</td>
-          <td>${escapeHtml(item.talla)}</td>
-          <td>${escapeHtml(item.genero)}</td>
-          <td>${escapeHtml(item.descripcion === "N/D" ? "" : item.descripcion)}</td>
-        </tr>`
-            )
-            .join("")
-        : `<tr>
-            <td class="cantidad">-</td>
-            <td colspan="6" style="text-align:center;">No hay articulos detallados en los pedidos seleccionados</td>
-          </tr>`;
-
-    const fechaGeneracion = new Date();
-    const fechaDocumento = fechaGeneracion.toLocaleDateString("es-GT");
-    const filtroTienda =
-      filterBodega === "all"
-        ? "Todas las tiendas"
-        : bodegas.find((b) => b.id === Number(filterBodega))?.nombre || "Tienda filtrada";
-    const pedidoNo = correlativo || `UNI-${fechaGeneracion.getFullYear()}${String(fechaGeneracion.getMonth() + 1).padStart(2, "0")}${String(
-      fechaGeneracion.getDate()
-    ).padStart(2, "0")}`;
-    const vendedorLabel = filtroTienda.toUpperCase();
-    const logoUrl = uniformaLogo;
-    const html = `<!doctype html>
-      <html>
-        <head>
-          <meta charset="utf-8" />
-          <title>Vista previa unificada de produccion</title>
-          <style>
-            @page { size: letter landscape; margin: 8mm; }
-            * { box-sizing:border-box; }
-            html, body { width: 100%; height: 100%; }
-            body { font-family: Arial, sans-serif; margin: 0; color: #000; background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            .page { width: 100%; max-width: 1320px; margin: 0 auto; padding: 8px 10px 10px; }
-            .topline { display:grid; grid-template-columns: 132px 1fr 170px; align-items:start; gap: 12px; margin-bottom: 4px; }
-            .logo-wrap { display:flex; justify-content:center; }
-            .logo { width: 110px; height: 110px; object-fit: contain; }
-            .title-block { text-align:center; padding-top: 6px; }
-            .pedido-no { margin: 0; font-size: 30px; font-weight: 800; color: #0f3274; letter-spacing: 0.4px; }
-            .pedido-no .value { color: #d60000; }
-            .date { text-align:right; font-size: 18px; font-weight: 800; padding-top: 8px; }
-            .seller-wrap { margin: 2px auto 16px; width: 418px; }
-            .seller-label { text-align:center; font-size: 18px; font-weight: 800; color: #e10600; margin-bottom: 2px; }
-            .seller-boxes { display:grid; grid-template-columns: 1fr 210px; }
-            .seller-name { background:#123072; color:#fff; min-height:50px; display:flex; align-items:center; justify-content:center; text-align:center; padding: 8px 12px; font-size: 16px; font-weight: 800; }
-            .seller-note { background:#ff1200; color:#fff; min-height:50px; display:flex; align-items:center; justify-content:center; text-align:center; padding: 8px 12px; font-size: 15px; font-weight: 800; }
-            table { width:100%; border-collapse:collapse; table-layout:fixed; }
-            thead th { background:#0f3274; color:#fff; text-align:center; border:1px solid #0f3274; padding:8px 6px; font-size:15px; font-weight:800; }
-            tbody td { border:1px solid #1f1f1f; padding:8px 8px; font-size:14px; text-align:center; height:48px; vertical-align:middle; word-wrap:break-word; }
-            tbody td:last-child { text-align:left; }
-            .cantidad { width: 78px; }
-            .pedido { width: 220px; }
-            .tela { width: 104px; }
-            .color { width: 104px; }
-            .talla { width: 106px; }
-            .sexo { width: 104px; }
-            .obs { width: auto; }
-            .footer-note { margin-top:8px; font-size:11px; color:#475569; }
-            .actions { display:flex; justify-content:flex-end; margin-top:18px; padding: 0 28px 28px; }
-            button { border:none; background:#0f3274; color:#fff; padding:12px 22px; border-radius:8px; font-size:14px; cursor:pointer; }
-            @media print {
-              html, body { width: auto; height: auto; }
-              body { margin:0; background:#fff; }
-              .page { max-width: none; padding: 0; }
-              .actions { display:none; }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="page">
-            <div class="topline">
-              <div class="logo-wrap">
-                <img class="logo" src="${logoUrl}" alt="Uniforma" />
-              </div>
-              <div class="title-block">
-                <h1 class="pedido-no">PEDIDO No.: <span class="value">${escapeHtml(pedidoNo)}</span></h1>
-              </div>
-              <div class="date">${escapeHtml(fechaDocumento)}</div>
-            </div>
-
-            <div class="seller-wrap">
-              <div class="seller-label">VENDEDOR</div>
-              <div class="seller-boxes">
-                <div class="seller-name">${escapeHtml(vendedorLabel)}</div>
-                <div class="seller-note">RECIBIDO NOMBRE:</div>
-              </div>
-            </div>
-
-            <table>
-              <thead>
-                <tr>
-                  <th class="cantidad">CANT</th>
-                  <th class="pedido">PEDIDO</th>
-                  <th class="tela">TELA</th>
-                  <th class="color">COLOR</th>
-                  <th class="talla">TALLA</th>
-                  <th class="sexo">SEXO</th>
-                  <th class="obs">OBSERVACIONES</th>
-                </tr>
-              </thead>
-              <tbody>${filasHtml}</tbody>
-            </table>
-
-            <div class="footer-note">
-              Generado con ${escapeHtml(pedidosUnificables.length)} pedidos visibles y filtro de tienda: ${escapeHtml(filtroTienda)}.
-            </div>
-          </div>
-
-          <div class="actions">
-            <button onclick="window.print()">PDF / Imprimir</button>
-          </div>
-        </body>
-      </html>`;
-
-    popup.document.write(html);
-    popup.document.close();
   };
 
   const columns: GridColDef[] = [
@@ -670,7 +822,12 @@ export default function Pedidos() {
         </Stack>
         <Stack direction="row" spacing={1}>
           {canUnifyPedidos && (
-            <Button startIcon={<MergeTypeOutlined />} variant="outlined" onClick={abrirVistaPreviaUnificada}>
+            <Button
+              startIcon={<MergeTypeOutlined />}
+              variant="outlined"
+              onClick={abrirVistaPreviaUnificada}
+              disabled={generandoUnificado}
+            >
               Unificar
             </Button>
           )}
