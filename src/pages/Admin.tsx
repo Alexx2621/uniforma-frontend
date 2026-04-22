@@ -14,6 +14,7 @@ import {
   ListItemText,
   IconButton,
   MenuItem,
+  Checkbox,
 } from "@mui/material";
 import SaveOutlined from "@mui/icons-material/SaveOutlined";
 import NotificationsActiveOutlined from "@mui/icons-material/NotificationsActiveOutlined";
@@ -99,6 +100,31 @@ const parseCsv = (value: string) =>
     .filter(Boolean);
 
 const formatCsv = (values: string[]) => values.join(", ");
+
+const normalizeRoleIds = (raw: unknown): number[] => {
+  if (Array.isArray(raw)) {
+    return Array.from(
+      new Set(
+        raw
+          .map((value) => Number(value))
+          .filter((value) => Number.isFinite(value) && value > 0),
+      ),
+    );
+  }
+
+  if (typeof raw === "string") {
+    return Array.from(
+      new Set(
+        raw
+          .split(",")
+          .map((value) => Number(value.trim()))
+          .filter((value) => Number.isFinite(value) && value > 0),
+      ),
+    );
+  }
+
+  return [];
+};
 
 const createEmptyMassConfigDraft = (): ProductMassConfigDraft => ({
   precio: 275,
@@ -218,6 +244,13 @@ export default function Admin() {
   } = useSystemConfigStore();
   const { rol, permisos } = useAuthStore();
   const canManageAdmin = hasPermission(rol, permisos, "admin.manage");
+  const getRoleNames = useCallback(
+    (roleIds: number[]) =>
+      normalizeRoleIds(roleIds)
+        .map((id) => roles.find((role) => role.id === id)?.nombre || `Rol #${id}`)
+        .join(", "),
+    [roles]
+  );
 
   const modulesBySection = useMemo(() => {
     const grouped = new Map<string, typeof menuPathItems>();
@@ -247,22 +280,16 @@ export default function Admin() {
         whatsappTo: data.whatsappTo || "",
         stockThreshold: data.stockThreshold ?? 5,
         highSaleThreshold: data.highSaleThreshold ?? 1000,
-        pedidoAlertRoleIds: Array.isArray(data.pedidoAlertRoleIds) ? data.pedidoAlertRoleIds.map(Number) : [],
-        crossStoreRoleIds: Array.isArray(data.crossStoreRoleIds) ? data.crossStoreRoleIds.map(Number) : [],
-        unifyOrderRoleIds: Array.isArray(data.unifyOrderRoleIds) ? data.unifyOrderRoleIds.map(Number) : [],
+        pedidoAlertRoleIds: normalizeRoleIds(data.pedidoAlertRoleIds),
+        crossStoreRoleIds: normalizeRoleIds(data.crossStoreRoleIds),
+        unifyOrderRoleIds: normalizeRoleIds(data.unifyOrderRoleIds),
         emailEnabled: Boolean(data.emailTo),
         whatsappEnabled: Boolean(data.whatsappTo),
         productMassConfig: data.productMassConfig,
       });
-      setSavedPedidoAlertRoleIds(
-        Array.isArray(data.pedidoAlertRoleIds) ? data.pedidoAlertRoleIds.map(Number) : [],
-      );
-      setSavedCrossStoreRoleIds(
-        Array.isArray(data.crossStoreRoleIds) ? data.crossStoreRoleIds.map(Number) : [],
-      );
-      setSavedUnifyOrderRoleIds(
-        Array.isArray(data.unifyOrderRoleIds) ? data.unifyOrderRoleIds.map(Number) : [],
-      );
+      setSavedPedidoAlertRoleIds(normalizeRoleIds(data.pedidoAlertRoleIds));
+      setSavedCrossStoreRoleIds(normalizeRoleIds(data.crossStoreRoleIds));
+      setSavedUnifyOrderRoleIds(normalizeRoleIds(data.unifyOrderRoleIds));
       setProductMassConfigDraft(mapMassConfigToDraft(data.productMassConfig || {}));
       setDisabledPathsDraft(Array.isArray(data.disabledPaths) ? data.disabledPaths : []);
       setUserDisabledPathsDraft(
@@ -367,13 +394,14 @@ export default function Admin() {
         ),
       };
       const { data } = await api.put("/config/notificaciones", payload);
-      const nextSavedRoleIds = Array.isArray(data?.pedidoAlertRoleIds) ? data.pedidoAlertRoleIds.map(Number) : [];
+      const nextSavedRoleIds = normalizeRoleIds(data?.pedidoAlertRoleIds);
       setConfig((prev) => ({
         ...prev,
         pedidoAlertRoleIds: nextSavedRoleIds,
       }));
       setSavedPedidoAlertRoleIds(nextSavedRoleIds);
       await fetchConfig();
+      await cargar();
       Swal.fire("Guardado", "Los roles para alertas de pedidos fueron actualizados", "success");
     } catch {
       Swal.fire("Error", "No se pudieron guardar los roles de alertas de pedidos", "error");
@@ -395,9 +423,7 @@ export default function Admin() {
         ),
       };
       const { data } = await api.put("/config/notificaciones", payload);
-      const nextSavedRoleIds = Array.isArray(data?.crossStoreRoleIds)
-        ? data.crossStoreRoleIds.map(Number)
-        : payload.crossStoreRoleIds;
+      const nextSavedRoleIds = normalizeRoleIds(data?.crossStoreRoleIds ?? payload.crossStoreRoleIds);
       setConfig((prev) => ({
         ...prev,
         crossStoreRoleIds: nextSavedRoleIds,
@@ -426,9 +452,7 @@ export default function Admin() {
         ),
       };
       const { data } = await api.put("/config/notificaciones", payload);
-      const nextSavedRoleIds = Array.isArray(data?.unifyOrderRoleIds)
-        ? data.unifyOrderRoleIds.map(Number)
-        : payload.unifyOrderRoleIds;
+      const nextSavedRoleIds = normalizeRoleIds(data?.unifyOrderRoleIds ?? payload.unifyOrderRoleIds);
       setConfig((prev) => ({
         ...prev,
         unifyOrderRoleIds: nextSavedRoleIds,
@@ -824,12 +848,7 @@ export default function Admin() {
             </Typography>
             <Typography variant="body2" color="text.secondary">
               Roles guardados actualmente:{" "}
-              {savedCrossStoreRoleIds.length
-                ? roles
-                    .filter((role) => savedCrossStoreRoleIds.includes(role.id))
-                    .map((role) => role.nombre)
-                    .join(", ")
-                : "ninguno"}
+              {savedCrossStoreRoleIds.length ? getRoleNames(savedCrossStoreRoleIds) : "ninguno"}
             </Typography>
             <TextField
               select
@@ -837,31 +856,23 @@ export default function Admin() {
               label="Roles con acceso multi-tienda"
               value={config.crossStoreRoleIds}
               onChange={(e) =>
-                setConfig({
-                  ...config,
-                  crossStoreRoleIds:
-                    typeof e.target.value === "string"
-                      ? e.target.value
-                          .split(",")
-                          .map((value) => Number(value))
-                          .filter((value) => Number.isFinite(value))
-                      : (e.target.value as number[]),
-                })
+                setConfig((prev) => ({
+                  ...prev,
+                  crossStoreRoleIds: normalizeRoleIds(e.target.value),
+                }))
               }
               SelectProps={{
                 multiple: true,
                 renderValue: (selected) => {
-                  const ids = Array.isArray(selected) ? selected.map(Number) : [];
-                  return roles
-                    .filter((role) => ids.includes(role.id))
-                    .map((role) => role.nombre)
-                    .join(", ");
+                  const ids = normalizeRoleIds(selected);
+                  return getRoleNames(ids);
                 },
               }}
               helperText="Se aplica especificamente con el boton de abajo."
             >
               {roles.map((role) => (
                 <MenuItem key={role.id} value={role.id}>
+                  <Checkbox checked={config.crossStoreRoleIds.includes(role.id)} />
                   {role.nombre}
                 </MenuItem>
               ))}
@@ -887,12 +898,7 @@ export default function Admin() {
             </Typography>
             <Typography variant="body2" color="text.secondary">
               Roles guardados actualmente:{" "}
-              {savedUnifyOrderRoleIds.length
-                ? roles
-                    .filter((role) => savedUnifyOrderRoleIds.includes(role.id))
-                    .map((role) => role.nombre)
-                    .join(", ")
-                : "ninguno"}
+              {savedUnifyOrderRoleIds.length ? getRoleNames(savedUnifyOrderRoleIds) : "ninguno"}
             </Typography>
             <TextField
               select
@@ -900,31 +906,23 @@ export default function Admin() {
               label="Roles con permiso para unificar pedidos"
               value={config.unifyOrderRoleIds}
               onChange={(e) =>
-                setConfig({
-                  ...config,
-                  unifyOrderRoleIds:
-                    typeof e.target.value === "string"
-                      ? e.target.value
-                          .split(",")
-                          .map((value) => Number(value))
-                          .filter((value) => Number.isFinite(value))
-                      : (e.target.value as number[]),
-                })
+                setConfig((prev) => ({
+                  ...prev,
+                  unifyOrderRoleIds: normalizeRoleIds(e.target.value),
+                }))
               }
               SelectProps={{
                 multiple: true,
                 renderValue: (selected) => {
-                  const ids = Array.isArray(selected) ? selected.map(Number) : [];
-                  return roles
-                    .filter((role) => ids.includes(role.id))
-                    .map((role) => role.nombre)
-                    .join(", ");
+                  const ids = normalizeRoleIds(selected);
+                  return getRoleNames(ids);
                 },
               }}
               helperText="Se aplica especificamente con el boton de abajo."
             >
               {roles.map((role) => (
                 <MenuItem key={role.id} value={role.id}>
+                  <Checkbox checked={config.unifyOrderRoleIds.includes(role.id)} />
                   {role.nombre}
                 </MenuItem>
               ))}
@@ -1298,12 +1296,7 @@ export default function Admin() {
             </Typography>
             <Typography variant="body2" color="text.secondary">
               Roles guardados actualmente:{" "}
-              {savedPedidoAlertRoleIds.length
-                ? roles
-                    .filter((role) => savedPedidoAlertRoleIds.includes(role.id))
-                    .map((role) => role.nombre)
-                    .join(", ")
-                : "ninguno"}
+              {savedPedidoAlertRoleIds.length ? getRoleNames(savedPedidoAlertRoleIds) : "ninguno"}
             </Typography>
             <TextField
               select
@@ -1311,31 +1304,23 @@ export default function Admin() {
               label="Roles a notificar por nuevo pedido"
               value={config.pedidoAlertRoleIds}
               onChange={(e) =>
-                setConfig({
-                  ...config,
-                  pedidoAlertRoleIds:
-                    typeof e.target.value === "string"
-                      ? e.target.value
-                          .split(",")
-                          .map((value) => Number(value))
-                          .filter((value) => Number.isFinite(value))
-                      : (e.target.value as number[]),
-                })
+                setConfig((prev) => ({
+                  ...prev,
+                  pedidoAlertRoleIds: normalizeRoleIds(e.target.value),
+                }))
               }
               SelectProps={{
                 multiple: true,
                 renderValue: (selected) => {
-                  const ids = Array.isArray(selected) ? selected.map(Number) : [];
-                  return roles
-                    .filter((role) => ids.includes(role.id))
-                    .map((role) => role.nombre)
-                    .join(", ");
+                  const ids = normalizeRoleIds(selected);
+                  return getRoleNames(ids);
                 },
               }}
               helperText="Esta configuracion se guarda con el boton de abajo y aplica por rol, no por usuario individual."
             >
               {roles.map((role) => (
                 <MenuItem key={role.id} value={role.id}>
+                  <Checkbox checked={config.pedidoAlertRoleIds.includes(role.id)} />
                   {role.nombre}
                 </MenuItem>
               ))}
