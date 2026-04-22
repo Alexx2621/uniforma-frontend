@@ -18,6 +18,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import LOGO_URL from "../assets/3-logos.png";
+import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../utils/fontFamily";
 import { buildVentaPdfHtml } from "../utils/ventaPdf";
 
 interface VentaRow {
@@ -361,8 +362,8 @@ export default function Ventas() {
             <tbody>
               ${rows || `<tr><td colspan="6" style="text-align:center;color:#6b7280;">Sin registros</td></tr>`}
               <tr class="tot">
-                <td colspan="5" style="text-align:right;font-weight:700;">Subtotal</td>
-                <td style="font-weight:700;">${formatter(subtotal)}</td>
+                <td colspan="5" style="text-align:right;font-family:${PDF_FONT_SEMIBOLD_FAMILY};font-weight:600;">Subtotal</td>
+                <td style="font-family:${PDF_FONT_SEMIBOLD_FAMILY};font-weight:600;">${formatter(subtotal)}</td>
               </tr>
             </tbody>
           </table>
@@ -391,21 +392,22 @@ export default function Ventas() {
       <style>
         * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         @page { margin: 12px; }
-        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 12px; color: #0f172a; }
+        body { font-family: ${PDF_FONT_FAMILY}; margin: 12px; color: #0f172a; }
         h2 { margin: 0 0 12px 0; }
         .header { display:flex; justify-content: space-between; align-items:center; border-bottom:2px solid #0b2c52; padding-bottom:10px; margin-bottom:12px; }
         .brand { display:flex; align-items:center; gap:10px; }
-        .brand img { height: 48px; }
-        .brand .fallback { display:none; font-weight:700; font-size:18px; color:#0b2c52; }
+        .brand img { height: 42px; }
+        .brand .fallback { display:none; font-family:${PDF_FONT_SEMIBOLD_FAMILY}; font-weight:600; font-size:18px; color:#0b2c52; }
         .meta { font-size:12px; color:#475569; text-align:right; line-height:1.4; }
-        .section-title { background: #b30006; color: #fff; padding: 8px 12px; margin: 18px 0 6px 0; font-size: 13px; letter-spacing: 0.5px; border-radius:6px; text-align:center; font-weight:700; }
+        .section-title { background: #b30006; color: #fff; padding: 8px 12px; margin: 18px 0 6px 0; font-size: 13px; letter-spacing: 0.5px; border-radius:6px; text-align:center; font-family:${PDF_FONT_SEMIBOLD_FAMILY}; font-weight:600; }
         table { width: 100%; border-collapse: collapse; font-size: 12px; }
         th, td { border: 1px solid #e2e8f0; padding: 8px; text-align: left; }
-        th { background: #0b2c52; color: #fff; }
+        th { background: #0b2c52; color: #fff; font-family:${PDF_FONT_SEMIBOLD_FAMILY}; font-weight:600; }
         .resumen th { background: #facc15; color: #111827; }
-        .tot td { background: #0b2c52; color: #fff; }
+        .tot td { background: #0b2c52; color: #fff; font-family:${PDF_FONT_SEMIBOLD_FAMILY}; font-weight:600; }
         .info-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:6px 12px; font-size:12px; margin-bottom:12px; }
-        .chip { display:inline-flex; padding:4px 10px; border-radius:999px; background:#e2e8f0; font-weight:600; }
+        .chip { display:inline-flex; padding:4px 10px; border-radius:999px; background:#e2e8f0; font-family:${PDF_FONT_SEMIBOLD_FAMILY}; font-weight:600; }
+        .brand-title, strong { font-family:${PDF_FONT_SEMIBOLD_FAMILY}; font-weight:600; }
       </style>
       </head>
       <body>
@@ -414,7 +416,7 @@ export default function Ventas() {
             <img src="${LOGO_URL}" alt="Uniforma" onerror="this.style.display='none';document.getElementById('logo-fallback-v').style.display='block';" />
             <div id="logo-fallback-v" class="fallback">UNIFORMA</div>
             <div>
-              <div style="font-size:18px;font-weight:700;">Uniforma</div>
+              <div class="brand-title" style="font-size:18px;">Uniforma</div>
               <div style="font-size:12px;color:#475569;">Cierre diario por vendedor</div>
             </div>
           </div>
@@ -430,7 +432,7 @@ export default function Ventas() {
           <thead><tr><th>Detalle</th><th>Sub-total</th></tr></thead>
           <tbody>
             ${resumenRows}
-            <tr><td style="font-weight:700;">Total</td><td style="font-weight:700;">${formatter(totalFinal)}</td></tr>
+            <tr><td style="font-family:${PDF_FONT_SEMIBOLD_FAMILY};font-weight:600;">Total</td><td style="font-family:${PDF_FONT_SEMIBOLD_FAMILY};font-weight:600;">${formatter(totalFinal)}</td></tr>
           </tbody>
         </table>
         <script>window.onload=function(){window.print();}</script>
@@ -490,8 +492,8 @@ export default function Ventas() {
             <tbody>
               ${rows || `<tr><td colspan="7" style="text-align:center;color:#6b7280;">Sin registros</td></tr>`}
               <tr class="tot">
-                <td colspan="5" style="text-align:right;font-weight:700;">Subtotal</td>
-                <td colspan="2" style="font-weight:700;">${formatter(subtotal)}</td>
+                <td colspan="5" style="text-align:right;font-family:${PDF_FONT_SEMIBOLD_FAMILY};font-weight:600;">Subtotal</td>
+                <td colspan="2" style="font-family:${PDF_FONT_SEMIBOLD_FAMILY};font-weight:600;">${formatter(subtotal)}</td>
               </tr>
             </tbody>
           </table>
@@ -520,20 +522,21 @@ export default function Ventas() {
       <style>
         * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         @page { margin: 12px; }
-        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 12px; color: #0f172a; }
+        body { font-family: ${PDF_FONT_FAMILY}; margin: 12px; color: #0f172a; }
         h2 { margin: 0 0 12px 0; }
         .header { display:flex; justify-content: space-between; align-items:center; border-bottom:2px solid #0b2c52; padding-bottom:10px; margin-bottom:12px; }
         .brand { display:flex; align-items:center; gap:10px; }
-        .brand img { height: 48px; }
-        .brand .fallback { display:none; font-weight:700; font-size:18px; color:#0b2c52; }
+        .brand img { height: 42px; }
+        .brand .fallback { display:none; font-family:${PDF_FONT_SEMIBOLD_FAMILY}; font-weight:600; font-size:18px; color:#0b2c52; }
         .meta { font-size:12px; color:#475569; text-align:right; line-height:1.4; }
-        .section-title { background: #b30006; color: #fff; padding: 8px 12px; margin: 18px 0 6px 0; font-size: 13px; letter-spacing: 0.5px; border-radius:6px; text-align:center; font-weight:700; }
+        .section-title { background: #b30006; color: #fff; padding: 8px 12px; margin: 18px 0 6px 0; font-size: 13px; letter-spacing: 0.5px; border-radius:6px; text-align:center; font-family:${PDF_FONT_SEMIBOLD_FAMILY}; font-weight:600; }
         table { width: 100%; border-collapse: collapse; font-size: 12px; }
         th, td { border: 1px solid #e2e8f0; padding: 8px; text-align: left; vertical-align: top; }
-        th { background: #0b2c52; color: #fff; }
+        th { background: #0b2c52; color: #fff; font-family:${PDF_FONT_SEMIBOLD_FAMILY}; font-weight:600; }
         .resumen th { background: #facc15; color: #111827; }
-        .tot td { background: #0b2c52; color: #fff; }
+        .tot td { background: #0b2c52; color: #fff; font-family:${PDF_FONT_SEMIBOLD_FAMILY}; font-weight:600; }
         .info-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:6px 12px; font-size:12px; margin-bottom:12px; }
+        .brand-title, strong { font-family:${PDF_FONT_SEMIBOLD_FAMILY}; font-weight:600; }
       </style>
       </head>
       <body>
@@ -542,7 +545,7 @@ export default function Ventas() {
             <img src="${LOGO_URL}" alt="Uniforma" onerror="this.style.display='none';document.getElementById('logo-fallback-t').style.display='block';" />
             <div id="logo-fallback-t" class="fallback">UNIFORMA</div>
             <div>
-              <div style="font-size:18px;font-weight:700;">Uniforma</div>
+              <div class="brand-title" style="font-size:18px;">Uniforma</div>
               <div style="font-size:12px;color:#475569;">Cierre diario por tienda</div>
             </div>
           </div>
@@ -558,7 +561,7 @@ export default function Ventas() {
           <thead><tr><th>Detalle</th><th>Sub-total</th></tr></thead>
           <tbody>
             ${resumenRows}
-            <tr><td style="font-weight:700;">Total</td><td style="font-weight:700;">${formatter(totalFinal)}</td></tr>
+            <tr><td style="font-family:${PDF_FONT_SEMIBOLD_FAMILY};font-weight:600;">Total</td><td style="font-family:${PDF_FONT_SEMIBOLD_FAMILY};font-weight:600;">${formatter(totalFinal)}</td></tr>
           </tbody>
         </table>
         <script>window.onload=function(){window.print();}</script>

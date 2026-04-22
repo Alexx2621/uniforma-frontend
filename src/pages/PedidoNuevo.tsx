@@ -28,6 +28,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import uniformaLogo from "../assets/3-logos.png";
+import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../utils/fontFamily";
 
 interface Cliente {
   id: number;
@@ -135,7 +136,7 @@ const buildPdfStyles = () => `
     * { box-sizing: border-box; }
     html, body { width: 100%; height: 100%; }
     body {
-      font-family: Arial, sans-serif;
+      font-family: ${PDF_FONT_FAMILY};
       margin: 0;
       color: #000;
       background: #fff;
@@ -145,13 +146,13 @@ const buildPdfStyles = () => `
     .page { width: 100%; max-width: 1320px; margin: 0 auto; padding: 8px 10px 10px; }
     .topline { display:grid; grid-template-columns: 132px 1fr 170px; align-items:start; gap: 12px; margin-bottom: 4px; }
     .logo-wrap { display:flex; justify-content:center; }
-    .logo { width: 110px; height: 110px; object-fit: contain; }
+    .logo { width: 92px; height: 92px; object-fit: contain; }
     .title-block { text-align:center; padding-top: 6px; }
-    .pedido-no { margin: 0; font-size: 30px; font-weight: 800; color: #0f3274; letter-spacing: 0.4px; }
+    .pedido-no { margin: 0; font-size: 30px; font-family: ${PDF_FONT_SEMIBOLD_FAMILY}; font-weight: 600; color: #0f3274; letter-spacing: 0.4px; }
     .pedido-no .value { color: #d60000; }
-    .date { text-align:right; font-size: 18px; font-weight: 800; padding-top: 8px; }
+    .date { text-align:right; font-size: 18px; font-family: ${PDF_FONT_SEMIBOLD_FAMILY}; font-weight: 600; padding-top: 8px; }
     .meta-wrap { margin: 2px auto 16px; width: 560px; }
-    .meta-label { text-align:center; font-size: 18px; font-weight: 800; color: #e10600; margin-bottom: 2px; }
+    .meta-label { text-align:center; font-size: 18px; font-family: ${PDF_FONT_SEMIBOLD_FAMILY}; font-weight: 600; color: #e10600; margin-bottom: 2px; }
     .meta-boxes { display:grid; grid-template-columns: 1fr 1fr; }
     .meta-primary {
       background:#123072;
@@ -163,7 +164,8 @@ const buildPdfStyles = () => `
       text-align:center;
       padding: 8px 12px;
       font-size: 16px;
-      font-weight: 800;
+      font-family: ${PDF_FONT_SEMIBOLD_FAMILY};
+      font-weight: 600;
     }
     .meta-secondary {
       background:#ff1200;
@@ -175,7 +177,8 @@ const buildPdfStyles = () => `
       text-align:center;
       padding: 8px 12px;
       font-size: 15px;
-      font-weight: 800;
+      font-family: ${PDF_FONT_SEMIBOLD_FAMILY};
+      font-weight: 600;
     }
     .info-grid {
       display: grid;
@@ -192,7 +195,8 @@ const buildPdfStyles = () => `
       background: #0f3274;
       color: #fff;
       font-size: 12px;
-      font-weight: 700;
+      font-family: ${PDF_FONT_SEMIBOLD_FAMILY};
+      font-weight: 600;
       padding: 4px 8px;
       letter-spacing: 0.3px;
     }
@@ -211,7 +215,8 @@ const buildPdfStyles = () => `
       border:1px solid #0f3274;
       padding:8px 6px;
       font-size:15px;
-      font-weight:800;
+      font-family: ${PDF_FONT_SEMIBOLD_FAMILY};
+      font-weight:600;
     }
     tbody td {
       border:1px solid #1f1f1f;
@@ -241,7 +246,8 @@ const buildPdfStyles = () => `
     .totals-row.total {
       background:#0f3274;
       color:#fff;
-      font-weight:800;
+      font-family: ${PDF_FONT_SEMIBOLD_FAMILY};
+      font-weight:600;
     }
     .footer-note { margin-top:8px; font-size:11px; color:#475569; }
     @media print {

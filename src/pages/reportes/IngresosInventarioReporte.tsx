@@ -27,6 +27,7 @@ import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
 import Swal from "sweetalert2";
 import { api } from "../../api/axios";
 import LOGO_URL from "../../assets/3-logos.png";
+import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../../utils/fontFamily";
 import { buildIngresoInventarioPdfHtml } from "../../utils/inventarioPdf";
 
 interface DetalleIngreso {
@@ -39,6 +40,7 @@ interface Ingreso {
   fecha: string;
   bodegaId: number;
   observaciones?: string | null;
+  responsable?: string | null;
   detalle: DetalleIngreso[];
 }
 
@@ -112,11 +114,11 @@ const exportPdf = (rows: any[]) => {
     <meta charset="utf-8" />
     <title>Ingresos de inventario</title>
     <style>
-      body { font-family: Arial, sans-serif; margin: 24px; color: #1f2937; }
-      h2 { margin: 0 0 12px 0; }
+      body { font-family: ${PDF_FONT_FAMILY}; margin: 24px; color: #1f2937; }
+      h2 { margin: 0 0 12px 0; font-family: ${PDF_FONT_SEMIBOLD_FAMILY}; font-weight: 600; }
       table { border-collapse: collapse; width: 100%; font-size: 12px; }
       th, td { border: 1px solid #e2e8f0; padding: 8px; text-align: left; }
-      th { background: #0f172a; color: #fff; }
+      th { background: #0f172a; color: #fff; font-family: ${PDF_FONT_SEMIBOLD_FAMILY}; font-weight: 600; }
     </style>
   </head>
   <body>
@@ -217,6 +219,7 @@ export default function IngresosInventarioReporte() {
           bodega,
           items,
           observaciones: ing.observaciones || "",
+          responsable: ing.responsable || "",
         };
       });
   }, [ingresos, bodegas, desde, hasta, bodegaId]);
@@ -233,7 +236,7 @@ export default function IngresosInventarioReporte() {
       folio: row.folio,
       fecha: ingreso?.fecha ? new Date(ingreso.fecha) : new Date(),
       bodega: row.bodega,
-      responsable: "Responsable",
+      responsable: row.responsable || "Responsable",
       observaciones: row.observaciones || "",
       totalItems: row.items,
       logoUrl: LOGO_URL,

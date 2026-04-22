@@ -528,6 +528,7 @@ export default function IngresoInventario() {
     const payload = {
       bodegaId: Number(bodegaId),
       observaciones: observaciones || null,
+      responsable: usuario || null,
       detalle: detalle.map((d) => ({
         productoId: d.productoId,
         cantidad: d.cantidad,

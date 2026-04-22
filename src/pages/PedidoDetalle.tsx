@@ -28,6 +28,7 @@ import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
+import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../utils/fontFamily";
 
 interface Detalle {
   producto: {
@@ -232,9 +233,10 @@ export default function PedidoDetalle() {
       <html><head><meta charset="utf-8" />
       <title>Pago pedido</title>
       <style>
-        body { font-family: Arial, sans-serif; margin: 24px; color: #1f2937; }
+        body { font-family: ${PDF_FONT_FAMILY}; margin: 24px; color: #1f2937; }
         .header { display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #0f172a; padding-bottom:8px; margin-bottom:12px; }
-        .brand { font-weight:700; font-size:18px; }
+        .brand { font-family: ${PDF_FONT_SEMIBOLD_FAMILY}; font-weight:600; font-size:18px; }
+        strong, th { font-family: ${PDF_FONT_SEMIBOLD_FAMILY}; font-weight:600; }
         table { width:100%; border-collapse:collapse; margin-top:8px; font-size:13px; }
         th { background:#0f172a; color:#fff; padding:8px; text-align:left; }
         td { padding:8px; border-bottom:1px solid #e2e8f0; }
@@ -316,15 +318,16 @@ export default function PedidoDetalle() {
       <html><head><meta charset="utf-8" />
       <title>Pedido de produccion</title>
       <style>
-        body { font-family: Arial, sans-serif; margin: 24px; color: #1f2937; }
+        body { font-family: ${PDF_FONT_FAMILY}; margin: 24px; color: #1f2937; }
         .header { display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #0f172a; padding-bottom:8px; margin-bottom:12px; }
-        .brand { font-size:18px; font-weight:700; letter-spacing:0.5px; }
+        .brand { font-size:18px; font-family: ${PDF_FONT_SEMIBOLD_FAMILY}; font-weight:600; letter-spacing:0.5px; }
+        strong, th { font-family: ${PDF_FONT_SEMIBOLD_FAMILY}; font-weight:600; }
         table { width:100%; border-collapse: collapse; margin-top:8px; font-size:12px; }
         th { background:#0f172a; color:#fff; text-align:left; padding:8px; }
         td { border-bottom:1px solid #e2e8f0; padding:7px; }
         .totals { width: 280px; margin-left:auto; margin-top:12px; font-size:13px; }
         .totals-row { display:flex; justify-content:space-between; padding:6px 0; }
-        .totals-row.total { font-weight:700; border-top:2px solid #0f172a; margin-top:4px; }
+        .totals-row.total { font-family: ${PDF_FONT_SEMIBOLD_FAMILY}; font-weight:600; border-top:2px solid #0f172a; margin-top:4px; }
         .watermark {
           position: fixed;
           inset: 0;
@@ -332,7 +335,8 @@ export default function PedidoDetalle() {
           align-items: center;
           justify-content: center;
           font-size: 110px;
-          font-weight: 800;
+          font-family: ${PDF_FONT_SEMIBOLD_FAMILY};
+          font-weight: 600;
           color: rgba(220, 38, 38, 0.16);
           transform: rotate(-28deg);
           letter-spacing: 8px;
@@ -406,9 +410,10 @@ export default function PedidoDetalle() {
       <html><head><meta charset="utf-8" />
       <title>Orden de produccion</title>
       <style>
-        body { font-family: Arial, sans-serif; margin: 24px; color: #1f2937; }
+        body { font-family: ${PDF_FONT_FAMILY}; margin: 24px; color: #1f2937; }
         .header { display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #0f172a; padding-bottom:8px; margin-bottom:12px; }
-        .brand { font-size:18px; font-weight:700; letter-spacing:0.5px; }
+        .brand { font-size:18px; font-family: ${PDF_FONT_SEMIBOLD_FAMILY}; font-weight:600; letter-spacing:0.5px; }
+        strong, th { font-family: ${PDF_FONT_SEMIBOLD_FAMILY}; font-weight:600; }
         table { width:100%; border-collapse: collapse; margin-top:8px; font-size:12px; }
         th { background:#0f172a; color:#fff; text-align:left; padding:8px; }
         td { border-bottom:1px solid #e2e8f0; padding:7px; }
@@ -419,7 +424,8 @@ export default function PedidoDetalle() {
           align-items: center;
           justify-content: center;
           font-size: 110px;
-          font-weight: 800;
+          font-family: ${PDF_FONT_SEMIBOLD_FAMILY};
+          font-weight: 600;
           color: rgba(220, 38, 38, 0.16);
           transform: rotate(-28deg);
           letter-spacing: 8px;

@@ -1,3 +1,5 @@
+import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "./fontFamily";
+
 export interface VentaPdfItem {
   codigo: string;
   nombre: string;
@@ -71,6 +73,11 @@ export const buildVentaPdfHtml = ({
     minute: "2-digit",
   });
   const vendedorFormateado = formatVendedorNombre(vendedor);
+  const referenciaFormateada = referenciaPago && `${referenciaPago}`.trim() ? referenciaPago : "No aplica";
+  const metodoFormateado = metodoPago || "N/D";
+  const clienteFormateado = cliente || "CF";
+  const bodegaFormateada = bodega || "N/D";
+  const ubicacionFormateada = ubicacion || "N/D";
 
   const filasHtml =
     items
@@ -99,7 +106,7 @@ export const buildVentaPdfHtml = ({
           @page { size: letter; margin: 12mm; }
           body {
             margin: 0;
-            font-family: Arial, Helvetica, sans-serif;
+            font-family: ${PDF_FONT_FAMILY};
             color: #0f172a;
             background: #ffffff;
           }
@@ -109,113 +116,125 @@ export const buildVentaPdfHtml = ({
           }
           .header {
             display: grid;
-            grid-template-columns: 92px 1fr 170px;
+            grid-template-columns: minmax(0, 1.35fr) 290px;
             align-items: start;
-            gap: 12px;
-            margin-bottom: 10px;
+            gap: 20px;
+            margin-bottom: 16px;
+          }
+          .header-left {
+            min-width: 0;
+          }
+          .doc-title {
+            margin: 0 0 14px;
+            text-align: center;
+            color: #000000;
+            font-size: 20px;
+            font-family: ${PDF_FONT_SEMIBOLD_FAMILY};
+            font-weight: 600;
+            letter-spacing: 0.3px;
+          }
+          .header-section {
+            margin-bottom: 16px;
+          }
+          .section-heading {
+            margin: 0 0 6px;
+            text-align: center;
+            color: #000000;
+            font-size: 14px;
+            font-family: ${PDF_FONT_SEMIBOLD_FAMILY};
+            font-weight: 600;
+            letter-spacing: 0.3px;
+          }
+          .section-name {
+            margin: 0 0 10px;
+            text-align: center;
+            color: #000000;
+            font-size: 15px;
+            font-family: ${PDF_FONT_SEMIBOLD_FAMILY};
+            font-weight: 600;
+            line-height: 1.25;
+          }
+          .data-lines {
+            display: grid;
+            gap: 5px;
+          }
+          .data-line {
+            display: grid;
+            grid-template-columns: 155px 1fr;
+            gap: 8px;
+            align-items: start;
+            font-size: 12px;
+            line-height: 1.25;
+          }
+          .data-label {
+            font-family: ${PDF_FONT_SEMIBOLD_FAMILY};
+            font-weight: 600;
+            color: #000000;
+          }
+          .data-value {
+            color: #0f172a;
+            word-break: break-word;
+          }
+          .header-right {
+            min-width: 0;
           }
           .logo-wrap {
             display: flex;
-            align-items: flex-start;
-            justify-content: flex-start;
-            min-height: 92px;
+            align-items: center;
+            justify-content: flex-end;
+            min-height: 106px;
+            margin-bottom: 14px;
           }
           .logo {
-            width: 86px;
-            height: 86px;
+            width: 168px;
+            max-width: 100%;
+            height: auto;
             object-fit: contain;
           }
           .logo-fallback {
             display: none;
-            width: 86px;
-            height: 86px;
-            border: 2px solid #173a7d;
-            border-radius: 50%;
+            width: 168px;
+            min-height: 62px;
             align-items: center;
             justify-content: center;
             text-align: center;
-            font-weight: 800;
+            font-family: ${PDF_FONT_SEMIBOLD_FAMILY};
+            font-weight: 600;
             color: #173a7d;
-            font-size: 13px;
-            line-height: 1.2;
+            font-size: 18px;
+            border: 2px solid #173a7d;
+            border-radius: 14px;
           }
-          .title-block {
-            text-align: center;
-            padding-top: 8px;
+          .doc-box {
+            padding-left: 10px;
           }
-          .title {
-            margin: 0;
-            color: #173a7d;
-            font-size: 28px;
-            font-weight: 800;
-            letter-spacing: 0.5px;
-          }
-          .title span {
-            color: #d60000;
-          }
-          .subtitle {
-            margin-top: 6px;
-            color: #475569;
-            font-size: 12px;
-            letter-spacing: 0.4px;
-          }
-          .date-block {
-            text-align: right;
-            padding-top: 6px;
-            font-size: 12px;
-          }
-          .date-block .date {
-            font-size: 16px;
-            font-weight: 800;
+          .doc-box-title {
+            margin: 0 0 8px;
             color: #000000;
-          }
-          .date-block .time {
-            margin-top: 4px;
-            color: #475569;
+            font-size: 18px;
+            font-family: ${PDF_FONT_SEMIBOLD_FAMILY};
             font-weight: 600;
           }
-          .section-title {
-            margin: 4px 0 10px;
-            text-align: center;
-            color: #d60000;
-            font-size: 17px;
-            font-weight: 800;
-            letter-spacing: 0.4px;
-          }
-          .summary-grid {
+          .doc-lines {
             display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 12px;
-            margin: 0 auto 16px;
-            max-width: 780px;
+            gap: 5px;
           }
-          .summary-card {
-            border: 1px solid #000000;
-            background: #ffffff;
-          }
-          .summary-label {
-            padding: 7px 11px;
-            color: #ffffff;
-            font-size: 10px;
-            font-weight: 800;
-            letter-spacing: 0.6px;
-            text-transform: uppercase;
-          }
-          .summary-label.blue { background: #173a7d; }
-          .summary-label.red { background: #ff2a12; }
-          .summary-value {
-            min-height: 34px;
-            padding: 8px 11px;
+          .doc-line {
+            display: grid;
+            grid-template-columns: 120px 1fr;
+            gap: 8px;
+            align-items: start;
             font-size: 12px;
-            font-weight: 400;
-            color: #0f172a;
-            display: flex;
-            align-items: center;
             line-height: 1.25;
           }
-          .summary-value.small {
-            font-size: 11px;
-            font-weight: 400;
+          .doc-label {
+            font-family: ${PDF_FONT_SEMIBOLD_FAMILY};
+            font-weight: 600;
+            color: #000000;
+          }
+          .doc-value {
+            color: #0f172a;
+            word-break: break-word;
           }
           table {
             width: 100%;
@@ -227,7 +246,8 @@ export const buildVentaPdfHtml = ({
             background: #1a3e84;
             color: #ffffff;
             font-size: 11px;
-            font-weight: 800;
+            font-family: ${PDF_FONT_SEMIBOLD_FAMILY};
+            font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.3px;
             padding: 9px 8px;
@@ -250,6 +270,7 @@ export const buildVentaPdfHtml = ({
             text-align: center;
             color: #475569;
             padding: 16px 10px;
+            font-family: ${PDF_FONT_SEMIBOLD_FAMILY};
             font-weight: 600;
           }
           .totals-wrap {
@@ -270,21 +291,25 @@ export const buildVentaPdfHtml = ({
             padding: 10px 12px;
             border-bottom: 0.8px solid #000000;
             font-size: 13px;
-            font-weight: 700;
+            font-family: ${PDF_FONT_SEMIBOLD_FAMILY};
+            font-weight: 600;
+            color: #000000;
           }
           .totals-row:last-child { border-bottom: 0; }
           .totals-row.total {
-            background: #173a7d;
-            color: #ffffff;
-            font-size: 15px;
-            font-weight: 800;
+            background: #ffffff;
+            color: #000000;
+            font-size: 13px;
+            font-family: ${PDF_FONT_SEMIBOLD_FAMILY};
+            font-weight: 600;
           }
           .totals-row.total .amount {
-            color: #ffffff;
+            color: #000000;
           }
           .amount {
-            color: #d60000;
-            font-weight: 800;
+            color: #000000;
+            font-family: ${PDF_FONT_SEMIBOLD_FAMILY};
+            font-weight: 600;
           }
           .footer-note {
             margin-top: 10px;
@@ -296,50 +321,74 @@ export const buildVentaPdfHtml = ({
       <body>
         <div class="page">
           <div class="header">
-            <div class="logo-wrap">
-              ${
-                logoUrl
-                  ? `<img class="logo" src="${logoUrl}" alt="Uniforma" onerror="this.style.display='none';document.getElementById('logo-fallback').style.display='flex';" />`
-                  : ""
-              }
-              <div id="logo-fallback" class="logo-fallback" style="${logoUrl ? "" : "display:flex;"}">UNIFORMA</div>
-            </div>
-            <div class="title-block">
-              <h1 class="title">VENTA No.: <span>${escapeHtml(folio)}</span></h1>
-              <div class="subtitle">Comprobante de venta</div>
-            </div>
-            <div class="date-block">
-              <div class="date">${escapeHtml(fechaDocumento)}</div>
-              <div class="time">${escapeHtml(horaDocumento)}</div>
-            </div>
-          </div>
+            <div class="header-left">
+              <h1 class="doc-title">DOCUMENTO DE VENTA</h1>
 
-          <div class="section-title">DATOS DE LA VENTA</div>
+              <div class="header-section">
+                <div class="section-heading">DATOS DEL VENDEDOR</div>
+                <div class="section-name">${escapeHtml(vendedorFormateado)}</div>
+                <div class="data-lines">
+                  <div class="data-line">
+                    <div class="data-label">Bodega / tienda:</div>
+                    <div class="data-value">${escapeHtml(bodegaFormateada)}</div>
+                  </div>
+                  <div class="data-line">
+                    <div class="data-label">Ubicacion:</div>
+                    <div class="data-value">${escapeHtml(ubicacionFormateada)}</div>
+                  </div>
+                  <div class="data-line">
+                    <div class="data-label">Metodo de pago:</div>
+                    <div class="data-value">${escapeHtml(metodoFormateado)}</div>
+                  </div>
+                  <div class="data-line">
+                    <div class="data-label">Referencia:</div>
+                    <div class="data-value">${escapeHtml(referenciaFormateada)}</div>
+                  </div>
+                </div>
+              </div>
 
-          <div class="summary-grid">
-            <div class="summary-card">
-              <div class="summary-label blue">Cliente</div>
-              <div class="summary-value">${escapeHtml(cliente || "CF")}</div>
+              <div class="header-section">
+                <div class="section-heading">DATOS DEL COMPRADOR</div>
+                <div class="data-lines">
+                  <div class="data-line">
+                    <div class="data-label">Cliente:</div>
+                    <div class="data-value">${escapeHtml(clienteFormateado)}</div>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="summary-card">
-              <div class="summary-label red">Vendedor</div>
-              <div class="summary-value">${escapeHtml(vendedorFormateado)}</div>
-            </div>
-            <div class="summary-card">
-              <div class="summary-label blue">Bodega / Tienda</div>
-              <div class="summary-value small">${escapeHtml(bodega || "N/D")}</div>
-            </div>
-            <div class="summary-card">
-              <div class="summary-label red">Ubicacion</div>
-              <div class="summary-value">${escapeHtml(ubicacion || "N/D")}</div>
-            </div>
-            <div class="summary-card">
-              <div class="summary-label blue">Metodo de pago</div>
-              <div class="summary-value">${escapeHtml(metodoPago || "N/D")}</div>
-            </div>
-            <div class="summary-card">
-              <div class="summary-label red">Referencia</div>
-              <div class="summary-value small">${escapeHtml(referenciaPago || "No aplica")}</div>
+
+            <div class="header-right">
+              <div class="logo-wrap">
+                ${
+                  logoUrl
+                    ? `<img class="logo" src="${logoUrl}" alt="Uniforma" onerror="this.style.display='none';document.getElementById('logo-fallback').style.display='flex';" />`
+                    : ""
+                }
+                <div id="logo-fallback" class="logo-fallback" style="${logoUrl ? "" : "display:flex;"}">UNIFORMA</div>
+              </div>
+
+              <div class="doc-box">
+                <div class="doc-box-title">VENTA</div>
+                <div class="doc-lines">
+                  <div class="doc-line">
+                    <div class="doc-label">Numero:</div>
+                    <div class="doc-value">${escapeHtml(folio)}</div>
+                  </div>
+                  <div class="doc-line">
+                    <div class="doc-label">Fecha:</div>
+                    <div class="doc-value">${escapeHtml(fechaDocumento)}</div>
+                  </div>
+                  <div class="doc-line">
+                    <div class="doc-label">Hora:</div>
+                    <div class="doc-value">${escapeHtml(horaDocumento)}</div>
+                  </div>
+                  <div class="doc-line">
+                    <div class="doc-label">Moneda:</div>
+                    <div class="doc-value">GTQ</div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 

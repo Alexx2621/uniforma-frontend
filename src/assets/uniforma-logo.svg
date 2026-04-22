@@ -3,9 +3,9 @@
   <g transform="translate(8 8)">
     <path d="M24 18C24 8.05888 32.0589 0 42 0H80V62C80 83.5391 62.5391 101 41 101C18.3563 101 0 82.6437 0 60V48H24V60C24 69.9411 32.0589 78 42 78C51.9411 78 60 69.9411 60 60V18H24Z" fill="#F20212"/>
     <path d="M149 0V66C149 85.33 133.33 101 114 101H103C83.67 101 68 85.33 68 66V58H92V66C92 72.6274 97.3726 78 104 78H113C119.627 78 125 72.6274 125 66V0H149Z" fill="#343270"/>
-    <text x="158" y="76" font-family="Segoe UI, Arial, sans-serif" font-size="62" font-weight="900" letter-spacing="1">
+    <text x="158" y="76" font-family="Myriad Pro, MyriadPro-Regular, Myriad Pro Regular, Aptos, Segoe UI, Arial, Helvetica, sans-serif" font-size="62" font-weight="900" letter-spacing="1">
       <tspan fill="#343270">UNI</tspan><tspan fill="#F20212">FORMA</tspan>
     </text>
-    <text x="142" y="18" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="700" fill="#111111">®</text>
+    <text x="142" y="18" font-family="Myriad Pro, MyriadPro-Regular, Myriad Pro Regular, Aptos, Segoe UI, Arial, Helvetica, sans-serif" font-size="18" font-weight="700" fill="#111111">®</text>
   </g>
 </svg>

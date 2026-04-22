@@ -1,6 +1,6 @@
 import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "./fontFamily";
 
-interface IngresoInventarioPdfItem {
+interface TrasladoPdfItem {
   codigo: string;
   nombre: string;
   tipo: string;
@@ -11,15 +11,16 @@ interface IngresoInventarioPdfItem {
   cantidad: number;
 }
 
-interface IngresoInventarioPdfOptions {
+interface TrasladoPdfOptions {
   folio: string;
   fecha: Date;
-  bodega: string;
+  origen: string;
+  destino: string;
   responsable: string;
   observaciones?: string | null;
   totalItems: number;
   logoUrl?: string;
-  items: IngresoInventarioPdfItem[];
+  items: TrasladoPdfItem[];
 }
 
 const escapeHtml = (value: unknown) =>
@@ -44,16 +45,17 @@ const formatResponsable = (value: string) => {
   return limpio;
 };
 
-export const buildIngresoInventarioPdfHtml = ({
+export const buildTrasladoPdfHtml = ({
   folio,
   fecha,
-  bodega,
+  origen,
+  destino,
   responsable,
   observaciones,
   totalItems,
   logoUrl,
   items,
-}: IngresoInventarioPdfOptions) => {
+}: TrasladoPdfOptions) => {
   const fechaDocumento = fecha.toLocaleDateString("es-GT");
   const horaDocumento = fecha.toLocaleTimeString("es-GT", {
     hour: "2-digit",
@@ -77,13 +79,13 @@ export const buildIngresoInventarioPdfHtml = ({
         </tr>`,
       )
       .join("") ||
-    `<tr><td colspan="9" class="empty-row">No hay articulos registrados en este ingreso.</td></tr>`;
+    `<tr><td colspan="9" class="empty-row">No hay articulos registrados en este traslado.</td></tr>`;
 
   return `<!DOCTYPE html>
     <html>
       <head>
         <meta charset="utf-8" />
-        <title>Ingreso ${escapeHtml(folio)}</title>
+        <title>Traslado ${escapeHtml(folio)}</title>
         <style>
           * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           @page { size: letter landscape; margin: 12mm; }
@@ -302,8 +304,8 @@ export const buildIngresoInventarioPdfHtml = ({
               <div id="logo-fallback" class="logo-fallback" style="${logoUrl ? "" : "display:flex;"}">UNIFORMA</div>
             </div>
             <div class="title-block">
-              <h1 class="title">INGRESO No.: <span>${escapeHtml(folio)}</span></h1>
-              <div class="subtitle">Comprobante de ingreso de inventario</div>
+              <h1 class="title">TRASLADO No.: <span>${escapeHtml(folio)}</span></h1>
+              <div class="subtitle">Comprobante de traslado entre bodegas</div>
             </div>
             <div class="date-block">
               <div class="date">${escapeHtml(fechaDocumento)}</div>
@@ -311,20 +313,20 @@ export const buildIngresoInventarioPdfHtml = ({
             </div>
           </div>
 
-          <div class="section-title">DATOS DEL INGRESO</div>
+          <div class="section-title">DATOS DEL TRASLADO</div>
 
           <div class="summary-grid">
             <div class="summary-card">
-              <div class="summary-label blue">Bodega / Tienda</div>
-              <div class="summary-value small">${escapeHtml(bodega || "N/D")}</div>
+              <div class="summary-label blue">Bodega origen</div>
+              <div class="summary-value small">${escapeHtml(origen || "N/D")}</div>
             </div>
             <div class="summary-card">
-              <div class="summary-label red">Responsable</div>
+              <div class="summary-label red">Bodega destino</div>
+              <div class="summary-value small">${escapeHtml(destino || "N/D")}</div>
+            </div>
+            <div class="summary-card">
+              <div class="summary-label blue">Responsable</div>
               <div class="summary-value">${escapeHtml(responsableFormateado)}</div>
-            </div>
-            <div class="summary-card">
-              <div class="summary-label blue">Total de unidades</div>
-              <div class="summary-value">${escapeHtml(totalItems)}</div>
             </div>
             <div class="summary-card">
               <div class="summary-label red">Observaciones</div>
@@ -354,7 +356,7 @@ export const buildIngresoInventarioPdfHtml = ({
           <div class="totals-wrap">
             <div class="totals-box">
               <div class="totals-row total">
-                <span>Total ingresado</span>
+                <span>Total trasladado</span>
                 <span class="amount">${escapeHtml(totalItems)}</span>
               </div>
             </div>
