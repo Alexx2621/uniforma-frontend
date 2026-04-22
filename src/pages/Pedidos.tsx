@@ -308,20 +308,11 @@ export default function Pedidos() {
 
   const pedidosUnificables = useMemo(() => {
     if (!canUnifyPedidos) return [];
-
-    const parsedUserBodegaId = Number(userBodegaId);
-    return rows.filter((pedido) => {
+    return filtered.filter((pedido) => {
       const estado = `${pedido.estado || ""}`.trim().toLowerCase();
-      if (estado === "anulado") return false;
-
-      if (canAccessAllBodegas) {
-        return filterBodega === "all" ? true : Number(pedido.bodegaId) === Number(filterBodega);
-      }
-
-      if (!Number.isFinite(parsedUserBodegaId) || parsedUserBodegaId <= 0) return true;
-      return Number(pedido.bodegaId) === parsedUserBodegaId;
+      return estado !== "anulado";
     });
-  }, [rows, canUnifyPedidos, canAccessAllBodegas, filterBodega, userBodegaId]);
+  }, [filtered, canUnifyPedidos]);
 
   const anularPedido = async (pedido: PedidoRow) => {
     const estado = `${pedido.estado || ""}`.trim().toLowerCase();
