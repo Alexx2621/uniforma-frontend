@@ -551,6 +551,20 @@ export default function PedidoNuevo() {
       return;
     }
     const cantidad = Number(cantidadInput) || 0;
+    const productoId = Number(articuloActual.productoId);
+    const productoDuplicado = detalle.find(
+      (item) => item.productoId === productoId && item.key !== editingDetalleKey,
+    );
+
+    if (productoDuplicado) {
+      const producto = productos.find((p) => p.id === productoId);
+      Swal.fire(
+        "Articulo ya agregado",
+        `Este articulo${producto?.nombre ? ` (${producto.nombre})` : ""} ya esta en la lista temporal. Puedes editarlo o eliminarlo desde la tabla.`,
+        "info",
+      );
+      return;
+    }
 
     if (cantidad <= 0) {
       Swal.fire("Validacion", "Ingresa una cantidad mayor a 0", "warning");
@@ -559,7 +573,7 @@ export default function PedidoNuevo() {
 
     const row: DetalleRow = {
       key: editingDetalleKey ?? Date.now(),
-      productoId: Number(articuloActual.productoId),
+      productoId,
       cantidad,
       precioUnit: Number(articuloActual.precioUnit) || 0,
       descuento: Number(articuloActual.descuento) || 0,
