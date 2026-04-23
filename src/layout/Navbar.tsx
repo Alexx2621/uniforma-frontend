@@ -20,6 +20,7 @@ import {
 import LogoutIcon from "@mui/icons-material/Logout";
 import SettingsIcon from "@mui/icons-material/Settings";
 import NotificationsOutlinedIcon from "@mui/icons-material/NotificationsOutlined";
+import { io, Socket } from "socket.io-client";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useNavigate } from "react-router-dom";
 import uniformaLogo from "../assets/uniforma-logo.png";
@@ -62,6 +63,7 @@ export default function Navbar() {
   const [alertas, setAlertas] = useState<AlertaInterna[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastUnreadCountRef = useRef<number | null>(null);
+  const alertasSocketRef = useRef<Socket | null>(null);
 
   const reproducirTonoNotificacion = async () => {
     if (typeof window === "undefined") return;
@@ -176,6 +178,30 @@ export default function Navbar() {
 
     return () => {
       window.clearInterval(intervalId);
+    };
+  }, []);
+
+  useEffect(() => {
+    const socket = io(api.defaults.baseURL || window.location.origin, {
+      withCredentials: true,
+      transports: ["websocket", "polling"],
+      reconnection: true,
+    });
+
+    alertasSocketRef.current = socket;
+
+    const refrescarAlertas = () => {
+      void cargarAlertas();
+    };
+
+    socket.on("connect", refrescarAlertas);
+    socket.on("alertas:actualizadas", refrescarAlertas);
+
+    return () => {
+      socket.off("connect", refrescarAlertas);
+      socket.off("alertas:actualizadas", refrescarAlertas);
+      socket.disconnect();
+      alertasSocketRef.current = null;
     };
   }, []);
 
