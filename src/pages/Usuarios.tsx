@@ -1,4 +1,4 @@
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate } from "react-router-dom";
 import {
   Avatar,
@@ -108,7 +108,7 @@ export default function Usuarios() {
     [primerNombre, segundoNombre, primerApellido, segundoApellido]
   );
 
-  const cargar = async () => {
+  const cargar = useCallback(async () => {
     try {
       setLoading(true);
       const [respUsers, respRoles, respBod] = await Promise.allSettled([
@@ -137,7 +137,7 @@ export default function Usuarios() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [canManage, canViewRoles]);
 
   useEffect(() => {
     if (!canView) {
@@ -148,7 +148,7 @@ export default function Usuarios() {
       return;
     }
     void cargar();
-  }, [canView]);
+  }, [canView, cargar]);
 
   useEffect(() => {
     return () => {

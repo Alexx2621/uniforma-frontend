@@ -52,6 +52,9 @@ interface Detalle {
   productoId: number;
   cantidad: number;
   precioUnit: number;
+  bordado?: number;
+  estiloEspecial?: boolean;
+  estiloEspecialMonto?: number;
   descuento?: number;
   descripcion?: string;
 }
@@ -59,6 +62,7 @@ interface Detalle {
 interface Pago {
   id: number;
   monto: number;
+  recargo?: number;
   metodo: string;
   tipo: string;
   fecha: string;
@@ -81,22 +85,64 @@ interface Pedido {
   pagos: Pago[];
 }
 
+const normalizeDetalle = (detalle: any): Detalle => ({
+  ...detalle,
+  cantidad: Number(detalle?.cantidad || 0),
+  precioUnit: Number(detalle?.precioUnit || 0),
+  bordado: Number(detalle?.bordado ?? 0),
+  estiloEspecial: Boolean(detalle?.estiloEspecial),
+  estiloEspecialMonto: Number(detalle?.estiloEspecialMonto ?? 0),
+  descuento: Number(detalle?.descuento ?? 0),
+});
+
+const normalizePedido = (pedido: any): Pedido => ({
+  ...pedido,
+  totalEstimado: Number(pedido?.totalEstimado || 0),
+  anticipo: Number(pedido?.anticipo || 0),
+  saldoPendiente: Number(pedido?.saldoPendiente || 0),
+  recargo: Number(pedido?.recargo || 0),
+  detalle: Array.isArray(pedido?.detalle) ? pedido.detalle.map(normalizeDetalle) : [],
+  pagos: Array.isArray(pedido?.pagos)
+    ? pedido.pagos.map((p: any) => ({
+        ...p,
+        monto: Number(p?.monto || 0),
+        recargo: Number(p?.recargo || 0),
+      }))
+    : [],
+});
+
+const getDetalleSubtotal = (detalle: Detalle) => {
+  const precio = Number(detalle.precioUnit || 0);
+  const bordado = Number(detalle.bordado || 0);
+  const estiloEspecialMonto = detalle.estiloEspecial ? Number(detalle.estiloEspecialMonto || 0) : 0;
+  const descuento = Number(detalle.descuento || 0);
+  const cantidad = Number(detalle.cantidad || 0);
+  const baseConEstilo = precio + estiloEspecialMonto;
+  const precioConDescuento = baseConEstilo * (1 - descuento / 100);
+  return cantidad * (precioConDescuento + bordado);
+};
+
+const getPagoAplicado = (pago: Pago) => Number(pago.monto || 0) + Number(pago.recargo || 0);
+
 export default function PedidoDetalle() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { rol, rolId, bodegaId: userBodegaId } = useAuthStore();
-  const { productionInternalMode, crossStoreRoleIds, fetchConfig } = useSystemConfigStore();
+  const { crossStoreRoleIds, fetchConfig } = useSystemConfigStore();
   const [pedido, setPedido] = useState<Pedido | null>(null);
   const [loading, setLoading] = useState(false);
   const [pagoFinal, setPagoFinal] = useState(0);
   const [metodoPagoFinal, setMetodoPagoFinal] = useState("efectivo");
   const [porcRecargoFinal, setPorcRecargoFinal] = useState(0);
+  const [referenciaPagoFinal, setReferenciaPagoFinal] = useState("");
   const [bodegas, setBodegas] = useState<any[]>([]);
   const [bodegaIngreso, setBodegaIngreso] = useState<number | "">("");
   const [telas, setTelas] = useState<any[]>([]);
   const [tallas, setTallas] = useState<any[]>([]);
   const [colores, setColores] = useState<any[]>([]);
   const canAccessAllBodegas = rol === "ADMIN" || crossStoreRoleIds.includes(Number(rolId));
+  const metodoFinalUsaRecargo = metodoPagoFinal === "tarjeta" || metodoPagoFinal === "visalink";
+  const metodoFinalRequiereReferencia = metodoPagoFinal !== "efectivo";
 
   const cargar = useCallback(async () => {
     if (!id) return;
@@ -109,13 +155,17 @@ export default function PedidoDetalle() {
         api.get("/tallas").catch(() => ({ data: [] })),
         api.get("/colores").catch(() => ({ data: [] })),
       ]);
-      setPedido(respPedido.data);
+      const pedidoNormalizado = normalizePedido(respPedido.data);
+      const totalPagadoNormalizado = (pedidoNormalizado.pagos || []).reduce((sum, pago) => sum + getPagoAplicado(pago), 0);
+      const saldoNormalizado = Math.max(0, Number(pedidoNormalizado.totalEstimado || 0) - totalPagadoNormalizado);
+      setPedido(pedidoNormalizado);
+      setPagoFinal(saldoNormalizado);
       setBodegas(respBod.data || []);
       setTelas(respTelas.data || []);
       setTallas(respTallas.data || []);
       setColores(respColores.data || []);
       const pref = userBodegaId && !canAccessAllBodegas ? Number(userBodegaId) : "";
-      setBodegaIngreso(pref || respPedido.data?.bodegaId || "");
+      setBodegaIngreso(pref || pedidoNormalizado?.bodegaId || "");
     } catch {
       Swal.fire("Error", "No se pudo cargar el pedido", "error");
     } finally {
@@ -129,8 +179,12 @@ export default function PedidoDetalle() {
   }, [fetchConfig, cargar]);
 
   const totalPagado = useMemo(
-    () => (pedido?.pagos || []).reduce((sum, p) => sum + (p.monto || 0), 0),
+    () => (pedido?.pagos || []).reduce((sum, p) => sum + getPagoAplicado(p), 0),
     [pedido]
+  );
+  const saldoCalculado = useMemo(
+    () => Math.max(0, Number(pedido?.totalEstimado || 0) - totalPagado),
+    [pedido?.totalEstimado, totalPagado]
   );
 
   const esAnulado = `${pedido?.estado || ""}`.trim().toLowerCase() === "anulado";
@@ -155,24 +209,28 @@ export default function PedidoDetalle() {
   };
 
   const terminar = async () => {
-    if (!productionInternalMode) {
-      const saldo = pedido?.saldoPendiente || 0;
-      const restante = Math.max(0, saldo - (Number(pagoFinal) || 0));
-      if (restante > 0) {
-        Swal.fire("Validacion", `Saldo pendiente Q ${restante.toFixed(2)}. Cancela antes de terminar.`, "warning");
-        return;
-      }
+    const saldo = saldoCalculado;
+    const recargoFinal = metodoFinalUsaRecargo ? (Number(pagoFinal) || 0) * ((porcRecargoFinal || 0) / 100) : 0;
+    const restante = Math.max(0, saldo - ((Number(pagoFinal) || 0) + recargoFinal));
+    if (restante > 0) {
+      Swal.fire("Validacion", `Saldo pendiente Q ${restante.toFixed(2)}. Cancela antes de terminar.`, "warning");
+      return;
+    }
+    if ((Number(pagoFinal) || 0) > 0 && metodoFinalRequiereReferencia && !referenciaPagoFinal.trim()) {
+      Swal.fire("Validacion", "Ingresa la referencia o numero de transaccion del pago", "warning");
+      return;
     }
 
     try {
       await api.post(`/produccion/${id}/terminar`, {
-        pagoFinal: productionInternalMode ? 0 : pagoFinal,
+        pagoFinal,
         metodoPagoFinal,
-        porcentajeRecargo: productionInternalMode ? 0 : porcRecargoFinal,
+        porcentajeRecargo: metodoFinalUsaRecargo ? porcRecargoFinal : 0,
+        referenciaPagoFinal: metodoFinalRequiereReferencia ? referenciaPagoFinal.trim() : null,
       });
-      if (!productionInternalMode && pagoFinal > 0) {
-        const rec = metodoPagoFinal === "tarjeta" ? pagoFinal * ((porcRecargoFinal || 0) / 100) : 0;
-        generarPdfPago(pagoFinal + rec, metodoPagoFinal, "saldo");
+      if (pagoFinal > 0) {
+        const rec = metodoFinalUsaRecargo ? pagoFinal * ((porcRecargoFinal || 0) / 100) : 0;
+        generarPdfPago(pagoFinal + rec, metodoPagoFinal, "saldo", referenciaPagoFinal.trim());
       }
       Swal.fire("Listo", "Pedido marcado como recibido", "success");
       navigate("/produccion");
@@ -183,24 +241,26 @@ export default function PedidoDetalle() {
   };
 
   const pagarSaldo = async () => {
-    if (productionInternalMode) {
-      Swal.fire("Aviso", "Los pagos estan deshabilitados en modo interno", "info");
-      return;
-    }
     if (pagoFinal <= 0) {
       Swal.fire("Validacion", "Ingresa un monto mayor a 0", "warning");
       return;
     }
-    if ((pedido?.saldoPendiente || 0) <= 0) {
+    if (saldoCalculado <= 0) {
       Swal.fire("Aviso", "El saldo ya esta en cero. No se puede registrar mas pagos.", "info");
       return;
     }
-    if (pagoFinal > (pedido?.saldoPendiente || 0)) {
+    const recargoPago = metodoFinalUsaRecargo ? pagoFinal * ((porcRecargoFinal || 0) / 100) : 0;
+    const aplicado = pagoFinal + recargoPago;
+    if (aplicado > saldoCalculado) {
       Swal.fire(
         "Aviso",
-        `El pago excede el saldo (Q ${Number(pedido?.saldoPendiente || 0).toFixed(2)}). Ajusta el monto.`,
+        `El pago mas recargo excede el saldo (Q ${Number(saldoCalculado || 0).toFixed(2)}). Ajusta el monto.`,
         "info"
       );
+      return;
+    }
+    if (metodoFinalRequiereReferencia && !referenciaPagoFinal.trim()) {
+      Swal.fire("Validacion", "Ingresa la referencia o numero de transaccion del pago", "warning");
       return;
     }
     try {
@@ -208,12 +268,13 @@ export default function PedidoDetalle() {
         monto: pagoFinal,
         metodo: metodoPagoFinal,
         tipo: "saldo",
-        porcentajeRecargo: metodoPagoFinal === "tarjeta" ? porcRecargoFinal : 0,
+        porcentajeRecargo: metodoFinalUsaRecargo ? porcRecargoFinal : 0,
+        referenciaPago: metodoFinalRequiereReferencia ? referenciaPagoFinal.trim() : null,
       });
       Swal.fire("Pago registrado", "Saldo actualizado", "success");
-      const rec = metodoPagoFinal === "tarjeta" ? pagoFinal * ((porcRecargoFinal || 0) / 100) : 0;
-      generarPdfPago(pagoFinal + rec, metodoPagoFinal, "saldo");
+      generarPdfPago(aplicado, metodoPagoFinal, "saldo", referenciaPagoFinal.trim());
       setPagoFinal(0);
+      setReferenciaPagoFinal("");
       await cargar();
     } catch (error: any) {
       const msg = error?.response?.data?.message || error?.message || "No se pudo registrar pago";
@@ -221,7 +282,7 @@ export default function PedidoDetalle() {
     }
   };
 
-  const generarPdfPago = (monto: number, metodo: string, tipo: string) => {
+  const generarPdfPago = (monto: number, metodo: string, tipo: string, referencia = "") => {
     if (!pedido) return;
     const win = window.open("", "_blank");
     if (!win) {
@@ -259,8 +320,9 @@ export default function PedidoDetalle() {
             <tr><td>Bodega</td><td>${pedido.bodega?.nombre || "N/D"}</td></tr>
             <tr><td>Monto</td><td>Q ${Number(monto || 0).toFixed(2)}</td></tr>
             <tr><td>Metodo</td><td>${metodo}</td></tr>
+            ${referencia ? `<tr><td>Referencia</td><td>${referencia}</td></tr>` : ""}
             <tr><td>Tipo</td><td>${tipo}</td></tr>
-            <tr><td>Saldo pendiente</td><td>Q ${Number(pedido.saldoPendiente || 0).toFixed(2)}</td></tr>
+            <tr><td>Saldo pendiente</td><td>Q ${Number(saldoCalculado || 0).toFixed(2)}</td></tr>
           </tbody>
         </table>
         <script>window.onload = function(){ window.print(); }</script>
@@ -286,10 +348,13 @@ export default function PedidoDetalle() {
     const fecha = new Date();
     const subtotal = pedido.detalle.reduce((sum, d: any) => {
       const precio = Number(d.precioUnit || 0);
+      const bordado = Number(d.bordado || 0);
+      const estiloEspecialMonto = d.estiloEspecial ? Number(d.estiloEspecialMonto || 0) : 0;
       const desc = Number(d.descuento || 0);
       const cantidad = Number(d.cantidad || 0);
-      const precioDesc = precio * (1 - desc / 100);
-      return sum + cantidad * precioDesc;
+      const baseConEstilo = precio + estiloEspecialMonto;
+      const precioConDescuento = baseConEstilo * (1 - desc / 100);
+      return sum + cantidad * (precioConDescuento + bordado);
     }, 0);
     const recargo = Number((pedido as any).recargo || 0);
     const total = Number((pedido as any).totalEstimado || subtotal + recargo);
@@ -300,8 +365,11 @@ export default function PedidoDetalle() {
     const filasHtml = pedido.detalle
       .map((d, idx) => {
         const desc = Number((d as any).descuento || 0);
-        const precioDesc = Number(d.precioUnit || 0) * (1 - desc / 100);
-        const sub = (d.cantidad || 0) * precioDesc;
+        const bordado = Number((d as any).bordado || 0);
+        const estiloEspecialMonto = (d as any).estiloEspecial ? Number((d as any).estiloEspecialMonto || 0) : 0;
+        const baseConEstilo = Number(d.precioUnit || 0) + estiloEspecialMonto;
+        const precioConDescuento = baseConEstilo * (1 - desc / 100);
+        const sub = (d.cantidad || 0) * (precioConDescuento + bordado);
         return `<tr>
           <td>${idx + 1}</td>
           <td>${d.producto?.codigo || d.productoId}</td>
@@ -309,6 +377,8 @@ export default function PedidoDetalle() {
           <td>${(d as any).descripcion || ""}</td>
           <td>${d.cantidad}</td>
           <td>${Number(d.precioUnit || 0).toFixed(2)}</td>
+          <td>${bordado.toFixed(2)}</td>
+          <td>${estiloEspecialMonto.toFixed(2)}</td>
           <td>${desc.toFixed(2)}%</td>
           <td>${sub.toFixed(2)}</td>
         </tr>`;
@@ -358,20 +428,20 @@ export default function PedidoDetalle() {
           </div>
         </div>
         <div style="margin-bottom:12px;">
-          <strong>Cliente:</strong> ${productionInternalMode ? "Interno" : pedido.cliente?.nombre || "Mostrador"} |
+          <strong>Cliente:</strong> ${pedido.cliente?.nombre || (pedido as any).clienteNombre || "Mostrador"} |
           <strong>Bodega:</strong> ${pedido.bodega?.nombre || "N/D"} |
-          <strong>Metodo:</strong> ${productionInternalMode ? "interno" : (pedido as any).metodoPago || "efectivo"}
+          <strong>Metodo:</strong> ${(pedido as any).metodoPago || "efectivo"}
         </div>
         <table>
           <thead>
-            <tr><th>#</th><th>Codigo</th><th>Producto</th><th>Detalle</th><th>Cant.</th><th>Precio</th><th>Desc.</th><th>Subtotal</th></tr>
+            <tr><th>#</th><th>Codigo</th><th>Producto</th><th>Detalle</th><th>Cant.</th><th>Precio</th><th>Bordado</th><th>Estilo esp.</th><th>Desc.</th><th>Subtotal</th></tr>
           </thead>
           <tbody>${filasHtml}</tbody>
         </table>
         <div class="totals">
           <div class="totals-row"><span>Subtotal</span><span>Q ${subtotal.toFixed(2)}</span></div>
-          ${!productionInternalMode && recargo ? `<div class="totals-row"><span>Recargo</span><span>Q ${recargo.toFixed(2)}</span></div>` : ""}
-          ${!productionInternalMode ? `<div class="totals-row"><span>Anticipo</span><span>Q ${anticipo.toFixed(2)}</span></div>` : ""}
+          ${recargo ? `<div class="totals-row"><span>Recargo</span><span>Q ${recargo.toFixed(2)}</span></div>` : ""}
+          <div class="totals-row"><span>Anticipo</span><span>Q ${anticipo.toFixed(2)}</span></div>
           <div class="totals-row total"><span>Total</span><span>Q ${total.toFixed(2)}</span></div>
         </div>
         <script>window.onload = function(){ window.print(); }</script>
@@ -447,7 +517,7 @@ export default function PedidoDetalle() {
           </div>
         </div>
         <div style="margin-bottom:12px;">
-          <strong>Cliente:</strong> ${productionInternalMode ? "Interno" : pedido.cliente?.nombre || "Mostrador"} |
+          <strong>Cliente:</strong> ${pedido.cliente?.nombre || (pedido as any).clienteNombre || "Mostrador"} |
           <strong>Bodega:</strong> ${pedido.bodega?.nombre || "N/D"}
         </div>
         <table>
@@ -490,7 +560,7 @@ export default function PedidoDetalle() {
         </Stack>
       </Stack>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        Cliente: {productionInternalMode ? "Interno" : pedido.cliente?.nombre || "Mostrador"} | Bodega:{" "}
+        Cliente: {pedido.cliente?.nombre || (pedido as any).clienteNombre || "Mostrador"} | Bodega:{" "}
         {pedido.bodega?.nombre || "N/D"} | Fecha: {pedido.fecha ? new Date(pedido.fecha).toLocaleString() : ""}
       </Typography>
       {esAnulado && (
@@ -510,10 +580,16 @@ export default function PedidoDetalle() {
             <TableRow>
               <TableCell>Codigo</TableCell>
               <TableCell>Tipo</TableCell>
+              <TableCell>Genero</TableCell>
               <TableCell>Tela</TableCell>
               <TableCell>Talla</TableCell>
               <TableCell>Color</TableCell>
               <TableCell>Cantidad</TableCell>
+              <TableCell>Precio</TableCell>
+              <TableCell>Bordado</TableCell>
+              <TableCell>Estilo especial</TableCell>
+              <TableCell>Descuento</TableCell>
+              <TableCell>Subtotal</TableCell>
               <TableCell>Observacion</TableCell>
             </TableRow>
           </TableHead>
@@ -522,10 +598,18 @@ export default function PedidoDetalle() {
               <TableRow key={idx}>
                 <TableCell>{d.producto?.codigo}</TableCell>
                 <TableCell>{d.producto?.tipo || d.producto?.nombre || "N/D"}</TableCell>
+                <TableCell>{d.producto?.genero || "N/D"}</TableCell>
                 <TableCell>{obtenerTela(d.producto)}</TableCell>
                 <TableCell>{obtenerTalla(d.producto)}</TableCell>
                 <TableCell>{obtenerColor(d.producto)}</TableCell>
                 <TableCell>{d.cantidad}</TableCell>
+                <TableCell>{`Q ${Number(d.precioUnit || 0).toFixed(2)}`}</TableCell>
+                <TableCell>{`Q ${Number(d.bordado || 0).toFixed(2)}`}</TableCell>
+                <TableCell>
+                  {d.estiloEspecial ? `Q ${Number(d.estiloEspecialMonto || 0).toFixed(2)}` : "No"}
+                </TableCell>
+                <TableCell>{`${Number(d.descuento || 0).toFixed(2)}%`}</TableCell>
+                <TableCell>{`Q ${getDetalleSubtotal(d).toFixed(2)}`}</TableCell>
                 <TableCell>{d.descripcion?.trim() ? d.descripcion : "-"}</TableCell>
               </TableRow>
             ))}
@@ -536,78 +620,97 @@ export default function PedidoDetalle() {
       <Divider sx={{ my: 2 }} />
 
       <Grid container spacing={3} sx={{ mt: 1, alignItems: "stretch" }}>
-        {!productionInternalMode && (
-          <Grid size={{ xs: 12, md: 6 }} sx={{ minWidth: 0 }}>
-            <Paper
-              variant="outlined"
-              sx={{ p: 2, height: "100%", display: "flex", flexDirection: "column", borderRadius: 2, width: "100%", boxSizing: "border-box" }}
-            >
-              <Stack spacing={1.5}>
-                <Typography variant="h6">Pagos</Typography>
-                <Stack direction="row" justifyContent="space-between">
-                  <Typography>Estimado</Typography>
-                  <Typography>{`Q ${Number(pedido.totalEstimado || 0).toFixed(2)}`}</Typography>
-                </Stack>
-                <Stack direction="row" justifyContent="space-between">
-                  <Typography>Pagado</Typography>
-                  <Typography>{`Q ${totalPagado.toFixed(2)}`}</Typography>
-                </Stack>
-                <Stack direction="row" justifyContent="space-between">
-                  <Typography fontWeight={700}>Saldo</Typography>
-                  <Typography fontWeight={700}>{`Q ${Number(pedido.saldoPendiente || 0).toFixed(2)}`}</Typography>
-                </Stack>
-                <Divider />
-                <Typography variant="subtitle2">Registrar pago de saldo</Typography>
-                <Stack
-                  direction={{ xs: "column", sm: "row" }}
-                  spacing={1.5}
-                  sx={{ alignItems: { xs: "stretch", sm: "center" }, flexWrap: "wrap", columnGap: 2, rowGap: 1.2 }}
-                >
+        <Grid size={{ xs: 12, md: 6 }} sx={{ minWidth: 0 }}>
+          <Paper
+            variant="outlined"
+            sx={{ p: 2, height: "100%", display: "flex", flexDirection: "column", borderRadius: 2, width: "100%", boxSizing: "border-box" }}
+          >
+            <Stack spacing={1.5}>
+              <Typography variant="h6">Pagos</Typography>
+              <Stack direction="row" justifyContent="space-between">
+                <Typography>Estimado</Typography>
+                <Typography>{`Q ${Number(pedido.totalEstimado || 0).toFixed(2)}`}</Typography>
+              </Stack>
+              <Stack direction="row" justifyContent="space-between">
+                <Typography>Pagado</Typography>
+                <Typography>{`Q ${totalPagado.toFixed(2)}`}</Typography>
+              </Stack>
+              <Stack direction="row" justifyContent="space-between">
+                <Typography fontWeight={700}>Saldo</Typography>
+                <Typography fontWeight={700}>{`Q ${Number(saldoCalculado || 0).toFixed(2)}`}</Typography>
+              </Stack>
+              <Divider />
+              <Typography variant="subtitle2">Registrar pago de saldo</Typography>
+              <Stack
+                direction={{ xs: "column", sm: "row" }}
+                spacing={1.5}
+                sx={{ alignItems: { xs: "stretch", sm: "center" }, flexWrap: "wrap", columnGap: 2, rowGap: 1.2 }}
+              >
+                <TextField
+                  label="Monto"
+                  type="number"
+                  size="small"
+                  value={pagoFinal}
+                  onChange={(e) => setPagoFinal(Number(e.target.value))}
+                  disabled={esAnulado}
+                  sx={{ flex: 1, minWidth: 180 }}
+                />
+                <FormControl size="small" sx={{ minWidth: 200, flex: 1 }} disabled={esAnulado}>
+                  <InputLabel>Metodo</InputLabel>
+                  <Select
+                    label="Metodo"
+                    value={metodoPagoFinal}
+                    onChange={(e) => {
+                      const nextMetodo = e.target.value;
+                      setMetodoPagoFinal(nextMetodo);
+                      if (nextMetodo === "efectivo") setReferenciaPagoFinal("");
+                      if (nextMetodo !== "tarjeta" && nextMetodo !== "visalink") setPorcRecargoFinal(0);
+                    }}
+                  >
+                    <MenuItem value="efectivo">Efectivo</MenuItem>
+                    <MenuItem value="tarjeta">Tarjeta</MenuItem>
+                    <MenuItem value="visalink">Visalink</MenuItem>
+                    <MenuItem value="transferencia">Transferencia</MenuItem>
+                  </Select>
+                </FormControl>
+                {metodoFinalUsaRecargo && (
                   <TextField
-                    label="Monto"
+                    label="Recargo %"
                     type="number"
                     size="small"
-                    value={pagoFinal}
-                    onChange={(e) => setPagoFinal(Number(e.target.value))}
+                    value={porcRecargoFinal}
+                    onChange={(e) => setPorcRecargoFinal(Number(e.target.value))}
                     disabled={esAnulado}
-                    sx={{ flex: 1, minWidth: 180 }}
+                    sx={{ width: { xs: "100%", sm: 180 } }}
                   />
-                  <FormControl size="small" sx={{ minWidth: 200, flex: 1 }} disabled={esAnulado}>
-                    <InputLabel>Metodo</InputLabel>
-                    <Select label="Metodo" value={metodoPagoFinal} onChange={(e) => setMetodoPagoFinal(e.target.value)}>
-                      <MenuItem value="efectivo">Efectivo</MenuItem>
-                      <MenuItem value="tarjeta">Tarjeta</MenuItem>
-                      <MenuItem value="transferencia">Transferencia</MenuItem>
-                    </Select>
-                  </FormControl>
-                  {metodoPagoFinal === "tarjeta" && (
-                    <TextField
-                      label="Recargo %"
-                      type="number"
-                      size="small"
-                      value={porcRecargoFinal}
-                      onChange={(e) => setPorcRecargoFinal(Number(e.target.value))}
-                      disabled={esAnulado}
-                      sx={{ width: { xs: "100%", sm: 180 } }}
-                    />
-                  )}
-                  <Button
-                    variant="contained"
+                )}
+                {metodoFinalRequiereReferencia && (
+                  <TextField
+                    label="Referencia"
                     size="small"
-                    startIcon={<PaidOutlined />}
-                    onClick={pagarSaldo}
+                    value={referenciaPagoFinal}
+                    onChange={(e) => setReferenciaPagoFinal(e.target.value)}
                     disabled={esAnulado}
-                    sx={{ width: { xs: "100%", sm: "auto" }, minWidth: { sm: 150 }, mt: { xs: 1, sm: 0 } }}
-                  >
-                    Pagar
-                  </Button>
-                </Stack>
+                    sx={{ flex: 1, minWidth: 220 }}
+                    helperText="Numero de transaccion"
+                  />
+                )}
+                <Button
+                  variant="contained"
+                  size="small"
+                  startIcon={<PaidOutlined />}
+                  onClick={pagarSaldo}
+                  disabled={esAnulado}
+                  sx={{ width: { xs: "100%", sm: "auto" }, minWidth: { sm: 150 }, mt: { xs: 1, sm: 0 } }}
+                >
+                  Pagar
+                </Button>
               </Stack>
-            </Paper>
-          </Grid>
-        )}
+            </Stack>
+          </Paper>
+        </Grid>
 
-        <Grid size={{ xs: 12, md: productionInternalMode ? 12 : 6 }} sx={{ minWidth: 0 }}>
+        <Grid size={{ xs: 12, md: 6 }} sx={{ minWidth: 0 }}>
           <Paper
             variant="outlined"
             sx={{ p: 2, height: "100%", display: "flex", flexDirection: "column", borderRadius: 2, width: "100%", boxSizing: "border-box" }}
@@ -637,7 +740,7 @@ export default function PedidoDetalle() {
                 color="success"
                 startIcon={<DoneAllOutlined />}
                 onClick={terminar}
-                disabled={esAnulado || esRecibido || loading || (!productionInternalMode && (pedido?.saldoPendiente || 0) > 0)}
+                disabled={esAnulado || esRecibido || loading || saldoCalculado > 0}
               >
                 Marcar como recibido
               </Button>
@@ -646,7 +749,7 @@ export default function PedidoDetalle() {
                   Este pedido ya fue marcado como recibido.
                 </Typography>
               )}
-              {!productionInternalMode && (pedido?.saldoPendiente || 0) > 0 && (
+              {saldoCalculado > 0 && (
                 <Typography variant="caption" color="error">
                   Liquida el saldo antes de marcarlo como recibido.
                 </Typography>

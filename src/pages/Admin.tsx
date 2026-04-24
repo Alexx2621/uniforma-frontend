@@ -91,6 +91,33 @@ interface ProductMassConfigDraft {
   tipos: MassTipoDraft[];
 }
 
+interface ProductBulkUpdateDraft {
+  tipos: string;
+  generos: string;
+  telas: string;
+  tallas: string;
+  colores: string;
+  actualizarPrecio: boolean;
+  precio: number;
+  actualizarStockMax: boolean;
+  stockMax: number;
+  actualizarMerma: boolean;
+  mermaPorcentaje: number;
+}
+
+interface ProductBulkCreateDraft {
+  tipos: string;
+  tipoAbreviacion: string;
+  categoria: string;
+  generos: string;
+  telas: string;
+  tallas: string;
+  colores: string;
+  precio: number;
+  stockMax: number;
+  mermaPorcentaje: number;
+}
+
 const createKey = () => Date.now() + Math.floor(Math.random() * 100000);
 
 const parseCsv = (value: string) =>
@@ -100,6 +127,33 @@ const parseCsv = (value: string) =>
     .filter(Boolean);
 
 const formatCsv = (values: string[]) => values.join(", ");
+
+const createEmptyBulkUpdateDraft = (): ProductBulkUpdateDraft => ({
+  tipos: "",
+  generos: "",
+  telas: "",
+  tallas: "",
+  colores: "",
+  actualizarPrecio: true,
+  precio: 0,
+  actualizarStockMax: false,
+  stockMax: 0,
+  actualizarMerma: false,
+  mermaPorcentaje: 0,
+});
+
+const createEmptyBulkCreateDraft = (): ProductBulkCreateDraft => ({
+  tipos: "",
+  tipoAbreviacion: "",
+  categoria: "",
+  generos: "",
+  telas: "",
+  tallas: "",
+  colores: "",
+  precio: 275,
+  stockMax: 10,
+  mermaPorcentaje: 0,
+});
 
 const normalizeRoleIds = (raw: unknown): number[] => {
   if (Array.isArray(raw)) {
@@ -230,16 +284,19 @@ export default function Admin() {
   const [userDisabledPathsDraft, setUserDisabledPathsDraft] = useState<Record<string, string[]>>({});
   const [selectedUsuario, setSelectedUsuario] = useState("");
   const [selectedUserDisabledPathsDraft, setSelectedUserDisabledPathsDraft] = useState<string[]>([]);
-  const [productionInternalDraft, setProductionInternalDraft] = useState(false);
   const [productMassConfigDraft, setProductMassConfigDraft] = useState<ProductMassConfigDraft>(
     createEmptyMassConfigDraft()
+  );
+  const [productBulkUpdateDraft, setProductBulkUpdateDraft] = useState<ProductBulkUpdateDraft>(
+    createEmptyBulkUpdateDraft()
+  );
+  const [productBulkCreateDraft, setProductBulkCreateDraft] = useState<ProductBulkCreateDraft>(
+    createEmptyBulkCreateDraft()
   );
   const {
     disabledPaths,
     userDisabledPaths,
-    productionInternalMode,
     setDisabledPaths,
-    setProductionInternalMode,
     fetchConfig,
   } = useSystemConfigStore();
   const { rol, permisos } = useAuthStore();
@@ -295,7 +352,6 @@ export default function Admin() {
       setUserDisabledPathsDraft(
         data.userDisabledPaths && typeof data.userDisabledPaths === "object" ? data.userDisabledPaths : {}
       );
-      setProductionInternalDraft(Boolean(data.productionInternalMode));
       const usuariosData = Array.isArray(respUsuarios.data) ? respUsuarios.data : [];
       setUsuarios(
         usuariosData
@@ -334,10 +390,6 @@ export default function Admin() {
   useEffect(() => {
     setUserDisabledPathsDraft(userDisabledPaths);
   }, [userDisabledPaths]);
-
-  useEffect(() => {
-    setProductionInternalDraft(productionInternalMode);
-  }, [productionInternalMode]);
 
   useEffect(() => {
     if (!usuarios.length) {
@@ -505,24 +557,6 @@ export default function Admin() {
     }
   };
 
-  const guardarModoProduccion = async () => {
-    try {
-      setLoading(true);
-      await setProductionInternalMode(productionInternalDraft);
-      Swal.fire(
-        "Guardado",
-        productionInternalDraft
-          ? "Los pedidos de produccion ahora funcionan sin cliente ni pagos."
-          : "Los pedidos de produccion volvieron al modo normal con pagos.",
-        "success"
-      );
-    } catch {
-      Swal.fire("Error", "No se pudo guardar el modo de produccion", "error");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const togglePath = (path: string, enabled: boolean) => {
     setDisabledPathsDraft((prev) =>
       enabled ? prev.filter((item) => item !== path) : Array.from(new Set([...prev, path]))
@@ -607,6 +641,221 @@ export default function Admin() {
       });
     } catch (error: any) {
       const msg = error?.response?.data?.message || error?.message || "No se pudo generar la vista previa";
+      Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const buildActualizacionMasivaPayload = () => {
+    const cambios: Record<string, number> = {};
+    if (productBulkUpdateDraft.actualizarPrecio) cambios.precio = Number(productBulkUpdateDraft.precio) || 0;
+    if (productBulkUpdateDraft.actualizarStockMax) cambios.stockMax = Number(productBulkUpdateDraft.stockMax) || 0;
+    if (productBulkUpdateDraft.actualizarMerma) cambios.mermaPorcentaje = Number(productBulkUpdateDraft.mermaPorcentaje) || 0;
+
+    return {
+      filtros: {
+        tipos: parseCsv(productBulkUpdateDraft.tipos),
+        generos: parseCsv(productBulkUpdateDraft.generos),
+        telas: parseCsv(productBulkUpdateDraft.telas),
+        tallas: parseCsv(productBulkUpdateDraft.tallas),
+        colores: parseCsv(productBulkUpdateDraft.colores),
+      },
+      cambios,
+    };
+  };
+
+  const renderVistaPreviaActualizacionProductos = (data: any) => {
+    const muestras = Array.isArray(data?.muestras) ? data.muestras : [];
+    return `
+      <div style="text-align:left;max-height:60vh;overflow:auto;padding-right:8px;">
+        <p style="margin:0 0 12px 0;"><strong>Coincidencias:</strong> ${data?.totalCoincidencias ?? 0}</p>
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+          <thead>
+            <tr>
+              <th style="border-bottom:1px solid #dbe3ea;text-align:left;padding:6px;">Codigo</th>
+              <th style="border-bottom:1px solid #dbe3ea;text-align:left;padding:6px;">Producto</th>
+              <th style="border-bottom:1px solid #dbe3ea;text-align:left;padding:6px;">Filtro</th>
+              <th style="border-bottom:1px solid #dbe3ea;text-align:right;padding:6px;">Precio</th>
+              <th style="border-bottom:1px solid #dbe3ea;text-align:right;padding:6px;">Stock max</th>
+              <th style="border-bottom:1px solid #dbe3ea;text-align:right;padding:6px;">Merma</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${
+              muestras.length
+                ? muestras
+                    .map(
+                      (item: any) => `
+                        <tr>
+                          <td style="border-bottom:1px solid #eef2f6;padding:6px;font-family:Consolas,monospace;">${item.codigo || ""}</td>
+                          <td style="border-bottom:1px solid #eef2f6;padding:6px;">${item.tipo || ""}</td>
+                          <td style="border-bottom:1px solid #eef2f6;padding:6px;">${[item.genero, item.tela, item.talla, item.color].filter(Boolean).join(" / ")}</td>
+                          <td style="border-bottom:1px solid #eef2f6;padding:6px;text-align:right;">Q ${Number(item.precioActual || 0).toFixed(2)} -> Q ${Number(item.precioNuevo || 0).toFixed(2)}</td>
+                          <td style="border-bottom:1px solid #eef2f6;padding:6px;text-align:right;">${item.stockMaxActual ?? 0} -> ${item.stockMaxNuevo ?? 0}</td>
+                          <td style="border-bottom:1px solid #eef2f6;padding:6px;text-align:right;">${Number(item.mermaPorcentajeActual || 0).toFixed(2)}% -> ${Number(item.mermaPorcentajeNuevo || 0).toFixed(2)}%</td>
+                        </tr>
+                      `
+                    )
+                    .join("")
+                : `<tr><td colspan="6" style="padding:10px;text-align:center;">Sin coincidencias</td></tr>`
+            }
+          </tbody>
+        </table>
+        <p style="margin:10px 0 0;color:#64748b;font-size:12px;">Se muestran hasta 12 codigos de ejemplo.</p>
+      </div>
+    `;
+  };
+
+  const verVistaPreviaActualizacionProductos = async () => {
+    try {
+      setLoading(true);
+      const resp = await api.post("/productos/actualizacion-masiva/preview", buildActualizacionMasivaPayload());
+      await Swal.fire({
+        title: "Vista previa de actualizacion",
+        html: renderVistaPreviaActualizacionProductos(resp.data || {}),
+        width: 1100,
+        confirmButtonText: "Cerrar",
+      });
+    } catch (error: any) {
+      const msg = error?.response?.data?.message || error?.message || "No se pudo generar la vista previa";
+      Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const ejecutarActualizacionMasivaProductos = async () => {
+    try {
+      setLoading(true);
+      const preview = await api.post("/productos/actualizacion-masiva/preview", buildActualizacionMasivaPayload());
+      const total = Number(preview.data?.totalCoincidencias || 0);
+
+      const result = await Swal.fire({
+        title: "Actualizar productos existentes",
+        html: `${renderVistaPreviaActualizacionProductos(preview.data || {})}<p style="text-align:left;margin-top:12px;"><strong>Se actualizaran ${total} productos.</strong></p>`,
+        width: 1100,
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: "Aplicar cambios",
+        cancelButtonText: "Cancelar",
+      });
+
+      if (!result.isConfirmed) return;
+
+      const resp = await api.post("/productos/actualizacion-masiva", buildActualizacionMasivaPayload());
+      Swal.fire("Actualizacion completada", `Productos actualizados: ${resp.data?.actualizados ?? 0}`, "success");
+    } catch (error: any) {
+      const msg = error?.response?.data?.message || error?.message || "No se pudo aplicar la actualizacion masiva";
+      Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const buildCreacionMasivaPayload = () => ({
+    filtros: {
+      tipos: parseCsv(productBulkCreateDraft.tipos),
+      tipoAbreviacion: productBulkCreateDraft.tipoAbreviacion.trim(),
+      categoria: productBulkCreateDraft.categoria.trim(),
+      generos: parseCsv(productBulkCreateDraft.generos),
+      telas: parseCsv(productBulkCreateDraft.telas),
+      tallas: parseCsv(productBulkCreateDraft.tallas),
+      colores: parseCsv(productBulkCreateDraft.colores),
+    },
+    valores: {
+      precio: Number(productBulkCreateDraft.precio) || 0,
+      stockMax: Number(productBulkCreateDraft.stockMax) || 0,
+      mermaPorcentaje: Number(productBulkCreateDraft.mermaPorcentaje) || 0,
+    },
+  });
+
+  const renderVistaPreviaCreacionProductos = (data: any) => {
+    const muestras = Array.isArray(data?.muestras) ? data.muestras : [];
+    return `
+      <div style="text-align:left;max-height:60vh;overflow:auto;padding-right:8px;">
+        <p style="margin:0 0 12px 0;">
+          <strong>Total combinaciones:</strong> ${data?.totalCombinaciones ?? 0}<br />
+          <strong>Se crearian:</strong> ${data?.seCrearian ?? data?.creados ?? 0}<br />
+          <strong>Ya existen:</strong> ${data?.existentes ?? 0}
+        </p>
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+          <thead>
+            <tr>
+              <th style="border-bottom:1px solid #dbe3ea;text-align:left;padding:6px;">Codigo</th>
+              <th style="border-bottom:1px solid #dbe3ea;text-align:left;padding:6px;">Producto</th>
+              <th style="border-bottom:1px solid #dbe3ea;text-align:left;padding:6px;">Detalle</th>
+              <th style="border-bottom:1px solid #dbe3ea;text-align:right;padding:6px;">Precio</th>
+              <th style="border-bottom:1px solid #dbe3ea;text-align:right;padding:6px;">Stock max</th>
+              <th style="border-bottom:1px solid #dbe3ea;text-align:center;padding:6px;">Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${
+              muestras.length
+                ? muestras
+                    .map(
+                      (item: any) => `
+                        <tr>
+                          <td style="border-bottom:1px solid #eef2f6;padding:6px;font-family:Consolas,monospace;">${item.codigo || ""}</td>
+                          <td style="border-bottom:1px solid #eef2f6;padding:6px;">${item.tipo || ""} ${item.genero || ""}</td>
+                          <td style="border-bottom:1px solid #eef2f6;padding:6px;">${[item.tela, item.talla, item.color].filter(Boolean).join(" / ")}</td>
+                          <td style="border-bottom:1px solid #eef2f6;padding:6px;text-align:right;">Q ${Number(item.precio || 0).toFixed(2)}</td>
+                          <td style="border-bottom:1px solid #eef2f6;padding:6px;text-align:right;">${item.stockMax ?? 0}</td>
+                          <td style="border-bottom:1px solid #eef2f6;padding:6px;text-align:center;">${item.existe ? "Existente" : "Nuevo"}</td>
+                        </tr>
+                      `
+                    )
+                    .join("")
+                : `<tr><td colspan="6" style="padding:10px;text-align:center;">Sin muestras</td></tr>`
+            }
+          </tbody>
+        </table>
+        <p style="margin:10px 0 0;color:#64748b;font-size:12px;">Se muestran hasta 20 codigos de ejemplo.</p>
+      </div>
+    `;
+  };
+
+  const verVistaPreviaCreacionProductos = async () => {
+    try {
+      setLoading(true);
+      const resp = await api.post("/productos/creacion-masiva/preview", buildCreacionMasivaPayload());
+      await Swal.fire({
+        title: "Vista previa de creacion",
+        html: renderVistaPreviaCreacionProductos(resp.data || {}),
+        width: 1100,
+        confirmButtonText: "Cerrar",
+      });
+    } catch (error: any) {
+      const msg = error?.response?.data?.message || error?.message || "No se pudo generar la vista previa";
+      Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const ejecutarCreacionMasivaProductos = async () => {
+    try {
+      setLoading(true);
+      const preview = await api.post("/productos/creacion-masiva/preview", buildCreacionMasivaPayload());
+      const total = Number(preview.data?.seCrearian || 0);
+
+      const result = await Swal.fire({
+        title: "Crear codigos masivamente",
+        html: `${renderVistaPreviaCreacionProductos(preview.data || {})}<p style="text-align:left;margin-top:12px;"><strong>Se crearan ${total} codigos nuevos.</strong></p>`,
+        width: 1100,
+        icon: "question",
+        showCancelButton: true,
+        confirmButtonText: "Crear codigos",
+        cancelButtonText: "Cancelar",
+      });
+
+      if (!result.isConfirmed) return;
+
+      const resp = await api.post("/productos/creacion-masiva", buildCreacionMasivaPayload());
+      Swal.fire("Creacion completada", `Codigos creados: ${resp.data?.creados ?? 0}`, "success");
+    } catch (error: any) {
+      const msg = error?.response?.data?.message || error?.message || "No se pudo ejecutar la creacion masiva";
       Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
     } finally {
       setLoading(false);
@@ -749,6 +998,285 @@ export default function Admin() {
           </>
         )}
       </Stack>
+
+      {canManageAdmin && (
+        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+          <Stack spacing={1.5}>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Inventory2Outlined color="primary" />
+              <Typography variant="subtitle2">Actualizacion masiva de productos existentes</Typography>
+            </Stack>
+            <Typography variant="body2" color="text.secondary">
+              Filtra productos ya creados y actualiza campos como precio, stock maximo o merma. Deja un filtro vacio para incluir todos sus valores.
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Ejemplo: Tipo `FILIPINA`, genero `DAMA`, tela `REPEL`, tallas y colores vacios, precio nuevo `250`.
+            </Typography>
+            <Grid container spacing={2}>
+              <Grid size={{ xs: 12, md: 2.4 }}>
+                <TextField
+                  label="Tipos"
+                  fullWidth
+                  value={productBulkUpdateDraft.tipos}
+                  onChange={(e) => setProductBulkUpdateDraft((prev) => ({ ...prev, tipos: e.target.value }))}
+                  helperText="Ej. FILIPINA"
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 2.4 }}>
+                <TextField
+                  label="Generos"
+                  fullWidth
+                  value={productBulkUpdateDraft.generos}
+                  onChange={(e) => setProductBulkUpdateDraft((prev) => ({ ...prev, generos: e.target.value }))}
+                  helperText="Ej. DAMA"
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 2.4 }}>
+                <TextField
+                  label="Telas"
+                  fullWidth
+                  value={productBulkUpdateDraft.telas}
+                  onChange={(e) => setProductBulkUpdateDraft((prev) => ({ ...prev, telas: e.target.value }))}
+                  helperText="Ej. REPEL"
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 2.4 }}>
+                <TextField
+                  label="Tallas"
+                  fullWidth
+                  value={productBulkUpdateDraft.tallas}
+                  onChange={(e) => setProductBulkUpdateDraft((prev) => ({ ...prev, tallas: e.target.value }))}
+                  helperText="Vacio = todas"
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 2.4 }}>
+                <TextField
+                  label="Colores"
+                  fullWidth
+                  value={productBulkUpdateDraft.colores}
+                  onChange={(e) => setProductBulkUpdateDraft((prev) => ({ ...prev, colores: e.target.value }))}
+                  helperText="Vacio = todos"
+                />
+              </Grid>
+            </Grid>
+            <Grid container spacing={2}>
+              <Grid size={{ xs: 12, md: 4 }}>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={productBulkUpdateDraft.actualizarPrecio}
+                        onChange={(e) =>
+                          setProductBulkUpdateDraft((prev) => ({ ...prev, actualizarPrecio: e.target.checked }))
+                        }
+                      />
+                    }
+                    label="Actualizar precio"
+                  />
+                  <TextField
+                    label="Nuevo precio"
+                    type="number"
+                    fullWidth
+                    disabled={!productBulkUpdateDraft.actualizarPrecio}
+                    value={productBulkUpdateDraft.precio}
+                    onChange={(e) => setProductBulkUpdateDraft((prev) => ({ ...prev, precio: Number(e.target.value) || 0 }))}
+                  />
+                </Stack>
+              </Grid>
+              <Grid size={{ xs: 12, md: 4 }}>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={productBulkUpdateDraft.actualizarStockMax}
+                        onChange={(e) =>
+                          setProductBulkUpdateDraft((prev) => ({ ...prev, actualizarStockMax: e.target.checked }))
+                        }
+                      />
+                    }
+                    label="Actualizar stock max"
+                  />
+                  <TextField
+                    label="Nuevo stock max"
+                    type="number"
+                    fullWidth
+                    disabled={!productBulkUpdateDraft.actualizarStockMax}
+                    value={productBulkUpdateDraft.stockMax}
+                    onChange={(e) => setProductBulkUpdateDraft((prev) => ({ ...prev, stockMax: Number(e.target.value) || 0 }))}
+                  />
+                </Stack>
+              </Grid>
+              <Grid size={{ xs: 12, md: 4 }}>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={productBulkUpdateDraft.actualizarMerma}
+                        onChange={(e) =>
+                          setProductBulkUpdateDraft((prev) => ({ ...prev, actualizarMerma: e.target.checked }))
+                        }
+                      />
+                    }
+                    label="Actualizar merma"
+                  />
+                  <TextField
+                    label="Nueva merma %"
+                    type="number"
+                    fullWidth
+                    disabled={!productBulkUpdateDraft.actualizarMerma}
+                    value={productBulkUpdateDraft.mermaPorcentaje}
+                    onChange={(e) =>
+                      setProductBulkUpdateDraft((prev) => ({ ...prev, mermaPorcentaje: Number(e.target.value) || 0 }))
+                    }
+                  />
+                </Stack>
+              </Grid>
+            </Grid>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1} justifyContent="flex-end">
+              <Button variant="outlined" onClick={() => setProductBulkUpdateDraft(createEmptyBulkUpdateDraft())} disabled={loading}>
+                Limpiar filtros
+              </Button>
+              <Button variant="outlined" onClick={verVistaPreviaActualizacionProductos} disabled={loading}>
+                Vista previa
+              </Button>
+              <Button variant="contained" onClick={ejecutarActualizacionMasivaProductos} disabled={loading}>
+                Aplicar actualizacion
+              </Button>
+            </Stack>
+          </Stack>
+        </Paper>
+      )}
+
+      {canManageAdmin && (
+        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+          <Stack spacing={1.5}>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Inventory2Outlined color="primary" />
+              <Typography variant="subtitle2">Creacion masiva de codigos de productos</Typography>
+            </Stack>
+            <Typography variant="body2" color="text.secondary">
+              Crea combinaciones nuevas usando tipo, genero, tela, talla y color. Deja tallas o colores vacios para incluir todos los catalogos existentes.
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Ejemplo: Tipo `FILIPINA`, abreviacion `F`, categoria `FILIPINA`, genero `DAMA`, tela `REPEL`, tallas y colores vacios.
+            </Typography>
+            <Grid container spacing={2}>
+              <Grid size={{ xs: 12, md: 3 }}>
+                <TextField
+                  label="Tipos"
+                  fullWidth
+                  value={productBulkCreateDraft.tipos}
+                  onChange={(e) => setProductBulkCreateDraft((prev) => ({ ...prev, tipos: e.target.value }))}
+                  helperText="Requerido. Ej. FILIPINA"
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 3 }}>
+                <TextField
+                  label="Abreviacion tipo"
+                  fullWidth
+                  value={productBulkCreateDraft.tipoAbreviacion}
+                  onChange={(e) =>
+                    setProductBulkCreateDraft((prev) => ({ ...prev, tipoAbreviacion: e.target.value }))
+                  }
+                  helperText="Opcional si ya existe regla"
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 3 }}>
+                <TextField
+                  label="Categoria"
+                  fullWidth
+                  value={productBulkCreateDraft.categoria}
+                  onChange={(e) => setProductBulkCreateDraft((prev) => ({ ...prev, categoria: e.target.value }))}
+                  helperText="Vacio = mismo tipo"
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 3 }}>
+                <TextField
+                  label="Generos"
+                  fullWidth
+                  value={productBulkCreateDraft.generos}
+                  onChange={(e) => setProductBulkCreateDraft((prev) => ({ ...prev, generos: e.target.value }))}
+                  helperText="Requerido. Ej. DAMA"
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 3 }}>
+                <TextField
+                  label="Telas"
+                  fullWidth
+                  value={productBulkCreateDraft.telas}
+                  onChange={(e) => setProductBulkCreateDraft((prev) => ({ ...prev, telas: e.target.value }))}
+                  helperText="Requerido. Ej. REPEL"
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 3 }}>
+                <TextField
+                  label="Tallas"
+                  fullWidth
+                  value={productBulkCreateDraft.tallas}
+                  onChange={(e) => setProductBulkCreateDraft((prev) => ({ ...prev, tallas: e.target.value }))}
+                  helperText="Vacio = todas"
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 3 }}>
+                <TextField
+                  label="Colores"
+                  fullWidth
+                  value={productBulkCreateDraft.colores}
+                  onChange={(e) => setProductBulkCreateDraft((prev) => ({ ...prev, colores: e.target.value }))}
+                  helperText="Vacio = todos"
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 3 }}>
+                <TextField
+                  label="Precio"
+                  type="number"
+                  fullWidth
+                  value={productBulkCreateDraft.precio}
+                  onChange={(e) =>
+                    setProductBulkCreateDraft((prev) => ({ ...prev, precio: Number(e.target.value) || 0 }))
+                  }
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 3 }}>
+                <TextField
+                  label="Stock maximo"
+                  type="number"
+                  fullWidth
+                  value={productBulkCreateDraft.stockMax}
+                  onChange={(e) =>
+                    setProductBulkCreateDraft((prev) => ({ ...prev, stockMax: Number(e.target.value) || 0 }))
+                  }
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 3 }}>
+                <TextField
+                  label="Merma %"
+                  type="number"
+                  fullWidth
+                  value={productBulkCreateDraft.mermaPorcentaje}
+                  onChange={(e) =>
+                    setProductBulkCreateDraft((prev) => ({
+                      ...prev,
+                      mermaPorcentaje: Number(e.target.value) || 0,
+                    }))
+                  }
+                />
+              </Grid>
+            </Grid>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1} justifyContent="flex-end">
+              <Button variant="outlined" onClick={() => setProductBulkCreateDraft(createEmptyBulkCreateDraft())} disabled={loading}>
+                Limpiar filtros
+              </Button>
+              <Button variant="outlined" onClick={verVistaPreviaCreacionProductos} disabled={loading}>
+                Vista previa
+              </Button>
+              <Button variant="contained" onClick={ejecutarCreacionMasivaProductos} disabled={loading}>
+                Crear codigos
+              </Button>
+            </Stack>
+          </Stack>
+        </Paper>
+      )}
 
       {canManageAdmin && (
         <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
@@ -930,31 +1458,6 @@ export default function Admin() {
             <Stack direction="row" justifyContent="flex-end">
               <Button variant="contained" onClick={guardarRolesUnificarPedidos} disabled={loading}>
                 Aplicar permiso de unificar pedidos
-              </Button>
-            </Stack>
-          </Stack>
-        </Paper>
-      )}
-
-      {canManageAdmin && (
-        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
-          <Stack spacing={1.5}>
-            <Typography variant="subtitle2">Modo interno de produccion</Typography>
-            <Typography variant="body2" color="text.secondary">
-              Deshabilita globalmente todo lo relacionado con pagos en pedidos y usa el modulo solo con datos internos de produccion.
-            </Typography>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={productionInternalDraft}
-                  onChange={(e) => setProductionInternalDraft(e.target.checked)}
-                />
-              }
-              label="Usar pedidos internos sin cliente ni pagos"
-            />
-            <Stack direction="row" justifyContent="flex-end">
-              <Button variant="contained" onClick={guardarModoProduccion} disabled={loading}>
-                Guardar modo de produccion
               </Button>
             </Stack>
           </Stack>

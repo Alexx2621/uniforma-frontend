@@ -18,6 +18,7 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  createFilterOptions,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditOutlined from "@mui/icons-material/EditOutlined";
@@ -34,6 +35,7 @@ import { buildVentaPdfHtml } from "../utils/ventaPdf";
 interface Cliente {
   id: number;
   nombre: string;
+  telefono?: string | null;
 }
 
 const CLIENTE_CF_ID = -1;
@@ -41,6 +43,30 @@ const CLIENTE_CF_OPTION: Cliente = {
   id: CLIENTE_CF_ID,
   nombre: "CF",
 };
+
+const formatClienteOption = (cliente: Cliente) => {
+  const telefono = `${cliente.telefono || ""}`.trim();
+  return telefono ? `${telefono} - ${cliente.nombre}` : cliente.nombre;
+};
+
+const filterClienteOptions = createFilterOptions<Cliente>({
+  stringify: (cliente) => `${cliente.nombre || ""} ${cliente.telefono || ""}`,
+});
+
+type ClienteVenta = {
+  id?: number | null;
+  nombre: string;
+  telefono?: string | null;
+};
+
+const normalizeTelefono = (value?: string | null) => `${value || ""}`.replace(/\D/g, "");
+
+const escapeInputValue = (value?: string | null) =>
+  `${value || ""}`
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 
 interface Producto {
   id: number;
@@ -144,6 +170,8 @@ export default function VentaNueva() {
   const [tallas, setTallas] = useState<any[]>([]);
   const [colores, setColores] = useState<any[]>([]);
   const [clienteId, setClienteId] = useState<number | "">(CLIENTE_CF_ID);
+  const [clienteTelefono, setClienteTelefono] = useState("");
+  const [clienteNombre, setClienteNombre] = useState("CF");
   const [bodegaId, setBodegaId] = useState<number | "">("");
   const [metodoPago, setMetodoPago] = useState<string>("efectivo");
   const [ubicacion, setUbicacion] = useState<string>("TIENDA");
@@ -171,6 +199,7 @@ export default function VentaNueva() {
     const hasCf = clientes.some((cliente) => `${cliente.nombre || ""}`.trim().toUpperCase() === "CF");
     return hasCf ? clientes : [CLIENTE_CF_OPTION, ...clientes];
   }, [clientes]);
+  const clienteSeleccionado = clientesConCf.find((c) => c.id === clienteId) || null;
 
   const normalizarUbicacion = (val?: string | null) => {
     if (!val) return "";
@@ -204,6 +233,48 @@ export default function VentaNueva() {
     void fetchConfig();
     void cargarCatalogos();
   }, [fetchConfig]);
+
+  useEffect(() => {
+    if (clienteId !== CLIENTE_CF_ID || clienteNombre !== "CF" || clienteTelefono) return;
+    const cf = clientes.find((cliente) => `${cliente.nombre || ""}`.trim().toUpperCase() === "CF");
+    if (cf) setClienteId(cf.id);
+  }, [clientes, clienteId, clienteNombre, clienteTelefono]);
+
+  const sincronizarCliente = (cliente: Cliente) => {
+    setClienteId(cliente.id);
+    setClienteNombre(cliente.nombre || "CF");
+    setClienteTelefono(`${cliente.telefono || ""}`.trim());
+  };
+
+  const buscarClientePorTelefono = (telefono: string) => {
+    const normalizado = normalizeTelefono(telefono);
+    if (!normalizado) return null;
+    return clientes.find((cliente) => normalizeTelefono(cliente.telefono) === normalizado) || null;
+  };
+
+  const buscarClienteExistente = (nombre: string, telefono: string) => {
+    const telefonoNormalizado = normalizeTelefono(telefono);
+    const nombreNormalizado = nombre.trim().toLowerCase();
+    return (
+      (telefonoNormalizado
+        ? clientes.find((cliente) => normalizeTelefono(cliente.telefono) === telefonoNormalizado)
+        : null) ||
+      (nombreNormalizado
+        ? clientes.find((cliente) => `${cliente.nombre || ""}`.trim().toLowerCase() === nombreNormalizado)
+        : null) ||
+      null
+    );
+  };
+
+  const manejarTelefonoCliente = (value: string) => {
+    setClienteTelefono(value);
+    const encontrado = buscarClientePorTelefono(value);
+    if (encontrado) {
+      sincronizarCliente(encontrado);
+      return;
+    }
+    if (clienteId !== "" && Number(clienteId) > 0) setClienteId("");
+  };
 
   useEffect(() => {
     if (userBodegaId && !canAccessAllBodegas) {
@@ -526,8 +597,12 @@ export default function VentaNueva() {
       return;
     }
 
-    const clienteNombre =
-      clientesConCf.find((c) => c.id === (clienteId === "" ? null : Number(clienteId)))?.nombre || "CF";
+    const clienteNombrePdf =
+      venta?.clienteNombre ||
+      venta?.cliente?.nombre ||
+      clienteNombre.trim() ||
+      clientesConCf.find((c) => c.id === (clienteId === "" ? null : Number(clienteId)))?.nombre ||
+      "CF";
     const bodegaNombre = bodegas.find((b) => b.id === Number(bodegaId))?.nombre || authBodegaNombre || "N/D";
     const vendedor = usuario || "Vendedor";
     const fecha = venta?.fecha ? new Date(venta.fecha) : new Date();
@@ -537,7 +612,7 @@ export default function VentaNueva() {
     const html = buildVentaPdfHtml({
       folio,
       fecha,
-      cliente: clienteNombre,
+      cliente: clienteNombrePdf,
       metodoPago,
       referenciaPago: metodoRequiereReferencia ? referenciaPago || "N/D" : "No aplica",
       bodega: bodegaNombre,
@@ -566,6 +641,111 @@ export default function VentaNueva() {
     nuevaVentana.document.close();
   };
 
+  const mostrarFormularioRegistroCliente = async (datosIniciales: ClienteVenta) => {
+    const result = await Swal.fire({
+      title: "Registrar cliente",
+      html: `
+        <input id="cliente-nombre" class="swal2-input" placeholder="Nombre" value="${escapeInputValue(datosIniciales.nombre)}">
+        <input id="cliente-telefono" class="swal2-input" placeholder="Telefono" value="${escapeInputValue(datosIniciales.telefono)}">
+        <input id="cliente-correo" class="swal2-input" placeholder="Correo (opcional)">
+        <input id="cliente-direccion" class="swal2-input" placeholder="Direccion (opcional)">
+      `,
+      focusConfirm: false,
+      showCancelButton: true,
+      confirmButtonText: "Registrar",
+      cancelButtonText: "Cancelar",
+      preConfirm: () => {
+        const nombre = (document.getElementById("cliente-nombre") as HTMLInputElement | null)?.value.trim() || "";
+        const telefono = (document.getElementById("cliente-telefono") as HTMLInputElement | null)?.value.trim() || "";
+        const correo = (document.getElementById("cliente-correo") as HTMLInputElement | null)?.value.trim() || "";
+        const direccion = (document.getElementById("cliente-direccion") as HTMLInputElement | null)?.value.trim() || "";
+        if (!nombre) {
+          Swal.showValidationMessage("Ingresa el nombre del cliente");
+          return false;
+        }
+        return {
+          nombre,
+          telefono: telefono || null,
+          correo: correo || null,
+          direccion: direccion || null,
+          tipoCliente: "CLIENTE",
+        };
+      },
+    });
+
+    if (!result.isConfirmed || !result.value) return null;
+
+    const resp = await api.post("/clientes", result.value);
+    const nuevoCliente = resp.data as Cliente;
+    setClientes((prev) => [nuevoCliente, ...prev.filter((cliente) => cliente.id !== nuevoCliente.id)]);
+    sincronizarCliente(nuevoCliente);
+    return nuevoCliente;
+  };
+
+  const resolverClienteVenta = async (): Promise<ClienteVenta | false> => {
+    const nombre = clienteNombre.trim() || "CF";
+    const telefono = clienteTelefono.trim();
+    const consumidorFinal = !telefono && nombre.toUpperCase() === "CF";
+    const seleccionado =
+      clienteId !== "" && Number(clienteId) > 0
+        ? clientes.find((cliente) => cliente.id === Number(clienteId)) || null
+        : null;
+    const existente = seleccionado || buscarClienteExistente(nombre, telefono);
+
+    if (existente) {
+      sincronizarCliente(existente);
+      return {
+        id: existente.id,
+        nombre: existente.nombre,
+        telefono: existente.telefono || null,
+      };
+    }
+
+    if (consumidorFinal) {
+      return {
+        id: null,
+        nombre: "CF",
+        telefono: null,
+      };
+    }
+
+    const respuesta = await Swal.fire({
+      icon: "question",
+      title: "Cliente no registrado",
+      text: "Este cliente no existe. ¿Deseas registrarlo antes de finalizar la venta?",
+      showDenyButton: true,
+      showCancelButton: true,
+      confirmButtonText: "Registrar cliente",
+      denyButtonText: "Continuar sin registrar",
+      cancelButtonText: "Cancelar",
+    });
+
+    if (respuesta.isDismissed) return false;
+
+    if (respuesta.isDenied) {
+      setClienteId("");
+      return {
+        id: null,
+        nombre,
+        telefono: telefono || null,
+      };
+    }
+
+    try {
+      const creado = await mostrarFormularioRegistroCliente({ nombre, telefono });
+      if (!creado) return false;
+      return {
+        id: creado.id,
+        nombre: creado.nombre,
+        telefono: creado.telefono || null,
+      };
+    } catch (error: any) {
+      const msg = error?.response?.data?.message || error?.message || "No se pudo registrar el cliente";
+      Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
+      return false;
+    }
+  };
+
   const guardar = async () => {
     if (!bodegaId) {
       Swal.fire("Validacion", "Selecciona una bodega", "warning");
@@ -588,8 +768,13 @@ export default function VentaNueva() {
       return;
     }
 
+    const clienteParaVenta = await resolverClienteVenta();
+    if (clienteParaVenta === false) return;
+
     const payload = {
-      clienteId: clienteId === "" || Number(clienteId) <= 0 ? null : Number(clienteId),
+      clienteId: clienteParaVenta.id && Number(clienteParaVenta.id) > 0 ? Number(clienteParaVenta.id) : null,
+      clienteNombre: clienteParaVenta.nombre,
+      clienteTelefono: clienteParaVenta.telefono || null,
       bodegaId: Number(bodegaId),
       ubicacion,
       metodoPago,
@@ -627,15 +812,6 @@ export default function VentaNueva() {
 
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, sm: 4 }}>
-          <Autocomplete
-            options={clientesConCf}
-            getOptionLabel={(option) => option.nombre}
-            value={clientesConCf.find((c) => c.id === clienteId) || CLIENTE_CF_OPTION}
-            onChange={(_, val) => setClienteId(val ? val.id : CLIENTE_CF_ID)}
-            renderInput={(params) => <TextField {...params} label="Cliente" fullWidth />}
-          />
-        </Grid>
-        <Grid size={{ xs: 12, sm: 4 }}>
           <FormControl fullWidth>
             <InputLabel>Bodega</InputLabel>
             <Select
@@ -651,6 +827,60 @@ export default function VentaNueva() {
               ))}
             </Select>
           </FormControl>
+        </Grid>
+        <Grid size={{ xs: 12, sm: 4 }}>
+          <Autocomplete<Cliente, false, false, true>
+            freeSolo
+            options={clientes.filter((cliente) => `${cliente.telefono || ""}`.trim())}
+            getOptionLabel={(option) =>
+              typeof option === "string" ? option : `${option.telefono || ""}`.trim()
+            }
+            filterOptions={filterClienteOptions}
+            inputValue={clienteTelefono}
+            value={clienteSeleccionado?.telefono ? clienteSeleccionado : null}
+            onInputChange={(_, value, reason) => {
+              if (reason === "reset") return;
+              manejarTelefonoCliente(value);
+            }}
+            onChange={(_, value) => {
+              if (typeof value === "string") {
+                manejarTelefonoCliente(value);
+                return;
+              }
+              if (value) {
+                sincronizarCliente(value);
+                return;
+              }
+              setClienteId("");
+              setClienteTelefono("");
+            }}
+            renderOption={(props, option) => (
+              <li {...props}>{formatClienteOption(option)}</li>
+            )}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="Telefono del cliente"
+                fullWidth
+                helperText="Busca por telefono o escribe uno nuevo"
+              />
+            )}
+          />
+        </Grid>
+        <Grid size={{ xs: 12, sm: 4 }}>
+          <TextField
+            label="Nombre del cliente"
+            fullWidth
+            value={clienteNombre}
+            onChange={(e) => {
+              const value = e.target.value;
+              setClienteNombre(value);
+              if (clienteSeleccionado && value.trim() !== `${clienteSeleccionado.nombre || ""}`.trim()) {
+                setClienteId("");
+              }
+            }}
+            helperText="Se guardara con la venta"
+          />
         </Grid>
         <Grid size={{ xs: 12, sm: 4 }}>
           <FormControl fullWidth>

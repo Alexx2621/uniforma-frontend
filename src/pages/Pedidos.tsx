@@ -234,6 +234,15 @@ export default function Pedidos() {
     (typeof row?.bodega === "string" ? row?.bodega : undefined) ||
     "N/D";
 
+  const obtenerGenerosPedido = (row: PedidoRow) => {
+    const generos = (row.detalle || [])
+      .map((detalle) => detalle.producto?.genero || productosMap.get(Number(detalle.productoId))?.genero || "")
+      .map((genero) => `${genero || ""}`.trim())
+      .filter(Boolean);
+    const unicos = Array.from(new Set(generos));
+    return unicos.length ? unicos.join(", ") : "N/D";
+  };
+
   const normalizarTexto = (value?: string | null) => {
     const limpio = `${value || ""}`.trim();
     return limpio || "N/D";
@@ -810,6 +819,13 @@ export default function Pedidos() {
       headerName: "Bodega",
       flex: 1,
       renderCell: (p) => <span>{obtenerNombreBodega((p as any)?.row)}</span>,
+    },
+    {
+      field: "genero",
+      headerName: "Genero",
+      width: 150,
+      sortable: false,
+      renderCell: (p) => <span>{obtenerGenerosPedido((p as any)?.row)}</span>,
     },
     {
       field: "solicitadoPor",

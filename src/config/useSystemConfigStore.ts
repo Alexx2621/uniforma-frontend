@@ -4,20 +4,17 @@ import { api } from "../api/axios";
 interface SystemConfigState {
   disabledPaths: string[];
   userDisabledPaths: Record<string, string[]>;
-  productionInternalMode: boolean;
   crossStoreRoleIds: number[];
   unifyOrderRoleIds: number[];
   loaded: boolean;
   loading: boolean;
   fetchConfig: () => Promise<void>;
   setDisabledPaths: (disabledPaths: string[]) => Promise<void>;
-  setProductionInternalMode: (productionInternalMode: boolean) => Promise<void>;
 }
 
 export const useSystemConfigStore = create<SystemConfigState>((set) => ({
   disabledPaths: [],
   userDisabledPaths: {},
-  productionInternalMode: false,
   crossStoreRoleIds: [],
   unifyOrderRoleIds: [],
   loaded: false,
@@ -33,7 +30,6 @@ export const useSystemConfigStore = create<SystemConfigState>((set) => ({
           resp.data?.userDisabledPaths && typeof resp.data.userDisabledPaths === "object"
             ? resp.data.userDisabledPaths
             : {},
-        productionInternalMode: Boolean(resp.data?.productionInternalMode),
         crossStoreRoleIds: Array.isArray(resp.data?.crossStoreRoleIds)
           ? resp.data.crossStoreRoleIds.map(Number).filter((value: number) => Number.isFinite(value) && value > 0)
           : [],
@@ -49,7 +45,6 @@ export const useSystemConfigStore = create<SystemConfigState>((set) => ({
         loading: false,
         disabledPaths: [],
         userDisabledPaths: {},
-        productionInternalMode: false,
         crossStoreRoleIds: [],
         unifyOrderRoleIds: [],
       });
@@ -67,14 +62,4 @@ export const useSystemConfigStore = create<SystemConfigState>((set) => ({
     }
   },
 
-  setProductionInternalMode: async (productionInternalMode: boolean) => {
-    set({ loading: true });
-    try {
-      await api.put("/config/notificaciones", { productionInternalMode });
-      set({ productionInternalMode, loaded: true, loading: false });
-    } catch (error) {
-      set({ loading: false });
-      throw error;
-    }
-  },
 }));

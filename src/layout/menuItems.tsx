@@ -18,6 +18,7 @@ import TrendingUpOutlined from "@mui/icons-material/TrendingUpOutlined";
 import PeopleAltOutlined from "@mui/icons-material/PeopleAltOutlined";
 import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 import AdminPanelSettingsOutlined from "@mui/icons-material/AdminPanelSettingsOutlined";
+import SummarizeOutlined from "@mui/icons-material/SummarizeOutlined";
 
 export interface MenuItem {
   label: string;
@@ -95,6 +96,8 @@ export const menuSections: MenuSection[] = [
         label: "Reportes",
         icon: <AssessmentOutlined />,
         children: [
+          { label: "Reporte diario", path: "/reportes/reporte-diario", icon: <SummarizeOutlined /> },
+          { label: "Reporte quincenal", path: "/reportes/reporte-quincenal", icon: <SummarizeOutlined /> },
           { label: "Ventas diarias", path: "/reportes/ventas-diarias", icon: <TimelineOutlined /> },
           { label: "Ventas por producto", path: "/reportes/ventas-producto", icon: <TrendingUpOutlined /> },
           { label: "Top clientes", path: "/reportes/top-clientes", icon: <PeopleAltOutlined /> },
