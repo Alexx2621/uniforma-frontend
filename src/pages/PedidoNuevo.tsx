@@ -934,8 +934,9 @@ export default function PedidoNuevo() {
     try {
       const resp = await api.post("/produccion", payload);
       Swal.fire("Guardado", "Pedido creado", "success");
-      generarPdfPedido(resp.data?.id || "PEND", clienteParaPedido);
-      generarPdfPedidoProduccion(resp.data?.id || "PEND", clienteParaPedido);
+      const folioPedido = resp.data?.folio || (resp.data?.id ? `P-${resp.data.id}` : "PEND");
+      generarPdfPedido(folioPedido, clienteParaPedido);
+      generarPdfPedidoProduccion(folioPedido, clienteParaPedido);
       navigate("/produccion");
     } catch (error: any) {
       const msg = error?.response?.data?.message || error?.message || "No se pudo guardar";
@@ -992,7 +993,7 @@ export default function PedidoNuevo() {
               <img class="logo" src="${logoUrl}" alt="Uniforma" />
             </div>
             <div class="title-block">
-              <h1 class="pedido-no">PEDIDO No.: <span class="value">${escapeHtml(`P-${id}`)}</span></h1>
+              <h1 class="pedido-no">PEDIDO No.: <span class="value">${escapeHtml(id)}</span></h1>
             </div>
             <div class="date">${escapeHtml(fecha.toLocaleDateString("es-GT"))}</div>
           </div>
@@ -1119,7 +1120,7 @@ export default function PedidoNuevo() {
               <img class="logo" src="${logoUrl}" alt="Uniforma" />
             </div>
             <div class="title-block">
-              <h1 class="pedido-no">PEDIDO No.: <span class="value">${escapeHtml(`P-${id}`)}</span></h1>
+              <h1 class="pedido-no">PEDIDO No.: <span class="value">${escapeHtml(id)}</span></h1>
             </div>
             <div class="date">${escapeHtml(fecha.toLocaleDateString("es-GT"))}</div>
           </div>

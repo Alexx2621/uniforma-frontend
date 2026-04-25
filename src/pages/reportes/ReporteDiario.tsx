@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import {
   Paper,
   Typography,
@@ -21,6 +22,8 @@ import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import PictureAsPdfOutlined from "@mui/icons-material/PictureAsPdfOutlined";
 import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
 import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
+import AddOutlined from "@mui/icons-material/AddOutlined";
+import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import Swal from "sweetalert2";
 import { api } from "../../api/axios";
 import { useAuthStore } from "../../auth/useAuthStore";
@@ -29,6 +32,17 @@ import { PDF_FONT_BOLD_FAMILY, PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from 
 
 interface PagoVenta {
   referencia?: string | null;
+}
+
+interface DocumentoGenerado {
+  id: number;
+  tipo: string;
+  correlativo: string;
+  titulo?: string | null;
+  data: any;
+  creadoEn: string;
+  actualizadoEn: string;
+  usuario?: { nombre?: string | null; usuario?: string | null };
 }
 
 interface Venta {
@@ -730,13 +744,37 @@ const buildReporteDiarioHtml = ({
 export default function ReporteDiario() {
   const today = toDateOnly(new Date());
   const { nombre, primerNombre, primerApellido, usuario } = useAuthStore();
+  const location = useLocation();
+  const [documentos, setDocumentos] = useState<DocumentoGenerado[]>([]);
+  const [documentoId, setDocumentoId] = useState<number | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [filtroDesde, setFiltroDesde] = useState("");
+  const [filtroHasta, setFiltroHasta] = useState("");
   const [ventas, setVentas] = useState<Venta[]>([]);
   const [fecha, setFecha] = useState(today);
-  const [liquidacionNo, setLiquidacionNo] = useState("001");
+  const [liquidacionNo, setLiquidacionNo] = useState("Pendiente");
   const [capitalRows, setCapitalRows] = useState<CapitalRow[]>(() => [createCapitalRow(today)]);
   const [departamentoRows, setDepartamentoRows] = useState<DepartamentoRow[]>(() => [createDepartamentoRow(today)]);
   const [tiendaManualRows, setTiendaManualRows] = useState<TiendaRow[]>(() => [createTiendaRow(today)]);
   const [loading, setLoading] = useState(false);
+
+  const cargarSiguienteLiquidacion = async () => {
+    try {
+      const resp = await api.get("/correlativos/usuario-operaciones/actual/reporteDiario");
+      setLiquidacionNo(resp.data?.correlativo || "Pendiente");
+    } catch {
+      setLiquidacionNo("Pendiente");
+    }
+  };
+
+  const cargarDocumentos = async () => {
+    try {
+      const resp = await api.get("/documentos", { params: { tipo: "reporteDiario" } });
+      setDocumentos(resp.data || []);
+    } catch {
+      Swal.fire("Error", "No se pudieron cargar los reportes diarios generados", "error");
+    }
+  };
 
   const cargar = async () => {
     try {
@@ -751,8 +789,56 @@ export default function ReporteDiario() {
   };
 
   useEffect(() => {
-    void cargar();
+    void cargarDocumentos();
   }, []);
+
+  useEffect(() => {
+    if ((location.state as any)?.sidebarClickAt) {
+      setShowForm(false);
+      void cargarDocumentos();
+    }
+  }, [location.state]);
+
+  const documentosFiltrados = useMemo(
+    () =>
+      documentos.filter((doc) => {
+        const docFecha = doc.data?.fecha || String(doc.creadoEn || "").slice(0, 10);
+        if (filtroDesde && docFecha < filtroDesde) return false;
+        if (filtroHasta && docFecha > filtroHasta) return false;
+        return true;
+      }),
+    [documentos, filtroDesde, filtroHasta]
+  );
+
+  const nuevoReporte = async () => {
+    setDocumentoId(null);
+    await cargarSiguienteLiquidacion();
+    await cargar();
+    setFecha(today);
+    setCapitalRows([createCapitalRow(today)]);
+    setDepartamentoRows([createDepartamentoRow(today)]);
+    setTiendaManualRows([createTiendaRow(today)]);
+    setShowForm(true);
+  };
+
+  const abrirDocumento = (doc: DocumentoGenerado) => {
+    const data = doc.data || {};
+    const docFecha = data.fecha || today;
+    setDocumentoId(doc.id);
+    setLiquidacionNo(doc.correlativo);
+    setFecha(docFecha);
+    setCapitalRows(Array.isArray(data.capitalRows) && data.capitalRows.length ? data.capitalRows : [createCapitalRow(docFecha)]);
+    setDepartamentoRows(
+      Array.isArray(data.departamentoRows) && data.departamentoRows.length
+        ? data.departamentoRows
+        : [createDepartamentoRow(docFecha)]
+    );
+    setTiendaManualRows(
+      Array.isArray(data.tiendaManualRows) && data.tiendaManualRows.length ? data.tiendaManualRows : [createTiendaRow(docFecha)]
+    );
+    setVentas(Array.isArray(data.ventasSnapshot) ? data.ventasSnapshot : []);
+    setShowForm(true);
+  };
 
   const ventasDelDia = useMemo(
     () => ventas.filter((venta) => toDateOnly(venta.fecha) === fecha),
@@ -829,22 +915,115 @@ export default function ReporteDiario() {
     setTiendaManualRows([createTiendaRow(fecha)]);
   };
 
-  const imprimir = () => {
+  const getGeneradoPor = () =>
+    [primerNombre?.trim(), primerApellido?.trim()].filter(Boolean).join(" ") ||
+    nombre?.trim() ||
+    usuario?.trim() ||
+    "Usuario";
+
+  const getPayload = () => ({
+    fecha,
+    generadoPor: getGeneradoPor(),
+    capitalRows,
+    departamentoRows,
+    tiendaManualRows,
+    ventasSnapshot: ventasDelDia,
+  });
+
+  const guardarDocumento = async () => {
+    const payload = {
+      titulo: `Reporte diario ${fecha}`,
+      data: getPayload(),
+    };
+    if (documentoId) {
+      const resp = await api.patch(`/documentos/${documentoId}`, payload);
+      return resp.data as DocumentoGenerado;
+    }
+    const resp = await api.post("/documentos", { tipo: "reporteDiario", ...payload });
+    const doc = resp.data as DocumentoGenerado;
+    setDocumentoId(doc.id);
+    setLiquidacionNo(doc.correlativo);
+    return doc;
+  };
+
+  const reimprimirDocumento = (doc: DocumentoGenerado) => {
+    const win = window.open("", "_blank");
+    if (!win) {
+      Swal.fire("Aviso", "Habilita ventanas emergentes para imprimir o guardar en PDF", "info");
+      return;
+    }
+    const data = doc.data || {};
+    const docFecha = data.fecha || today;
+    const capitalDocRows = Array.isArray(data.capitalRows) ? data.capitalRows : [];
+    const departamentoDocRows = Array.isArray(data.departamentoRows) ? data.departamentoRows : [];
+    const tiendaManualDocRows = Array.isArray(data.tiendaManualRows) ? data.tiendaManualRows : [];
+    const ventasSnapshot = Array.isArray(data.ventasSnapshot) ? data.ventasSnapshot : [];
+    const tiendaAutoDocRows: TiendaRow[] = ventasSnapshot.map((venta: any) => {
+      const metodo = `${venta.metodoPago || ""}`.trim().toLowerCase();
+      const referencia = `${venta.pagos?.[0]?.referencia || ""}`.trim();
+      return {
+        id: venta.id,
+        fecha: docFecha,
+        recibo: `V-${venta.id}`,
+        transferencia: metodo === "transferencia" ? Number(venta.total || 0) : 0,
+        autorizacionTransferencia: metodo === "transferencia" ? referencia : "",
+        tarjeta: metodoCuentaComoTarjeta(metodo) ? Number(venta.total || 0) : 0,
+        autorizacionTarjeta: metodoCuentaComoTarjeta(metodo) ? referencia : "",
+        efectivo: metodo === "efectivo" ? Number(venta.total || 0) : 0,
+        total: Number(venta.total || 0),
+        observaciones: `${venta.clienteNombre || ""}`.trim(),
+      };
+    });
+    const tiendaDocRows = [...tiendaAutoDocRows, ...tiendaManualDocRows.filter(hasTiendaRowData)];
+    const subtotalCapitalDoc = capitalDocRows.reduce(
+      (sum: number, row: any) => sum + Number(row.transferencia || 0) + Number(row.deposito || 0) + Number(row.efectivo || 0),
+      0
+    );
+    const subtotalDepartamentoDoc = departamentoDocRows.reduce(
+      (sum: number, row: any) => sum + Number(row.transferencia || 0) + Number(row.deposito || 0),
+      0
+    );
+    const subtotalTiendaDoc = tiendaDocRows.reduce((sum, row) => sum + getTiendaRowTotal(row), 0);
+    const html = buildReporteDiarioHtml({
+      fecha: docFecha,
+      liquidacionNo: doc.correlativo,
+      generadoPor: data.generadoPor || doc.usuario?.nombre || doc.usuario?.usuario || "Usuario",
+      capitalRows: capitalDocRows,
+      departamentoRows: departamentoDocRows,
+      tiendaRows: tiendaDocRows,
+      subtotalCapital: subtotalCapitalDoc,
+      subtotalDepartamento: subtotalDepartamentoDoc,
+      subtotalTienda: subtotalTiendaDoc,
+      totalResumen: subtotalCapitalDoc + subtotalDepartamentoDoc + subtotalTiendaDoc,
+    });
+    win.document.write(html);
+    win.document.close();
+  };
+
+  const imprimir = async () => {
     const win = window.open("", "_blank");
     if (!win) {
       Swal.fire("Aviso", "Habilita ventanas emergentes para imprimir o guardar en PDF", "info");
       return;
     }
 
-    const generadoPor =
-      [primerNombre?.trim(), primerApellido?.trim()].filter(Boolean).join(" ") ||
-      nombre?.trim() ||
-      usuario?.trim() ||
-      "Usuario";
+    let correlativo = liquidacionNo;
+    try {
+      const doc = await guardarDocumento();
+      correlativo = doc.correlativo || liquidacionNo;
+      setLiquidacionNo(correlativo);
+    } catch (error: any) {
+      win.close();
+      const msg = error?.response?.data?.message || "No se pudo guardar el reporte diario";
+      Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
+      return;
+    }
+
+    const generadoPor = getGeneradoPor();
 
     const html = buildReporteDiarioHtml({
       fecha,
-      liquidacionNo,
+      liquidacionNo: correlativo,
       generadoPor,
       capitalRows,
       departamentoRows,
@@ -857,13 +1036,87 @@ export default function ReporteDiario() {
 
     win.document.write(html);
     win.document.close();
+    void cargarDocumentos();
   };
+
+  if (!showForm) {
+    return (
+      <Paper sx={{ p: 3 }}>
+        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+          <Typography variant="h4">Reporte diario</Typography>
+          <Button startIcon={<AddOutlined />} variant="contained" onClick={nuevoReporte}>
+            Nuevo reporte
+          </Button>
+        </Stack>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 2 }}>
+          <TextField label="Desde" type="date" size="small" value={filtroDesde} onChange={(e) => setFiltroDesde(e.target.value)} InputLabelProps={{ shrink: true }} />
+          <TextField label="Hasta" type="date" size="small" value={filtroHasta} onChange={(e) => setFiltroHasta(e.target.value)} InputLabelProps={{ shrink: true }} />
+        </Stack>
+        <TableContainer>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Correlativo</TableCell>
+                <TableCell>Fecha</TableCell>
+                <TableCell>Total</TableCell>
+                <TableCell>Usuario</TableCell>
+                <TableCell align="right">Acción</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {documentosFiltrados.map((doc) => {
+                const total =
+                  (doc.data?.capitalRows || []).reduce(
+                    (sum: number, row: any) => sum + Number(row.transferencia || 0) + Number(row.deposito || 0) + Number(row.efectivo || 0),
+                    0
+                  ) +
+                  (doc.data?.departamentoRows || []).reduce(
+                    (sum: number, row: any) => sum + Number(row.transferencia || 0) + Number(row.deposito || 0),
+                    0
+                  ) +
+                  (doc.data?.ventasSnapshot || []).reduce((sum: number, venta: any) => sum + Number(venta.total || 0), 0) +
+                  (doc.data?.tiendaManualRows || []).reduce((sum: number, row: any) => sum + getTiendaRowTotal(row), 0);
+                return (
+                  <TableRow key={doc.id}>
+                    <TableCell>{doc.correlativo}</TableCell>
+                    <TableCell>{doc.data?.fecha || new Date(doc.creadoEn).toLocaleDateString()}</TableCell>
+                    <TableCell>{money(total)}</TableCell>
+                    <TableCell>{doc.usuario?.nombre || doc.usuario?.usuario || "N/D"}</TableCell>
+                    <TableCell align="right">
+                      <Stack direction="row" spacing={1} justifyContent="flex-end">
+                        <Button size="small" variant="outlined" onClick={() => abrirDocumento(doc)}>
+                          Abrir
+                        </Button>
+                        <Button size="small" variant="contained" color="secondary" onClick={() => reimprimirDocumento(doc)}>
+                          Reimprimir
+                        </Button>
+                      </Stack>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              {!documentosFiltrados.length && (
+                <TableRow>
+                  <TableCell colSpan={5} align="center">
+                    No hay reportes diarios generados.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Paper>
+    );
+  }
 
   return (
     <Paper sx={{ p: 3 }}>
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
         <Typography variant="h4">Reporte diario</Typography>
         <Stack direction="row" spacing={1}>
+          <Button startIcon={<ArrowBackOutlined />} variant="outlined" size="small" onClick={() => { setShowForm(false); void cargarDocumentos(); }}>
+            Volver
+          </Button>
           <Button startIcon={<RefreshOutlined />} variant="outlined" size="small" onClick={cargar} disabled={loading}>
             Recargar ventas
           </Button>
@@ -905,7 +1158,7 @@ export default function ReporteDiario() {
             fullWidth
             size="small"
             value={liquidacionNo}
-            onChange={(e) => setLiquidacionNo(e.target.value)}
+            disabled
           />
         </Grid>
         <Grid size={{ xs: 12, sm: 6 }}>

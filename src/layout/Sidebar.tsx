@@ -46,6 +46,10 @@ export default function Sidebar({ open, width, onToggle }: Props) {
     setOpenMap((prev) => ({ ...prev, [label]: !prev[label] }));
   };
 
+  const goToModule = (path: string) => {
+    navigate(path, { state: { sidebarClickAt: Date.now() } });
+  };
+
   const isActive = useMemo(
     () => (path?: string) => (path ? location.pathname.startsWith(path) : false),
     [location.pathname]
@@ -72,7 +76,7 @@ export default function Sidebar({ open, width, onToggle }: Props) {
       <Box key={item.label}>
         <ListItemButton
           disabled={disabled}
-          onClick={() => (hasChildren ? toggle(item.label) : item.path && navigate(item.path))}
+          onClick={() => (hasChildren ? toggle(item.label) : item.path && goToModule(item.path))}
           sx={{
             borderRadius: 2,
             mx: 1,
@@ -107,7 +111,7 @@ export default function Sidebar({ open, width, onToggle }: Props) {
                 <ListItemButton
                   key={child.label}
                   disabled={childDisabled}
-                  onClick={() => child.path && navigate(child.path)}
+                  onClick={() => child.path && goToModule(child.path)}
                   sx={{
                     pl: collapsed ? 2 : 6,
                     borderRadius: 2,

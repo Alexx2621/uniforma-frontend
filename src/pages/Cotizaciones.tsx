@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import {
   Paper,
   Typography,
@@ -19,7 +20,9 @@ import AddOutlined from "@mui/icons-material/AddOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import PictureAsPdfOutlined from "@mui/icons-material/PictureAsPdfOutlined";
 import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
+import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import Swal from "sweetalert2";
+import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
 import LOGO_URL from "../assets/cotizacion-logo.png";
 import { PDF_FONT_BOLD_FAMILY, PDF_FONT_FAMILY } from "../utils/fontFamily";
@@ -29,6 +32,17 @@ interface CotizacionItem {
   cantidad: number;
   descripcion: string;
   precioUnitario: number;
+}
+
+interface DocumentoGenerado {
+  id: number;
+  tipo: string;
+  correlativo: string;
+  titulo?: string | null;
+  data: any;
+  creadoEn: string;
+  actualizadoEn: string;
+  usuario?: { nombre?: string | null; usuario?: string | null };
 }
 
 const createKey = () => Date.now() + Math.floor(Math.random() * 100000);
@@ -543,7 +557,13 @@ const buildCotizacionHtml = ({
 
 export default function Cotizaciones() {
   const { nombre, usuario } = useAuthStore();
-  const [cotizacionNo, setCotizacionNo] = useState("000001");
+  const location = useLocation();
+  const [documentos, setDocumentos] = useState<DocumentoGenerado[]>([]);
+  const [documentoId, setDocumentoId] = useState<number | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [filtroDesde, setFiltroDesde] = useState("");
+  const [filtroHasta, setFiltroHasta] = useState("");
+  const [cotizacionNo, setCotizacionNo] = useState("Pendiente");
   const [dirigidoA, setDirigidoA] = useState("");
   const [cliente, setCliente] = useState("");
   const [entrega, setEntrega] = useState("7 DÍAS HÁBILES UNA VEZ RECIBIDO EL ANTICIPO.");
@@ -571,6 +591,137 @@ export default function Cotizaciones() {
     [items]
   );
 
+  const documentosFiltrados = useMemo(
+    () =>
+      documentos.filter((doc) => {
+        const docFecha = doc.data?.fecha || String(doc.creadoEn || "").slice(0, 10);
+        if (filtroDesde && docFecha < filtroDesde) return false;
+        if (filtroHasta && docFecha > filtroHasta) return false;
+        return true;
+      }),
+    [documentos, filtroDesde, filtroHasta]
+  );
+
+  const cargarSiguienteCotizacion = async () => {
+    try {
+      const resp = await api.get("/correlativos/usuario-operaciones/actual/cotizacion");
+      setCotizacionNo(resp.data?.correlativo || "Pendiente");
+    } catch {
+      setCotizacionNo("Pendiente");
+    }
+  };
+
+  const cargarDocumentos = async () => {
+    try {
+      const resp = await api.get("/documentos", { params: { tipo: "cotizacion" } });
+      setDocumentos(resp.data || []);
+    } catch {
+      Swal.fire("Error", "No se pudieron cargar las cotizaciones generadas", "error");
+    }
+  };
+
+  useEffect(() => {
+    void cargarDocumentos();
+  }, []);
+
+  useEffect(() => {
+    if ((location.state as any)?.sidebarClickAt) {
+      setShowForm(false);
+      void cargarDocumentos();
+    }
+  }, [location.state]);
+
+  const resetForm = async () => {
+    setDocumentoId(null);
+    await cargarSiguienteCotizacion();
+    setDirigidoA("");
+    setCliente("");
+    setEntrega("7 DÃAS HÃBILES UNA VEZ RECIBIDO EL ANTICIPO.");
+    setFecha(todayInput());
+    setEjecutivo(nombre || usuario || "");
+    setCelular("");
+    setItems([createItem()]);
+  };
+
+  const nuevaCotizacion = async () => {
+    await resetForm();
+    setShowForm(true);
+  };
+
+  const abrirDocumento = (doc: DocumentoGenerado) => {
+    const data = doc.data || {};
+    setDocumentoId(doc.id);
+    setCotizacionNo(doc.correlativo);
+    setDirigidoA(data.dirigidoA || "");
+    setCliente(data.cliente || "");
+    setEntrega(data.entrega || "7 DÃAS HÃBILES UNA VEZ RECIBIDO EL ANTICIPO.");
+    setFecha(data.fecha || todayInput());
+    setEjecutivo(data.ejecutivo || nombre || usuario || "");
+    setCelular(data.celular || "");
+    setItems(Array.isArray(data.items) && data.items.length ? data.items : [createItem()]);
+    setNotasCalidad(data.notasCalidad || notasCalidad);
+    setCondicionesPago(data.condicionesPago || condicionesPago);
+    setValidez(data.validez || validez);
+    setShowForm(true);
+  };
+
+  const getPayload = () => ({
+    dirigidoA,
+    cliente,
+    entrega,
+    fecha,
+    ejecutivo,
+    celular,
+    items,
+    notasCalidad,
+    condicionesPago,
+    validez,
+  });
+
+  const guardarDocumento = async () => {
+    const payload = {
+      titulo: cliente || dirigidoA || "Cotizacion",
+      data: getPayload(),
+    };
+    if (documentoId) {
+      const resp = await api.patch(`/documentos/${documentoId}`, payload);
+      return resp.data as DocumentoGenerado;
+    }
+    const resp = await api.post("/documentos", { tipo: "cotizacion", ...payload });
+    const doc = resp.data as DocumentoGenerado;
+    setDocumentoId(doc.id);
+    setCotizacionNo(doc.correlativo);
+    return doc;
+  };
+
+  const reimprimirDocumento = (doc: DocumentoGenerado) => {
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      Swal.fire("Aviso", "Habilita ventanas emergentes para imprimir o guardar en PDF", "info");
+      return;
+    }
+    const data = doc.data || {};
+    printWindow.document.open();
+    printWindow.document.write(
+      buildCotizacionHtml({
+        cotizacionNo: doc.correlativo,
+        dirigidoA: data.dirigidoA || "",
+        cliente: data.cliente || "",
+        entrega: data.entrega || "",
+        fecha: data.fecha || "",
+        ejecutivo: data.ejecutivo || "",
+        celular: data.celular || "",
+        items: Array.isArray(data.items) ? data.items : [],
+        notasCalidad: data.notasCalidad || "",
+        condicionesPago: data.condicionesPago || "",
+        banco,
+        cuenta,
+        validez: data.validez || "",
+      })
+    );
+    printWindow.document.close();
+  };
+
   const updateItem = (key: number, field: keyof Omit<CotizacionItem, "key">, value: string | number) => {
     setItems((prev) =>
       prev.map((item) =>
@@ -589,7 +740,8 @@ export default function Cotizaciones() {
   };
 
   const limpiar = () => {
-    setCotizacionNo("000001");
+    setDocumentoId(null);
+    void cargarSiguienteCotizacion();
     setDirigidoA("");
     setCliente("");
     setEntrega("7 DÍAS HÁBILES UNA VEZ RECIBIDO EL ANTICIPO.");
@@ -599,17 +751,29 @@ export default function Cotizaciones() {
     setItems([createItem()]);
   };
 
-  const imprimir = () => {
+  const imprimir = async () => {
     const printWindow = window.open("", "_blank");
     if (!printWindow) {
       Swal.fire("Aviso", "Habilita ventanas emergentes para imprimir o guardar en PDF", "info");
       return;
     }
 
+    let correlativo = cotizacionNo;
+    try {
+      const doc = await guardarDocumento();
+      correlativo = doc.correlativo || cotizacionNo;
+      setCotizacionNo(correlativo);
+    } catch (error: any) {
+      printWindow.close();
+      const msg = error?.response?.data?.message || "No se pudo guardar la cotizacion";
+      Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
+      return;
+    }
+
     printWindow.document.open();
     printWindow.document.write(
       buildCotizacionHtml({
-        cotizacionNo,
+        cotizacionNo: correlativo,
         dirigidoA,
         cliente,
         entrega,
@@ -625,7 +789,65 @@ export default function Cotizaciones() {
       })
     );
     printWindow.document.close();
+    void cargarDocumentos();
   };
+
+  if (!showForm) {
+    return (
+      <Paper sx={{ p: 3 }}>
+        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+          <Typography variant="h4">Cotizaciones</Typography>
+          <Button startIcon={<AddOutlined />} variant="contained" onClick={nuevaCotizacion}>
+            Nueva cotización
+          </Button>
+        </Stack>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 2 }}>
+          <TextField label="Desde" type="date" size="small" value={filtroDesde} onChange={(e) => setFiltroDesde(e.target.value)} InputLabelProps={{ shrink: true }} />
+          <TextField label="Hasta" type="date" size="small" value={filtroHasta} onChange={(e) => setFiltroHasta(e.target.value)} InputLabelProps={{ shrink: true }} />
+        </Stack>
+        <TableContainer>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Correlativo</TableCell>
+                <TableCell>Cliente</TableCell>
+                <TableCell>Fecha</TableCell>
+                <TableCell>Usuario</TableCell>
+                <TableCell align="right">Acción</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {documentosFiltrados.map((doc) => (
+                <TableRow key={doc.id}>
+                  <TableCell>{doc.correlativo}</TableCell>
+                  <TableCell>{doc.titulo || doc.data?.cliente || "Sin cliente"}</TableCell>
+                  <TableCell>{doc.data?.fecha || new Date(doc.creadoEn).toLocaleDateString()}</TableCell>
+                  <TableCell>{doc.usuario?.nombre || doc.usuario?.usuario || "N/D"}</TableCell>
+                  <TableCell align="right">
+                    <Stack direction="row" spacing={1} justifyContent="flex-end">
+                      <Button size="small" variant="outlined" onClick={() => abrirDocumento(doc)}>
+                        Abrir
+                      </Button>
+                      <Button size="small" variant="contained" color="secondary" onClick={() => reimprimirDocumento(doc)}>
+                        Reimprimir
+                      </Button>
+                    </Stack>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {!documentosFiltrados.length && (
+                <TableRow>
+                  <TableCell colSpan={5} align="center">
+                    No hay cotizaciones generadas.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Paper>
+    );
+  }
 
   return (
     <Paper sx={{ p: 3 }}>
@@ -637,6 +859,9 @@ export default function Cotizaciones() {
           </Typography>
         </Stack>
         <Stack direction="row" spacing={1}>
+          <Button startIcon={<ArrowBackOutlined />} variant="outlined" size="small" onClick={() => { setShowForm(false); void cargarDocumentos(); }}>
+            Volver
+          </Button>
           <Button startIcon={<CleaningServicesOutlined />} variant="outlined" size="small" onClick={limpiar}>
             Limpiar
           </Button>
@@ -650,7 +875,7 @@ export default function Cotizaciones() {
 
       <Grid container spacing={2} sx={{ mb: 2 }}>
         <Grid size={{ xs: 12, sm: 3 }}>
-          <TextField label="Cotización No." fullWidth size="small" value={cotizacionNo} onChange={(e) => setCotizacionNo(e.target.value)} />
+          <TextField label="Cotización No." fullWidth size="small" value={cotizacionNo} disabled />
         </Grid>
         <Grid size={{ xs: 12, sm: 3 }}>
           <TextField label="Fecha" type="date" fullWidth size="small" value={fecha} onChange={(e) => setFecha(e.target.value)} InputLabelProps={{ shrink: true }} />

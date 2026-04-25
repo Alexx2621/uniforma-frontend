@@ -70,6 +70,7 @@ interface Pago {
 
 interface Pedido {
   id: number;
+  folio?: string | null;
   fecha: string;
   estado: string;
   totalEstimado: number;
@@ -309,8 +310,8 @@ export default function PedidoDetalle() {
             <div class="brand">Uniforma</div>
             <div>Comprobante de pago</div>
           </div>
-          <div style="text-align:right">
-            <div>Pedido: P-${pedido.id}</div>
+        <div style="text-align:right">
+            <div>Pedido: ${pedido.folio || `P-${pedido.id}`}</div>
             <div>${fecha.toLocaleDateString()} ${fecha.toLocaleTimeString()}</div>
           </div>
         </div>
@@ -423,7 +424,7 @@ export default function PedidoDetalle() {
             <div>Pedido de produccion</div>
           </div>
           <div style="text-align:right">
-            <div>Folio: P-${pedido.id}</div>
+            <div>Folio: ${pedido.folio || `P-${pedido.id}`}</div>
             <div>${fecha.toLocaleDateString()} ${fecha.toLocaleTimeString()}</div>
           </div>
         </div>
@@ -512,7 +513,7 @@ export default function PedidoDetalle() {
             <div>Orden de produccion</div>
           </div>
           <div style="text-align:right">
-            <div>Folio: P-${pedido.id}</div>
+            <div>Folio: ${pedido.folio || `P-${pedido.id}`}</div>
             <div>${fecha.toLocaleDateString()} ${fecha.toLocaleTimeString()}</div>
           </div>
         </div>
@@ -536,7 +537,7 @@ export default function PedidoDetalle() {
     <Paper sx={{ p: 3, maxWidth: 1200, mx: "auto", width: "100%" }}>
       <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2, flexWrap: "wrap", gap: 1 }}>
         <PlaylistAddCheckOutlined color="primary" />
-        <Typography variant="h4">{`Pedido P-${pedido.id}`}</Typography>
+        <Typography variant="h4">{`Pedido ${pedido.folio || `P-${pedido.id}`}`}</Typography>
         <Chip
           label={pedido.estado}
           color={

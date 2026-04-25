@@ -1,9 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate } from "react-router-dom";
 import {
   Alert,
   Button,
+  FormControl,
+  InputLabel,
+  MenuItem,
   Paper,
+  Select,
   Stack,
   Table,
   TableBody,
@@ -32,8 +36,25 @@ interface CorrelativoRow {
   esGlobal: boolean;
 }
 
+interface UsuarioOperacionRow {
+  id: number | string;
+  usuarioId: number;
+  usuario: string;
+  nombreUsuario: string;
+  usuarioCorrelativo?: string | null;
+  codigoUsuario: string;
+  operacion: string;
+  nombreOperacion: string;
+  formato: string;
+  prefijo: string;
+  siguienteNumero: number;
+  siguienteCorrelativo: string;
+}
+
 export default function Correlativos() {
   const [rows, setRows] = useState<CorrelativoRow[]>([]);
+  const [usuarioRows, setUsuarioRows] = useState<UsuarioOperacionRow[]>([]);
+  const [selectedUsuarioId, setSelectedUsuarioId] = useState("");
   const [loading, setLoading] = useState(false);
   const denyAlertShown = useRef(false);
   const { rol, permisos } = useAuthStore();
@@ -43,8 +64,12 @@ export default function Correlativos() {
   const cargar = async () => {
     try {
       setLoading(true);
-      const resp = await api.get("/correlativos/produccion");
-      setRows(resp.data || []);
+      const [respProduccion, respUsuarios] = await Promise.all([
+        api.get("/correlativos/produccion"),
+        api.get("/correlativos/usuario-operaciones"),
+      ]);
+      setRows(respProduccion.data || []);
+      setUsuarioRows(respUsuarios.data || []);
     } catch {
       Swal.fire("Error", "No se pudieron cargar los correlativos", "error");
     } finally {
@@ -63,6 +88,32 @@ export default function Correlativos() {
     void cargar();
   }, [canView]);
 
+  useEffect(() => {
+    if (!usuarioRows.length) {
+      setSelectedUsuarioId("");
+      return;
+    }
+    const selectedExists = usuarioRows.some((row) => `${row.usuarioId}` === selectedUsuarioId);
+    if (!selectedUsuarioId || !selectedExists) {
+      setSelectedUsuarioId(`${usuarioRows[0].usuarioId}`);
+    }
+  }, [usuarioRows, selectedUsuarioId]);
+
+  const usuariosDisponibles = useMemo(() => {
+    const byId = new Map<number, UsuarioOperacionRow>();
+    usuarioRows.forEach((row) => {
+      if (!byId.has(row.usuarioId)) byId.set(row.usuarioId, row);
+    });
+    return Array.from(byId.values()).sort((a, b) =>
+      (a.nombreUsuario || a.usuario).localeCompare(b.nombreUsuario || b.usuario)
+    );
+  }, [usuarioRows]);
+
+  const usuarioRowsFiltradas = useMemo(
+    () => usuarioRows.filter((row) => `${row.usuarioId}` === selectedUsuarioId),
+    [usuarioRows, selectedUsuarioId]
+  );
+
   if (!canView) {
     return <Navigate to="/" replace />;
   }
@@ -77,6 +128,30 @@ export default function Correlativos() {
             }
           : row
       )
+    );
+  };
+
+  const actualizarCampoUsuario = (
+    usuarioId: number,
+    operacion: string,
+    field: "prefijo" | "codigoUsuario" | "siguienteNumero",
+    value: string
+  ) => {
+    setUsuarioRows((current) =>
+      current.map((row) => {
+        if (row.usuarioId !== usuarioId || row.operacion !== operacion) return row;
+        const next = {
+          ...row,
+          [field]:
+            field === "siguienteNumero"
+              ? Number(value) || 0
+              : value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, field === "codigoUsuario" ? 6 : 12),
+        };
+        return {
+          ...next,
+          siguienteCorrelativo: `${next.prefijo}-${next.codigoUsuario}-${`${next.siguienteNumero}`.padStart(4, "0")}`,
+        };
+      })
     );
   };
 
@@ -115,6 +190,36 @@ export default function Correlativos() {
     }
   };
 
+  const guardarUsuarioOperacion = async (row: UsuarioOperacionRow) => {
+    if (!canManage) {
+      Swal.fire("Acceso restringido", "No tienes permisos para modificar correlativos", "warning");
+      return;
+    }
+
+    const payload = {
+      abreviatura: row.prefijo.trim().toUpperCase(),
+      codigoUsuario: row.codigoUsuario.trim().toUpperCase(),
+      siguienteNumero: Number(row.siguienteNumero),
+    };
+
+    if (!payload.abreviatura || !payload.codigoUsuario) {
+      Swal.fire("Validacion", "Prefijo y codigo de usuario son obligatorios", "info");
+      return;
+    }
+    if (!Number.isInteger(payload.siguienteNumero) || payload.siguienteNumero < 1) {
+      Swal.fire("Validacion", "El siguiente correlativo debe ser un entero mayor a 0", "info");
+      return;
+    }
+
+    try {
+      await api.put(`/correlativos/usuario-operaciones/${row.usuarioId}/${row.operacion}`, payload);
+      Swal.fire("Guardado", "Correlativo por usuario actualizado", "success");
+      await cargar();
+    } catch (error: any) {
+      Swal.fire("Error", error?.response?.data?.message || "No se pudo guardar el correlativo", "error");
+    }
+  };
+
   return (
     <Paper sx={{ p: 3 }}>
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
@@ -128,9 +233,104 @@ export default function Correlativos() {
       </Stack>
 
       <Alert severity="info" sx={{ mb: 2 }}>
-        Configura la abreviatura y el numero inicial del correlativo para el reporte unificado de produccion.
-        El formato generado sera <strong>ABR-0001</strong>.
+        Configura correlativos globales y por usuario. Los correlativos por usuario usan el formato{" "}
+        <strong>MODULO-USUARIO-0001</strong>, por ejemplo <strong>PE-BO-0001</strong>.
       </Alert>
+
+      <Typography variant="h6" sx={{ mb: 1 }}>
+        Correlativos por usuario y modulo
+      </Typography>
+
+      <FormControl fullWidth size="small" sx={{ maxWidth: 420, mb: 2 }}>
+        <InputLabel id="usuario-correlativos-label">Usuario</InputLabel>
+        <Select
+          labelId="usuario-correlativos-label"
+          label="Usuario"
+          value={selectedUsuarioId}
+          onChange={(e) => setSelectedUsuarioId(e.target.value)}
+          disabled={loading || !usuariosDisponibles.length}
+        >
+          {usuariosDisponibles.map((usuario) => (
+            <MenuItem key={usuario.usuarioId} value={`${usuario.usuarioId}`}>
+              {usuario.nombreUsuario || usuario.usuario} {usuario.usuarioCorrelativo ? `(${usuario.usuarioCorrelativo})` : ""}
+            </MenuItem>
+          ))}
+        </Select>
+      </FormControl>
+
+      <TableContainer sx={{ mb: 3 }}>
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              <TableCell>Modulo / operacion</TableCell>
+              <TableCell>Prefijo</TableCell>
+              <TableCell>Codigo usuario</TableCell>
+              <TableCell>Siguiente numero</TableCell>
+              <TableCell>Siguiente correlativo</TableCell>
+              <TableCell align="right">Accion</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {usuarioRowsFiltradas.map((row) => (
+              <TableRow key={`${row.usuarioId}-${row.operacion}`}>
+                <TableCell>
+                  <Typography fontWeight={700}>{row.nombreOperacion}</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {row.formato}
+                  </Typography>
+                </TableCell>
+                <TableCell sx={{ minWidth: 120 }}>
+                  <TextField
+                    size="small"
+                    fullWidth
+                    value={row.prefijo}
+                    onChange={(e) => actualizarCampoUsuario(row.usuarioId, row.operacion, "prefijo", e.target.value)}
+                    disabled={!canManage}
+                  />
+                </TableCell>
+                <TableCell sx={{ minWidth: 140 }}>
+                  <TextField
+                    size="small"
+                    fullWidth
+                    value={row.codigoUsuario}
+                    onChange={(e) => actualizarCampoUsuario(row.usuarioId, row.operacion, "codigoUsuario", e.target.value)}
+                    disabled={!canManage}
+                    helperText={row.usuarioCorrelativo ? "Desde usuario" : "Auto si esta vacio en usuario"}
+                  />
+                </TableCell>
+                <TableCell sx={{ minWidth: 140 }}>
+                  <TextField
+                    size="small"
+                    fullWidth
+                    type="number"
+                    value={row.siguienteNumero}
+                    onChange={(e) => actualizarCampoUsuario(row.usuarioId, row.operacion, "siguienteNumero", e.target.value)}
+                    inputProps={{ min: 1 }}
+                    disabled={!canManage}
+                  />
+                </TableCell>
+                <TableCell>{row.siguienteCorrelativo}</TableCell>
+                <TableCell align="right">
+                  <Button variant="contained" size="small" startIcon={<SaveOutlined />} onClick={() => guardarUsuarioOperacion(row)} disabled={!canManage}>
+                    Guardar
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+            {!usuarioRowsFiltradas.length && (
+              <TableRow>
+                <TableCell colSpan={6} align="center">
+                  No hay correlativos por usuario disponibles.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </TableContainer>
+
+      <Typography variant="h6" sx={{ mb: 1 }}>
+        Reporte unificado de produccion
+      </Typography>
 
       <TableContainer>
         <Table size="small">

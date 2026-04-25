@@ -3,6 +3,7 @@ import { create } from 'zustand';
 interface AuthState {
   token: string | null;
   usuario: string | null;
+  usuarioCorrelativo: string | null;
   nombre: string | null;
   primerNombre: string | null;
   primerApellido: string | null;
@@ -22,6 +23,7 @@ interface AuthState {
 export const useAuthStore = create<AuthState>((set) => ({
   token: localStorage.getItem('token'),
   usuario: localStorage.getItem('usuario'),
+  usuarioCorrelativo: localStorage.getItem('usuarioCorrelativo'),
   nombre: localStorage.getItem('nombre'),
   primerNombre: localStorage.getItem('primerNombre'),
   primerApellido: localStorage.getItem('primerApellido'),
@@ -36,6 +38,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   login: (data) => {
     localStorage.setItem('token', data.token);
     localStorage.setItem('usuario', data.usuario);
+    localStorage.setItem('usuarioCorrelativo', data.usuarioCorrelativo ?? '');
     localStorage.setItem('nombre', data.nombre ?? '');
     localStorage.setItem('primerNombre', data.primerNombre ?? '');
     localStorage.setItem('primerApellido', data.primerApellido ?? '');
@@ -54,6 +57,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({
       token: data.token,
       usuario: data.usuario,
+      usuarioCorrelativo: data.usuarioCorrelativo ?? null,
       nombre: data.nombre ?? null,
       primerNombre: data.primerNombre ?? null,
       primerApellido: data.primerApellido ?? null,
@@ -70,6 +74,9 @@ export const useAuthStore = create<AuthState>((set) => ({
   syncSession: (data) => {
     if (data.usuario !== undefined) {
       localStorage.setItem('usuario', data.usuario ?? '');
+    }
+    if (data.usuarioCorrelativo !== undefined) {
+      localStorage.setItem('usuarioCorrelativo', data.usuarioCorrelativo ?? '');
     }
     if (data.nombre !== undefined) {
       localStorage.setItem('nombre', data.nombre ?? '');
@@ -105,6 +112,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     set((state) => ({
       token: state.token,
       usuario: data.usuario !== undefined ? data.usuario ?? null : state.usuario,
+      usuarioCorrelativo:
+        data.usuarioCorrelativo !== undefined ? data.usuarioCorrelativo ?? null : state.usuarioCorrelativo,
       nombre: data.nombre !== undefined ? data.nombre ?? null : state.nombre,
       primerNombre: data.primerNombre !== undefined ? data.primerNombre ?? null : state.primerNombre,
       primerApellido: data.primerApellido !== undefined ? data.primerApellido ?? null : state.primerApellido,
@@ -123,6 +132,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({
       token: null,
       usuario: null,
+      usuarioCorrelativo: null,
       nombre: null,
       primerNombre: null,
       primerApellido: null,

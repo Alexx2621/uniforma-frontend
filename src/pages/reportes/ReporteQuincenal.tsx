@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import {
   Paper,
   Typography,
@@ -17,7 +18,10 @@ import {
 } from "@mui/material";
 import PictureAsPdfOutlined from "@mui/icons-material/PictureAsPdfOutlined";
 import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
+import AddOutlined from "@mui/icons-material/AddOutlined";
+import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import Swal from "sweetalert2";
+import { api } from "../../api/axios";
 import { useAuthStore } from "../../auth/useAuthStore";
 import LOGO_URL from "../../assets/3-logos.png";
 import { PDF_FONT_BOLD_FAMILY, PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../../utils/fontFamily";
@@ -26,6 +30,17 @@ interface QuincenaRow {
   day: number;
   weekday: string;
   ventaDiaria: number;
+}
+
+interface DocumentoGenerado {
+  id: number;
+  tipo: string;
+  correlativo: string;
+  titulo?: string | null;
+  data: any;
+  creadoEn: string;
+  actualizadoEn: string;
+  usuario?: { nombre?: string | null; usuario?: string | null };
 }
 
 const monthNames = [
@@ -74,6 +89,7 @@ const buildReporteQuincenalHtml = ({
   vendedor,
   metaMes,
   promedioDiario,
+  reporteNo,
   quincena,
   rows,
 }: {
@@ -83,6 +99,7 @@ const buildReporteQuincenalHtml = ({
   vendedor: string;
   metaMes: number;
   promedioDiario: number;
+  reporteNo: string;
   quincena: "1" | "2";
   rows: QuincenaRow[];
 }) => {
@@ -218,6 +235,7 @@ const buildReporteQuincenalHtml = ({
             <div class="meta-row vendor"><div class="meta-label">VENDEDOR</div><div class="meta-value">${vendedor || "-"}</div></div>
             <div class="meta-row"><div class="meta-label">META MES</div><div class="meta-value">${money(metaMes)}</div></div>
             <div class="meta-row"><div class="meta-label">PROMEDIO DIARIO</div><div class="meta-value">${money(promedioDiario)}</div></div>
+            <div class="meta-row"><div class="meta-label">REPORTE No.</div><div class="meta-value">${reporteNo || "-"}</div></div>
           </div>
           <img class="logo" src="${LOGO_URL}" alt="Uniforma" />
         </div>
@@ -269,6 +287,12 @@ const buildReporteQuincenalHtml = ({
 export default function ReporteQuincenal() {
   const currentDate = new Date();
   const { bodegaNombre, usuario, nombre, primerNombre, primerApellido } = useAuthStore();
+  const location = useLocation();
+  const [documentos, setDocumentos] = useState<DocumentoGenerado[]>([]);
+  const [documentoId, setDocumentoId] = useState<number | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [filtroDesde, setFiltroDesde] = useState("");
+  const [filtroHasta, setFiltroHasta] = useState("");
   const tienda = `${bodegaNombre || "TIENDA"}`.trim().toUpperCase();
   const vendedor = `${usuario || nombre || [primerNombre, primerApellido].filter(Boolean).join(" ") || "USUARIO"}`
     .trim()
@@ -278,7 +302,100 @@ export default function ReporteQuincenal() {
   const [metaMes, setMetaMes] = useState(130000);
   const [promedioDiario, setPromedioDiario] = useState(9000);
   const [quincena, setQuincena] = useState<"1" | "2">("2");
+  const [reporteNo, setReporteNo] = useState("Pendiente");
   const [ventasPorDia, setVentasPorDia] = useState<Record<number, number>>({});
+
+  const cargarSiguienteReporte = async () => {
+    try {
+      const resp = await api.get("/correlativos/usuario-operaciones/actual/reporteQuincenal");
+      setReporteNo(resp.data?.correlativo || "Pendiente");
+    } catch {
+      setReporteNo("Pendiente");
+    }
+  };
+
+  const cargarDocumentos = async () => {
+    try {
+      const resp = await api.get("/documentos", { params: { tipo: "reporteQuincenal" } });
+      setDocumentos(resp.data || []);
+    } catch {
+      Swal.fire("Error", "No se pudieron cargar los reportes quincenales generados", "error");
+    }
+  };
+
+  useEffect(() => {
+    void cargarDocumentos();
+  }, []);
+
+  useEffect(() => {
+    if ((location.state as any)?.sidebarClickAt) {
+      setShowForm(false);
+      void cargarDocumentos();
+    }
+  }, [location.state]);
+
+  const documentosFiltrados = useMemo(
+    () =>
+      documentos.filter((doc) => {
+        const docFecha = String(doc.creadoEn || "").slice(0, 10);
+        if (filtroDesde && docFecha < filtroDesde) return false;
+        if (filtroHasta && docFecha > filtroHasta) return false;
+        return true;
+      }),
+    [documentos, filtroDesde, filtroHasta]
+  );
+
+  const nuevoReporte = async () => {
+    setDocumentoId(null);
+    await cargarSiguienteReporte();
+    setMonth(currentDate.getMonth() + 1);
+    setYear(currentDate.getFullYear());
+    setMetaMes(130000);
+    setPromedioDiario(9000);
+    setQuincena("2");
+    setVentasPorDia({});
+    setShowForm(true);
+  };
+
+  const abrirDocumento = (doc: DocumentoGenerado) => {
+    const data = doc.data || {};
+    setDocumentoId(doc.id);
+    setReporteNo(doc.correlativo);
+    setMonth(Number(data.month || currentDate.getMonth() + 1));
+    setYear(Number(data.year || currentDate.getFullYear()));
+    setMetaMes(Number(data.metaMes || 130000));
+    setPromedioDiario(Number(data.promedioDiario || 9000));
+    setQuincena(data.quincena === "1" ? "1" : "2");
+    setVentasPorDia(data.ventasPorDia || {});
+    setShowForm(true);
+  };
+
+  const getPayload = () => ({
+    tienda,
+    vendedor,
+    month,
+    year,
+    metaMes,
+    promedioDiario,
+    quincena,
+    ventasPorDia,
+  });
+
+  const guardarDocumento = async () => {
+    const payload = {
+      titulo: `${quincena}RA QUINCENA ${monthNames[month - 1]} ${year}`,
+      data: getPayload(),
+    };
+    if (documentoId) {
+      const resp = await api.patch(`/documentos/${documentoId}`, payload);
+      return resp.data as DocumentoGenerado;
+    }
+    const resp = await api.post("/documentos", { tipo: "reporteQuincenal", ...payload });
+    const doc = resp.data as DocumentoGenerado;
+    setDocumentoId(doc.id);
+    setReporteNo(doc.correlativo);
+    return doc;
+  };
 
   const rows = useMemo(
     () =>
@@ -300,10 +417,54 @@ export default function ReporteQuincenal() {
     setVentasPorDia({});
   };
 
-  const imprimir = () => {
+  const reimprimirDocumento = (doc: DocumentoGenerado) => {
     const printWindow = window.open("", "_blank");
     if (!printWindow) {
       Swal.fire("Aviso", "Habilita ventanas emergentes para imprimir o guardar en PDF", "info");
+      return;
+    }
+    const data = doc.data || {};
+    const docMonth = Number(data.month || currentDate.getMonth() + 1);
+    const docYear = Number(data.year || currentDate.getFullYear());
+    const docQuincena = data.quincena === "1" ? "1" : "2";
+    const docVentasPorDia = data.ventasPorDia || {};
+    const docRows = getRows(docYear, docMonth, docQuincena).map((row) => ({
+      ...row,
+      ventaDiaria: Number(docVentasPorDia[row.day] || 0),
+    }));
+    printWindow.document.open();
+    printWindow.document.write(
+      buildReporteQuincenalHtml({
+        tienda: data.tienda || tienda,
+        month: docMonth,
+        year: docYear,
+        vendedor: data.vendedor || vendedor,
+        metaMes: Number(data.metaMes || 0),
+        promedioDiario: Number(data.promedioDiario || 0),
+        reporteNo: doc.correlativo,
+        quincena: docQuincena,
+        rows: docRows,
+      })
+    );
+    printWindow.document.close();
+  };
+
+  const imprimir = async () => {
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      Swal.fire("Aviso", "Habilita ventanas emergentes para imprimir o guardar en PDF", "info");
+      return;
+    }
+
+    let correlativo = reporteNo;
+    try {
+      const doc = await guardarDocumento();
+      correlativo = doc.correlativo || reporteNo;
+      setReporteNo(correlativo);
+    } catch (error: any) {
+      printWindow.close();
+      const msg = error?.response?.data?.message || "No se pudo guardar el reporte quincenal";
+      Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
       return;
     }
 
@@ -316,18 +477,80 @@ export default function ReporteQuincenal() {
         vendedor,
         metaMes,
         promedioDiario,
+        reporteNo: correlativo,
         quincena,
         rows,
       })
     );
     printWindow.document.close();
+    void cargarDocumentos();
   };
+
+  if (!showForm) {
+    return (
+      <Paper sx={{ p: 3 }}>
+        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+          <Typography variant="h4">Reporte quincenal</Typography>
+          <Button startIcon={<AddOutlined />} variant="contained" onClick={nuevoReporte}>
+            Nuevo reporte
+          </Button>
+        </Stack>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 2 }}>
+          <TextField label="Desde" type="date" size="small" value={filtroDesde} onChange={(e) => setFiltroDesde(e.target.value)} InputLabelProps={{ shrink: true }} />
+          <TextField label="Hasta" type="date" size="small" value={filtroHasta} onChange={(e) => setFiltroHasta(e.target.value)} InputLabelProps={{ shrink: true }} />
+        </Stack>
+        <TableContainer>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Correlativo</TableCell>
+                <TableCell>Periodo</TableCell>
+                <TableCell>Total</TableCell>
+                <TableCell>Usuario</TableCell>
+                <TableCell align="right">Acción</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {documentosFiltrados.map((doc) => (
+                <TableRow key={doc.id}>
+                  <TableCell>{doc.correlativo}</TableCell>
+                  <TableCell>{doc.titulo || `${doc.data?.quincena || ""} quincena ${doc.data?.month || ""}/${doc.data?.year || ""}`}</TableCell>
+                  <TableCell>{money(Object.values(doc.data?.ventasPorDia || {}).reduce((sum: number, value: any) => sum + Number(value || 0), 0))}</TableCell>
+                  <TableCell>{doc.usuario?.nombre || doc.usuario?.usuario || "N/D"}</TableCell>
+                  <TableCell align="right">
+                    <Stack direction="row" spacing={1} justifyContent="flex-end">
+                      <Button size="small" variant="outlined" onClick={() => abrirDocumento(doc)}>
+                        Abrir
+                      </Button>
+                      <Button size="small" variant="contained" color="secondary" onClick={() => reimprimirDocumento(doc)}>
+                        Reimprimir
+                      </Button>
+                    </Stack>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {!documentosFiltrados.length && (
+                <TableRow>
+                  <TableCell colSpan={5} align="center">
+                    No hay reportes quincenales generados.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Paper>
+    );
+  }
 
   return (
     <Paper sx={{ p: 3 }}>
       <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={2} sx={{ mb: 2 }}>
         <Typography variant="h4">Reporte quincenal</Typography>
         <Stack direction="row" spacing={1}>
+          <Button startIcon={<ArrowBackOutlined />} variant="outlined" size="small" onClick={() => { setShowForm(false); void cargarDocumentos(); }}>
+            Volver
+          </Button>
           <Button startIcon={<CleaningServicesOutlined />} variant="outlined" size="small" onClick={limpiarCapturas}>
             Limpiar capturas
           </Button>
@@ -361,6 +584,9 @@ export default function ReporteQuincenal() {
         </Grid>
         <Grid size={{ xs: 12, sm: 2 }}>
           <TextField label="Vendedor" fullWidth size="small" value={vendedor} disabled />
+        </Grid>
+        <Grid size={{ xs: 12, sm: 3 }}>
+          <TextField label="Reporte No." fullWidth size="small" value={reporteNo} disabled />
         </Grid>
         <Grid size={{ xs: 12, sm: 3 }}>
           <TextField label="Meta mes" type="number" fullWidth size="small" value={metaMes} onChange={(e) => setMetaMes(Number(e.target.value) || 0)} />

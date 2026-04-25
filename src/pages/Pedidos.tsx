@@ -323,11 +323,12 @@ export default function Pedidos() {
           (typeof p?.folio === "string" ? Number(p.folio.replace(/\D/g, "")) : undefined);
         const numericId = Number(rawId);
         const id = Number.isFinite(numericId) && numericId > 0 ? numericId : idx + 1;
+        const folioTexto = p?.folio != null ? `${p.folio}`.trim() : "";
         const folioNormalizado =
-          p?.folio && `${p.folio}`.trim() !== ""
-            ? `${p.folio}`.startsWith("P-")
-              ? `${p.folio}`
-              : `P-${p.folio}`
+          folioTexto !== ""
+            ? /^\d+$/.test(folioTexto)
+              ? `P-${folioTexto}`
+              : folioTexto
             : `P-${id}`;
         const clienteId = p?.clienteId ?? p?.cliente_id ?? p?.clienteid ?? null;
         const clienteNombre =

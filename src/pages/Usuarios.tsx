@@ -38,6 +38,7 @@ interface Usuario {
   primerApellido?: string | null;
   segundoApellido?: string | null;
   usuario: string;
+  usuarioCorrelativo?: string | null;
   correo?: string | null;
   telefono?: string | null;
   dpi?: string | null;
@@ -83,6 +84,7 @@ export default function Usuarios() {
   const [primerApellido, setPrimerApellido] = useState("");
   const [segundoApellido, setSegundoApellido] = useState("");
   const [usuario, setUsuario] = useState("");
+  const [usuarioCorrelativo, setUsuarioCorrelativo] = useState("");
   const [correo, setCorreo] = useState("");
   const [telefono, setTelefono] = useState("");
   const [dpi, setDpi] = useState("");
@@ -169,6 +171,7 @@ export default function Usuarios() {
     setPrimerApellido("");
     setSegundoApellido("");
     setUsuario("");
+    setUsuarioCorrelativo("");
     setCorreo("");
     setTelefono("");
     setDpi("");
@@ -195,6 +198,7 @@ export default function Usuarios() {
     setPrimerApellido(u.primerApellido || "");
     setSegundoApellido(u.segundoApellido || "");
     setUsuario(u.usuario);
+    setUsuarioCorrelativo(u.usuarioCorrelativo || "");
     setCorreo(u.correo || "");
     setTelefono(u.telefono || "");
     setDpi(u.dpi || "");
@@ -249,6 +253,7 @@ export default function Usuarios() {
     payload.append("primerApellido", primerApellido.trim());
     payload.append("segundoApellido", segundoApellido.trim());
     payload.append("usuario", usuario.trim());
+    payload.append("usuarioCorrelativo", usuarioCorrelativo.trim().toUpperCase());
     payload.append("correo", correo.trim());
     payload.append("telefono", telefono.trim());
     payload.append("dpi", dpi.trim());
@@ -330,6 +335,7 @@ export default function Usuarios() {
               <TableCell>Foto</TableCell>
               <TableCell>Nombre</TableCell>
               <TableCell>Usuario</TableCell>
+              <TableCell>Usuario correlativo</TableCell>
               <TableCell>Telefono</TableCell>
               <TableCell>DPI</TableCell>
               <TableCell>Correo</TableCell>
@@ -349,6 +355,7 @@ export default function Usuarios() {
                 </TableCell>
                 <TableCell>{u.nombre}</TableCell>
                 <TableCell>{u.usuario}</TableCell>
+                <TableCell>{u.usuarioCorrelativo || "N/D"}</TableCell>
                 <TableCell>{u.telefono || "N/D"}</TableCell>
                 <TableCell>{u.dpi || "N/D"}</TableCell>
                 <TableCell>{u.correo || "N/D"}</TableCell>
@@ -368,7 +375,7 @@ export default function Usuarios() {
             ))}
             {!usuarios.length && (
               <TableRow>
-                <TableCell colSpan={10} align="center">
+                <TableCell colSpan={11} align="center">
                   No hay usuarios registrados.
                 </TableCell>
               </TableRow>
@@ -391,11 +398,30 @@ export default function Usuarios() {
             </Stack>
             <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
               <TextField label="Usuario" value={usuario} onChange={(e) => setUsuario(e.target.value)} fullWidth disabled={!canManage} />
-              <TextField label="Correo electronico" type="email" value={correo} onChange={(e) => setCorreo(e.target.value)} fullWidth disabled={!canManage} />
+              <TextField
+                label="Usuario correlativo"
+                value={usuarioCorrelativo}
+                onChange={(e) => setUsuarioCorrelativo(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6))}
+                fullWidth
+                disabled={!canManage}
+                helperText="Ej. BO para folios como PE-BO-0001"
+              />
             </Stack>
             <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+              <TextField label="Correo electronico" type="email" value={correo} onChange={(e) => setCorreo(e.target.value)} fullWidth disabled={!canManage} />
               <TextField label="Numero de telefono" value={telefono} onChange={(e) => setTelefono(e.target.value)} fullWidth disabled={!canManage} />
+            </Stack>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
               <TextField label="Numero de DPI" value={dpi} onChange={(e) => setDpi(e.target.value)} fullWidth disabled={!canManage} />
+              <TextField
+                label="Contrasena"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                fullWidth
+                disabled={!canManage}
+                helperText={editing ? "Dejalo vacio para no cambiarla" : ""}
+              />
             </Stack>
             <TextField label="Direccion de domicilio" value={direccion} onChange={(e) => setDireccion(e.target.value)} fullWidth multiline minRows={2} disabled={!canManage} />
             <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
@@ -407,15 +433,6 @@ export default function Usuarios() {
                 fullWidth
                 disabled={!canManage}
                 InputLabelProps={{ shrink: true }}
-              />
-              <TextField
-                label="Contrasena"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                fullWidth
-                disabled={!canManage}
-                helperText={editing ? "Dejalo vacio para no cambiarla" : ""}
               />
             </Stack>
             <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
