@@ -935,16 +935,22 @@ export default function PedidoNuevo() {
       const resp = await api.post("/produccion", payload);
       Swal.fire("Guardado", "Pedido creado", "success");
       const folioPedido = resp.data?.folio || (resp.data?.id ? `P-${resp.data.id}` : "PEND");
-      generarPdfPedido(folioPedido, clienteParaPedido);
       generarPdfPedidoProduccion(folioPedido, clienteParaPedido);
-      navigate("/produccion");
+      // Pequeño retraso para que el navegador no bloquee la segunda ventana
+      setTimeout(() => {
+        generarPdfReciboPedido(folioPedido, clienteParaPedido);
+        // Navegar después de que ambos PDFs se hayan abierto
+        setTimeout(() => {
+          navigate("/produccion");
+        }, 300);
+      }, 300);
     } catch (error: any) {
       const msg = error?.response?.data?.message || error?.message || "No se pudo guardar";
       Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
     }
   };
 
-  const generarPdfPedido = (id: number | string, clienteSnapshot?: ClientePedido) => {
+  const generarPdfReciboPedido = (id: number | string, clienteSnapshot?: ClientePedido) => {
     const win = window.open("", "_blank");
     if (!win) {
       Swal.fire("Aviso", "Habilita las ventanas emergentes para ver el PDF", "info");
@@ -983,7 +989,7 @@ export default function PedidoNuevo() {
 
     const html = `<!doctype html>
       <html><head><meta charset="utf-8" />
-      <title>Pedido de produccion</title>
+      <title>Recibo de Pedido</title>
       ${buildPdfStyles()}
       </head>
       <body>
@@ -993,13 +999,13 @@ export default function PedidoNuevo() {
               <img class="logo" src="${logoUrl}" alt="Uniforma" />
             </div>
             <div class="title-block">
-              <h1 class="pedido-no">PEDIDO No.: <span class="value">${escapeHtml(id)}</span></h1>
+              <h1 class="pedido-no">RECIBO No.: <span class="value">${escapeHtml(id)}</span></h1>
             </div>
             <div class="date">${escapeHtml(fecha.toLocaleDateString("es-GT"))}</div>
           </div>
 
           <div class="meta-wrap">
-            <div class="meta-label">PEDIDO DE PRODUCCION</div>
+            <div class="meta-label">RECIBO DE PEDIDO</div>
             <div class="meta-boxes">
               <div class="meta-primary">${escapeHtml(bodegaNombre.toUpperCase())}</div>
               <div class="meta-secondary">${escapeHtml(metodoPago.toUpperCase())}</div>
@@ -1099,10 +1105,10 @@ export default function PedidoNuevo() {
         return `<tr>
           <td>${escapeHtml(d.cantidad)}</td>
           <td>${escapeHtml(prod?.tipo || "N/D")}</td>
+          <td>${escapeHtml(prod?.genero || "N/D")}</td>
           <td>${escapeHtml(obtenerTela(prod))}</td>
           <td>${escapeHtml(obtenerColor(prod))}</td>
           <td>${escapeHtml(obtenerTalla(prod))}</td>
-          <td>${escapeHtml(prod?.genero || "N/D")}</td>
           <td class="text-left">${escapeHtml(d.descripcion || "")}</td>
         </tr>`;
       })
@@ -1126,7 +1132,7 @@ export default function PedidoNuevo() {
           </div>
 
           <div class="meta-wrap" style="width:418px;">
-            <div class="meta-label">VENDEDOR</div>
+            <div class="meta-label">ORDEN DE PRODUCCION</div>
             <div class="meta-boxes" style="grid-template-columns: 1fr 210px;">
               <div class="meta-primary">${escapeHtml(bodegaNombre.toUpperCase())}</div>
               <div class="meta-secondary">RECIBIDO NOMBRE:</div>
@@ -1164,7 +1170,7 @@ export default function PedidoNuevo() {
 
           <table>
             <thead>
-              <tr><th style="width:78px;">CANT</th><th style="width:220px;">PEDIDO</th><th style="width:104px;">TELA</th><th style="width:104px;">COLOR</th><th style="width:106px;">TALLA</th><th style="width:104px;">SEXO</th><th>OBSERVACIONES</th></tr>
+              <tr><th style="width:78px;">CANT</th><th style="width:180px;">TIPO</th><th style="width:100px;">GENERO</th><th style="width:104px;">TELA</th><th style="width:104px;">COLOR</th><th style="width:106px;">TALLA</th><th>OBSERVACIONES</th></tr>
             </thead>
             <tbody>${filasHtml}</tbody>
           </table>

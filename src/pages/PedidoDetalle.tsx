@@ -28,6 +28,7 @@ import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../utils/fontFamily";
+import uniformaLogo from "../assets/3-logos.png";
 
 interface Detalle {
   producto: {
@@ -84,6 +85,154 @@ interface Pedido {
   detalle: Detalle[];
   pagos: Pago[];
 }
+
+const escapeHtml = (value?: string | number | null) =>
+  `${value ?? ""}`
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+const buildPdfStyles = () => `
+  <style>
+    @page { size: letter landscape; margin: 8mm; }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; }
+    body {
+      font-family: ${PDF_FONT_FAMILY};
+      margin: 0;
+      color: #000;
+      background: #fff;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .page { width: 100%; max-width: 1320px; margin: 0 auto; padding: 8px 10px 10px; }
+    .topline { display:grid; grid-template-columns: 132px 1fr 170px; align-items:start; gap: 12px; margin-bottom: 4px; }
+    .logo-wrap { display:flex; justify-content:center; }
+    .logo { width: 92px; height: 92px; object-fit: contain; }
+    .title-block { text-align:center; padding-top: 6px; }
+    .pedido-no { margin: 0; font-size: 30px; font-family: ${PDF_FONT_SEMIBOLD_FAMILY}; font-weight: 600; color: #0f3274; letter-spacing: 0.4px; }
+    .pedido-no .value { color: #d60000; }
+    .date { text-align:right; font-size: 18px; font-family: ${PDF_FONT_SEMIBOLD_FAMILY}; font-weight: 600; padding-top: 8px; }
+    .meta-wrap { margin: 2px auto 16px; width: 560px; }
+    .meta-label { text-align:center; font-size: 18px; font-family: ${PDF_FONT_SEMIBOLD_FAMILY}; font-weight: 600; color: #e10600; margin-bottom: 2px; }
+    .meta-boxes { display:grid; grid-template-columns: 1fr 1fr; }
+    .meta-primary {
+      background:#123072;
+      color:#fff;
+      min-height:50px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      text-align:center;
+      padding: 8px 12px;
+      font-size: 16px;
+      font-family: ${PDF_FONT_SEMIBOLD_FAMILY};
+      font-weight: 600;
+    }
+    .meta-secondary {
+      background:#ff1200;
+      color:#fff;
+      min-height:50px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      text-align:center;
+      padding: 8px 12px;
+      font-size: 15px;
+      font-family: ${PDF_FONT_SEMIBOLD_FAMILY};
+      font-weight: 600;
+    }
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .info-card {
+      border: 1px solid #0f3274;
+      min-height: 56px;
+      background: #fff;
+    }
+    .info-title {
+      background: #0f3274;
+      color: #fff;
+      font-size: 12px;
+      font-family: ${PDF_FONT_SEMIBOLD_FAMILY};
+      font-weight: 600;
+      padding: 4px 8px;
+      letter-spacing: 0.3px;
+    }
+    .info-value {
+      padding: 8px;
+      font-size: 13px;
+      min-height: 34px;
+      display:flex;
+      align-items:center;
+    }
+    table { width:100%; border-collapse:collapse; table-layout:fixed; }
+    .items-table { font-size: 11px; }
+    thead th {
+      background:#0f3274;
+      color:#fff;
+      text-align:center;
+      border:1px solid #0f3274;
+      padding:6px 4px;
+      font-size:11px;
+      font-family: ${PDF_FONT_SEMIBOLD_FAMILY};
+      font-weight:600;
+      white-space:nowrap;
+    }
+    tbody td {
+      border:1px solid #1f1f1f;
+      padding:6px 5px;
+      font-size:11px;
+      text-align:center;
+      height:32px;
+      line-height:1.2;
+      vertical-align:middle;
+      word-break:normal;
+      overflow-wrap:normal;
+    }
+    tbody td.text-left { text-align:left; }
+    tbody td.wrap {
+      white-space:normal;
+      overflow-wrap:break-word;
+    }
+    tbody td.money,
+    tbody td.nowrap {
+      white-space:nowrap;
+    }
+    .totals {
+      width: 340px;
+      margin-left: auto;
+      margin-top: 12px;
+      border: 1px solid #0f3274;
+    }
+    .totals-row {
+      display:flex;
+      justify-content:space-between;
+      padding:8px 12px;
+      font-size:14px;
+      border-top:1px solid #cbd5e1;
+      background:#fff;
+    }
+    .totals-row:first-child { border-top:none; }
+    .totals-row.total {
+      background:#0f3274;
+      color:#fff;
+      font-family: ${PDF_FONT_SEMIBOLD_FAMILY};
+      font-weight:600;
+    }
+    .footer-note { margin-top:8px; font-size:11px; color:#475569; }
+    @media print {
+      html, body { width: auto; height: auto; }
+      body { margin:0; background:#fff; }
+      .page { max-width: none; padding: 0; }
+    }
+  </style>
+`;
 
 const normalizeDetalle = (detalle: any): Detalle => ({
   ...detalle,
@@ -247,7 +396,7 @@ export default function PedidoDetalle() {
     );
   }
 
-  const generarPdfPedidoCliente = () => {
+  const generarPdfReciboPedido = () => {
     const win = window.open("", "_blank");
     if (!win) {
       Swal.fire("Aviso", "Habilita las ventanas emergentes para ver el PDF", "info");
@@ -267,9 +416,7 @@ export default function PedidoDetalle() {
     const recargo = Number((pedido as any).recargo || 0);
     const total = Number((pedido as any).totalEstimado || subtotal + recargo);
     const anticipo = Number((pedido as any).anticipo || 0);
-    const watermarkHtml = esAnulado
-      ? `<div class="watermark">ANULADO</div>`
-      : "";
+    const logoUrl = uniformaLogo;
     const filasHtml = pedido.detalle
       .map((d, idx) => {
         const desc = Number((d as any).descuento || 0);
@@ -280,77 +427,91 @@ export default function PedidoDetalle() {
         const sub = (d.cantidad || 0) * (precioConDescuento + bordado);
         return `<tr>
           <td>${idx + 1}</td>
-          <td>${d.producto?.codigo || d.productoId}</td>
-          <td>${d.producto?.nombre || "Producto"}</td>
-          <td>${(d as any).descripcion || ""}</td>
-          <td>${d.cantidad}</td>
-          <td>${Number(d.precioUnit || 0).toFixed(2)}</td>
-          <td>${bordado.toFixed(2)}</td>
-          <td>${estiloEspecialMonto.toFixed(2)}</td>
-          <td>${desc.toFixed(2)}%</td>
-          <td>${sub.toFixed(2)}</td>
+          <td class="nowrap">${escapeHtml(d.producto?.codigo || d.productoId)}</td>
+          <td class="wrap">${escapeHtml(d.producto?.nombre || "Producto")}</td>
+          <td class="text-left wrap">${escapeHtml((d as any).descripcion || "")}</td>
+          <td class="nowrap">${escapeHtml(d.cantidad)}</td>
+          <td class="money">Q ${escapeHtml((d.precioUnit || 0).toFixed(2))}</td>
+          <td class="money">Q ${escapeHtml(bordado.toFixed(2))}</td>
+          <td class="money">Q ${escapeHtml(estiloEspecialMonto.toFixed(2))}</td>
+          <td class="nowrap">${escapeHtml(desc.toFixed(2))}%</td>
+          <td class="money">Q ${escapeHtml(sub.toFixed(2))}</td>
         </tr>`;
       })
       .join("");
     const html = `<!doctype html>
       <html><head><meta charset="utf-8" />
-      <title>Pedido de produccion</title>
-      <style>
-        body { font-family: ${PDF_FONT_FAMILY}; margin: 24px; color: #1f2937; }
-        .header { display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #0f172a; padding-bottom:8px; margin-bottom:12px; }
-        .brand { font-size:18px; font-family: ${PDF_FONT_SEMIBOLD_FAMILY}; font-weight:600; letter-spacing:0.5px; }
-        strong, th { font-family: ${PDF_FONT_SEMIBOLD_FAMILY}; font-weight:600; }
-        table { width:100%; border-collapse: collapse; margin-top:8px; font-size:12px; }
-        th { background:#0f172a; color:#fff; text-align:left; padding:8px; }
-        td { border-bottom:1px solid #e2e8f0; padding:7px; }
-        .totals { width: 280px; margin-left:auto; margin-top:12px; font-size:13px; }
-        .totals-row { display:flex; justify-content:space-between; padding:6px 0; }
-        .totals-row.total { font-family: ${PDF_FONT_SEMIBOLD_FAMILY}; font-weight:600; border-top:2px solid #0f172a; margin-top:4px; }
-        .watermark {
-          position: fixed;
-          inset: 0;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 110px;
-          font-family: ${PDF_FONT_SEMIBOLD_FAMILY};
-          font-weight: 600;
-          color: rgba(220, 38, 38, 0.16);
-          transform: rotate(-28deg);
-          letter-spacing: 8px;
-          pointer-events: none;
-          z-index: 9999;
-        }
-      </style>
+      <title>Recibo de Pedido</title>
+      ${buildPdfStyles()}
       </head>
       <body>
-        ${watermarkHtml}
-        <div class="header">
-          <div>
-            <div class="brand">Uniforma</div>
-            <div>Pedido de produccion</div>
+        <div class="page">
+          <div class="topline">
+            <div class="logo-wrap">
+              <img class="logo" src="${logoUrl}" alt="Uniforma" />
+            </div>
+            <div class="title-block">
+              <h1 class="pedido-no">RECIBO No.: <span class="value">${escapeHtml(pedido.folio || `P-${pedido.id}`)}</span></h1>
+            </div>
+            <div class="date">${escapeHtml(fecha.toLocaleDateString("es-GT"))}</div>
           </div>
-          <div style="text-align:right">
-            <div>Folio: ${pedido.folio || `P-${pedido.id}`}</div>
-            <div>${fecha.toLocaleDateString()} ${fecha.toLocaleTimeString()}</div>
+
+          <div class="meta-wrap">
+            <div class="meta-label">RECIBO DE PEDIDO</div>
+            <div class="meta-boxes">
+              <div class="meta-primary">${escapeHtml((pedido.bodega?.nombre || "N/D").toUpperCase())}</div>
+              <div class="meta-secondary">${escapeHtml(((pedido as any).metodoPago || "efectivo").toUpperCase())}</div>
+            </div>
           </div>
-        </div>
-        <div style="margin-bottom:12px;">
-          <strong>Cliente:</strong> ${pedido.cliente?.nombre || (pedido as any).clienteNombre || "Mostrador"} |
-          <strong>Bodega:</strong> ${pedido.bodega?.nombre || "N/D"} |
-          <strong>Metodo:</strong> ${(pedido as any).metodoPago || "efectivo"}
-        </div>
-        <table>
-          <thead>
-            <tr><th>#</th><th>Codigo</th><th>Producto</th><th>Detalle</th><th>Cant.</th><th>Precio</th><th>Bordado</th><th>Estilo esp.</th><th>Desc.</th><th>Subtotal</th></tr>
-          </thead>
-          <tbody>${filasHtml}</tbody>
-        </table>
-        <div class="totals">
-          <div class="totals-row"><span>Subtotal</span><span>Q ${subtotal.toFixed(2)}</span></div>
-          ${recargo ? `<div class="totals-row"><span>Recargo</span><span>Q ${recargo.toFixed(2)}</span></div>` : ""}
-          <div class="totals-row"><span>Anticipo</span><span>Q ${anticipo.toFixed(2)}</span></div>
-          <div class="totals-row total"><span>Total</span><span>Q ${total.toFixed(2)}</span></div>
+
+          <div class="info-grid">
+            <div class="info-card">
+              <div class="info-title">CLIENTE</div>
+              <div class="info-value">${escapeHtml(pedido.cliente?.nombre || (pedido as any).clienteNombre || "Mostrador")}</div>
+            </div>
+            ${(pedido as any).clienteTelefono ? `<div class="info-card">
+              <div class="info-title">TELEFONO</div>
+              <div class="info-value">${escapeHtml((pedido as any).clienteTelefono)}</div>
+            </div>` : ""}
+            <div class="info-card">
+              <div class="info-title">BODEGA</div>
+              <div class="info-value">${escapeHtml(pedido.bodega?.nombre || "N/D")}</div>
+            </div>
+            <div class="info-card">
+              <div class="info-title">METODO DE PAGO</div>
+              <div class="info-value">${escapeHtml((pedido as any).metodoPago || "efectivo")}</div>
+            </div>
+            <div class="info-card">
+              <div class="info-title">FECHA Y HORA</div>
+              <div class="info-value">${escapeHtml(`${fecha.toLocaleDateString("es-GT")} ${fecha.toLocaleTimeString("es-GT", { hour: "2-digit", minute: "2-digit" })}`)}</div>
+            </div>
+          </div>
+
+          <table class="items-table">
+            <colgroup>
+              <col style="width:4%;" />
+              <col style="width:9%;" />
+              <col style="width:18%;" />
+              <col style="width:18%;" />
+              <col style="width:5%;" />
+              <col style="width:9%;" />
+              <col style="width:9%;" />
+              <col style="width:9%;" />
+              <col style="width:7%;" />
+              <col style="width:12%;" />
+            </colgroup>
+            <thead>
+              <tr><th>#</th><th>CODIGO</th><th>PRODUCTO</th><th>DETALLE</th><th>CANT.</th><th>PRECIO</th><th>BORDADO</th><th>ESTILO ESP.</th><th>DESC.</th><th>SUBTOTAL</th></tr>
+            </thead>
+            <tbody>${filasHtml}</tbody>
+          </table>
+
+          <div class="totals">
+            <div class="totals-row"><span>Subtotal</span><span>Q ${escapeHtml(subtotal.toFixed(2))}</span></div>
+            ${recargo ? `<div class="totals-row"><span>Recargo</span><span>Q ${escapeHtml(recargo.toFixed(2))}</span></div>` : ""}
+            <div class="totals-row"><span>Anticipo</span><span>Q ${escapeHtml(anticipo.toFixed(2))}</span></div>
+            <div class="totals-row total"><span>Total</span><span>Q ${escapeHtml(total.toFixed(2))}</span></div>
+          </div>
         </div>
         <script>window.onload = function(){ window.print(); }</script>
       </body></html>`;
@@ -365,75 +526,78 @@ export default function PedidoDetalle() {
       return;
     }
     const fecha = new Date();
-    const watermarkHtml = esAnulado
-      ? `<div class="watermark">ANULADO</div>`
-      : "";
+    const logoUrl = uniformaLogo;
     const filasHtml = pedido.detalle
       .map((d: any, idx: number) => {
         const prod: any = d.producto || {};
         return `<tr>
           <td>${idx + 1}</td>
-          <td>${prod.codigo || d.productoId}</td>
-          <td>${prod.tipo || "N/D"}</td>
-          <td>${prod.genero || "N/D"}</td>
-          <td>${obtenerTela(prod)}</td>
-          <td>${obtenerTalla(prod)}</td>
-          <td>${obtenerColor(prod)}</td>
-          <td>${d.cantidad}</td>
-          <td>${d.descripcion || ""}</td>
+          <td>${escapeHtml(prod.codigo || d.productoId)}</td>
+          <td>${escapeHtml(prod.tipo || "N/D")}</td>
+          <td>${escapeHtml(prod.genero || "N/D")}</td>
+          <td>${escapeHtml(obtenerTela(prod))}</td>
+          <td>${escapeHtml(obtenerColor(prod))}</td>
+          <td>${escapeHtml(obtenerTalla(prod))}</td>
+          <td>${escapeHtml(d.cantidad)}</td>
+          <td class="text-left">${escapeHtml(d.descripcion || "")}</td>
         </tr>`;
       })
       .join("");
     const html = `<!doctype html>
       <html><head><meta charset="utf-8" />
       <title>Orden de produccion</title>
-      <style>
-        body { font-family: ${PDF_FONT_FAMILY}; margin: 24px; color: #1f2937; }
-        .header { display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #0f172a; padding-bottom:8px; margin-bottom:12px; }
-        .brand { font-size:18px; font-family: ${PDF_FONT_SEMIBOLD_FAMILY}; font-weight:600; letter-spacing:0.5px; }
-        strong, th { font-family: ${PDF_FONT_SEMIBOLD_FAMILY}; font-weight:600; }
-        table { width:100%; border-collapse: collapse; margin-top:8px; font-size:12px; }
-        th { background:#0f172a; color:#fff; text-align:left; padding:8px; }
-        td { border-bottom:1px solid #e2e8f0; padding:7px; }
-        .watermark {
-          position: fixed;
-          inset: 0;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 110px;
-          font-family: ${PDF_FONT_SEMIBOLD_FAMILY};
-          font-weight: 600;
-          color: rgba(220, 38, 38, 0.16);
-          transform: rotate(-28deg);
-          letter-spacing: 8px;
-          pointer-events: none;
-          z-index: 9999;
-        }
-      </style>
+      ${buildPdfStyles()}
       </head>
       <body>
-        ${watermarkHtml}
-        <div class="header">
-          <div>
-            <div class="brand">Uniforma</div>
-            <div>Orden de produccion</div>
+        <div class="page">
+          <div class="topline">
+            <div class="logo-wrap">
+              <img class="logo" src="${logoUrl}" alt="Uniforma" />
+            </div>
+            <div class="title-block">
+              <h1 class="pedido-no">PEDIDO No.: <span class="value">${escapeHtml(pedido.folio || `P-${pedido.id}`)}</span></h1>
+            </div>
+            <div class="date">${escapeHtml(fecha.toLocaleDateString("es-GT"))}</div>
           </div>
-          <div style="text-align:right">
-            <div>Folio: ${pedido.folio || `P-${pedido.id}`}</div>
-            <div>${fecha.toLocaleDateString()} ${fecha.toLocaleTimeString()}</div>
+
+          <div class="meta-wrap" style="width:418px;">
+            <div class="meta-label">ORDEN DE PRODUCCION</div>
+            <div class="meta-boxes" style="grid-template-columns: 1fr 210px;">
+              <div class="meta-primary">${escapeHtml((pedido.bodega?.nombre || "N/D").toUpperCase())}</div>
+              <div class="meta-secondary">RECIBIDO NOMBRE:</div>
+            </div>
           </div>
+
+          <div class="info-grid">
+            <div class="info-card">
+              <div class="info-title">CLIENTE</div>
+              <div class="info-value">${escapeHtml(pedido.cliente?.nombre || (pedido as any).clienteNombre || "Mostrador")}</div>
+            </div>
+            ${(pedido as any).clienteTelefono ? `<div class="info-card">
+              <div class="info-title">TELEFONO</div>
+              <div class="info-value">${escapeHtml((pedido as any).clienteTelefono)}</div>
+            </div>` : ""}
+            <div class="info-card">
+              <div class="info-title">BODEGA</div>
+              <div class="info-value">${escapeHtml(pedido.bodega?.nombre || "N/D")}</div>
+            </div>
+            <div class="info-card">
+              <div class="info-title">ARTICULOS</div>
+              <div class="info-value">${escapeHtml(pedido.detalle.length)}</div>
+            </div>
+            <div class="info-card">
+              <div class="info-title">FECHA Y HORA</div>
+              <div class="info-value">${escapeHtml(`${fecha.toLocaleDateString("es-GT")} ${fecha.toLocaleTimeString("es-GT", { hour: "2-digit", minute: "2-digit" })}`)}</div>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr><th style="width:78px;">CANT</th><th style="width:180px;">TIPO</th><th style="width:100px;">GENERO</th><th style="width:104px;">TELA</th><th style="width:104px;">COLOR</th><th style="width:106px;">TALLA</th><th>OBSERVACIONES</th></tr>
+            </thead>
+            <tbody>${filasHtml}</tbody>
+          </table>
         </div>
-        <div style="margin-bottom:12px;">
-          <strong>Cliente:</strong> ${pedido.cliente?.nombre || (pedido as any).clienteNombre || "Mostrador"} |
-          <strong>Bodega:</strong> ${pedido.bodega?.nombre || "N/D"}
-        </div>
-        <table>
-          <thead>
-            <tr><th>#</th><th>Codigo</th><th>Tipo</th><th>Genero</th><th>Tela</th><th>Talla</th><th>Color</th><th>Cant.</th><th>Detalle</th></tr>
-          </thead>
-          <tbody>${filasHtml}</tbody>
-        </table>
         <script>window.onload = function(){ window.print(); }</script>
       </body></html>`;
     win.document.write(html);
@@ -453,8 +617,8 @@ export default function PedidoDetalle() {
           size="small"
         />
         <Stack direction="row" spacing={1} sx={{ ml: "auto" }}>
-          <Button size="small" variant="outlined" startIcon={<PictureAsPdfOutlined />} onClick={generarPdfPedidoCliente}>
-            PDF pedido
+          <Button size="small" variant="outlined" startIcon={<PictureAsPdfOutlined />} onClick={generarPdfReciboPedido}>
+            PDF Recibo
           </Button>
           <Button
             size="small"
@@ -463,7 +627,7 @@ export default function PedidoDetalle() {
             startIcon={<PictureAsPdfOutlined />}
             onClick={generarPdfPedidoProduccion}
           >
-            PDF produccion
+            PDF Produccion
           </Button>
         </Stack>
       </Stack>
