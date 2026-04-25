@@ -19,6 +19,7 @@ import PeopleAltOutlined from "@mui/icons-material/PeopleAltOutlined";
 import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 import AdminPanelSettingsOutlined from "@mui/icons-material/AdminPanelSettingsOutlined";
 import SummarizeOutlined from "@mui/icons-material/SummarizeOutlined";
+import RequestQuoteOutlined from "@mui/icons-material/RequestQuoteOutlined";
 
 export interface MenuItem {
   label: string;
@@ -82,6 +83,7 @@ export const menuSections: MenuSection[] = [
   {
     title: "GESTION",
     items: [
+      { label: "Cotizaciones", icon: <RequestQuoteOutlined />, path: "/cotizaciones" },
       { label: "Clientes", icon: <PeopleOutline />, path: "/clientes" },
       { label: "Usuarios", icon: <SettingsOutlined />, path: "/usuarios" },
       { label: "Roles", icon: <AdminPanelSettingsOutlined />, path: "/roles" },

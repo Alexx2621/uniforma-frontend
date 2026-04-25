@@ -17,6 +17,7 @@ import Traslados from "./pages/Traslados";
 import VentaNueva from "./pages/VentaNueva";
 import Bodegas from "./pages/Bodegas";
 import Clientes from "./pages/Clientes";
+import Cotizaciones from "./pages/Cotizaciones";
 import Usuarios from "./pages/Usuarios";
 import Admin from "./pages/Admin";
 import Correlativos from "./pages/Correlativos";
@@ -55,6 +56,7 @@ export default function App() {
           <Route path="/inventario/resumen" element={<InventarioResumen />} />
           <Route path="/inventario/traslados" element={<Traslados />} />
           <Route path="/bodegas" element={<Bodegas />} />
+          <Route path="/cotizaciones" element={<Cotizaciones />} />
           <Route path="/clientes" element={<Clientes />} />
           <Route path="/usuarios" element={<Usuarios />} />
           <Route path="/roles" element={<Roles />} />
