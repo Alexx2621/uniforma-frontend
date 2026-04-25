@@ -13,7 +13,6 @@ import {
   TableRow,
   TableCell,
   TableBody,
-  TextField,
   FormControl,
   InputLabel,
   Select,
@@ -21,8 +20,8 @@ import {
 } from "@mui/material";
 import PlaylistAddCheckOutlined from "@mui/icons-material/PlaylistAddCheckOutlined";
 import DoneAllOutlined from "@mui/icons-material/DoneAllOutlined";
-import PaidOutlined from "@mui/icons-material/PaidOutlined";
 import PictureAsPdfOutlined from "@mui/icons-material/PictureAsPdfOutlined";
+import AssignmentReturnOutlined from "@mui/icons-material/AssignmentReturnOutlined";
 import { useNavigate, useParams } from "react-router-dom";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
@@ -132,18 +131,12 @@ export default function PedidoDetalle() {
   const { crossStoreRoleIds, fetchConfig } = useSystemConfigStore();
   const [pedido, setPedido] = useState<Pedido | null>(null);
   const [loading, setLoading] = useState(false);
-  const [pagoFinal, setPagoFinal] = useState(0);
-  const [metodoPagoFinal, setMetodoPagoFinal] = useState("efectivo");
-  const [porcRecargoFinal, setPorcRecargoFinal] = useState(0);
-  const [referenciaPagoFinal, setReferenciaPagoFinal] = useState("");
   const [bodegas, setBodegas] = useState<any[]>([]);
   const [bodegaIngreso, setBodegaIngreso] = useState<number | "">("");
   const [telas, setTelas] = useState<any[]>([]);
   const [tallas, setTallas] = useState<any[]>([]);
   const [colores, setColores] = useState<any[]>([]);
   const canAccessAllBodegas = rol === "ADMIN" || crossStoreRoleIds.includes(Number(rolId));
-  const metodoFinalUsaRecargo = metodoPagoFinal === "tarjeta" || metodoPagoFinal === "visalink";
-  const metodoFinalRequiereReferencia = metodoPagoFinal !== "efectivo";
 
   const cargar = useCallback(async () => {
     if (!id) return;
@@ -157,10 +150,7 @@ export default function PedidoDetalle() {
         api.get("/colores").catch(() => ({ data: [] })),
       ]);
       const pedidoNormalizado = normalizePedido(respPedido.data);
-      const totalPagadoNormalizado = (pedidoNormalizado.pagos || []).reduce((sum, pago) => sum + getPagoAplicado(pago), 0);
-      const saldoNormalizado = Math.max(0, Number(pedidoNormalizado.totalEstimado || 0) - totalPagadoNormalizado);
       setPedido(pedidoNormalizado);
-      setPagoFinal(saldoNormalizado);
       setBodegas(respBod.data || []);
       setTelas(respTelas.data || []);
       setTallas(respTallas.data || []);
@@ -189,7 +179,9 @@ export default function PedidoDetalle() {
   );
 
   const esAnulado = `${pedido?.estado || ""}`.trim().toLowerCase() === "anulado";
-  const esRecibido = ["recibido", "completado"].includes(`${pedido?.estado || ""}`.trim().toLowerCase());
+  const esPendientePago = `${pedido?.estado || ""}`.trim().toLowerCase() === "pendiente_pago";
+  const esRegresadoProduccion = `${pedido?.estado || ""}`.trim().toLowerCase() === "regresado_produccion";
+  const esRecibido = ["recibido", "completado", "pendiente_pago"].includes(`${pedido?.estado || ""}`.trim().toLowerCase());
 
   const obtenerTela = (prod?: any) => {
     if (!prod) return "N/D";
@@ -210,30 +202,9 @@ export default function PedidoDetalle() {
   };
 
   const terminar = async () => {
-    const saldo = saldoCalculado;
-    const recargoFinal = metodoFinalUsaRecargo ? (Number(pagoFinal) || 0) * ((porcRecargoFinal || 0) / 100) : 0;
-    const restante = Math.max(0, saldo - ((Number(pagoFinal) || 0) + recargoFinal));
-    if (restante > 0) {
-      Swal.fire("Validacion", `Saldo pendiente Q ${restante.toFixed(2)}. Cancela antes de terminar.`, "warning");
-      return;
-    }
-    if ((Number(pagoFinal) || 0) > 0 && metodoFinalRequiereReferencia && !referenciaPagoFinal.trim()) {
-      Swal.fire("Validacion", "Ingresa la referencia o numero de transaccion del pago", "warning");
-      return;
-    }
-
     try {
-      await api.post(`/produccion/${id}/terminar`, {
-        pagoFinal,
-        metodoPagoFinal,
-        porcentajeRecargo: metodoFinalUsaRecargo ? porcRecargoFinal : 0,
-        referenciaPagoFinal: metodoFinalRequiereReferencia ? referenciaPagoFinal.trim() : null,
-      });
-      if (pagoFinal > 0) {
-        const rec = metodoFinalUsaRecargo ? pagoFinal * ((porcRecargoFinal || 0) / 100) : 0;
-        generarPdfPago(pagoFinal + rec, metodoPagoFinal, "saldo", referenciaPagoFinal.trim());
-      }
-      Swal.fire("Listo", "Pedido marcado como recibido", "success");
+      await api.post(`/produccion/${id}/terminar`, {});
+      Swal.fire("Listo", saldoCalculado > 0 ? "Pedido recibido y pendiente de pago" : "Pedido marcado como recibido", "success");
       navigate("/produccion");
     } catch (error: any) {
       const msg = error?.response?.data?.message || error?.message || "No se pudo terminar";
@@ -241,95 +212,31 @@ export default function PedidoDetalle() {
     }
   };
 
-  const pagarSaldo = async () => {
-    if (pagoFinal <= 0) {
-      Swal.fire("Validacion", "Ingresa un monto mayor a 0", "warning");
-      return;
-    }
-    if (saldoCalculado <= 0) {
-      Swal.fire("Aviso", "El saldo ya esta en cero. No se puede registrar mas pagos.", "info");
-      return;
-    }
-    const recargoPago = metodoFinalUsaRecargo ? pagoFinal * ((porcRecargoFinal || 0) / 100) : 0;
-    const aplicado = pagoFinal + recargoPago;
-    if (aplicado > saldoCalculado) {
-      Swal.fire(
-        "Aviso",
-        `El pago mas recargo excede el saldo (Q ${Number(saldoCalculado || 0).toFixed(2)}). Ajusta el monto.`,
-        "info"
-      );
-      return;
-    }
-    if (metodoFinalRequiereReferencia && !referenciaPagoFinal.trim()) {
-      Swal.fire("Validacion", "Ingresa la referencia o numero de transaccion del pago", "warning");
-      return;
-    }
+  const regresarPorInconformidad = async () => {
+    const result = await Swal.fire({
+      title: "Regresar pedido",
+      text: "Describe la inconformidad de produccion.",
+      input: "textarea",
+      inputPlaceholder: "Motivo o detalle de la inconformidad",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Regresar",
+      cancelButtonText: "Cancelar",
+      confirmButtonColor: "#ed6c02",
+    });
+
+    if (!result.isConfirmed) return;
+
     try {
-      await api.post(`/produccion/${id}/pago`, {
-        monto: pagoFinal,
-        metodo: metodoPagoFinal,
-        tipo: "saldo",
-        porcentajeRecargo: metodoFinalUsaRecargo ? porcRecargoFinal : 0,
-        referenciaPago: metodoFinalRequiereReferencia ? referenciaPagoFinal.trim() : null,
+      await api.post(`/produccion/${id}/regresar`, {
+        motivo: `${result.value || ""}`.trim(),
       });
-      Swal.fire("Pago registrado", "Saldo actualizado", "success");
-      generarPdfPago(aplicado, metodoPagoFinal, "saldo", referenciaPagoFinal.trim());
-      setPagoFinal(0);
-      setReferenciaPagoFinal("");
+      Swal.fire("Listo", "Pedido regresado por inconformidades de produccion", "success");
       await cargar();
     } catch (error: any) {
-      const msg = error?.response?.data?.message || error?.message || "No se pudo registrar pago";
+      const msg = error?.response?.data?.message || error?.message || "No se pudo regresar el pedido";
       Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
     }
-  };
-
-  const generarPdfPago = (monto: number, metodo: string, tipo: string, referencia = "") => {
-    if (!pedido) return;
-    const win = window.open("", "_blank");
-    if (!win) {
-      Swal.fire("Aviso", "Habilita las ventanas emergentes para ver el comprobante", "info");
-      return;
-    }
-    const fecha = new Date();
-    const html = `<!doctype html>
-      <html><head><meta charset="utf-8" />
-      <title>Pago pedido</title>
-      <style>
-        body { font-family: ${PDF_FONT_FAMILY}; margin: 24px; color: #1f2937; }
-        .header { display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #0f172a; padding-bottom:8px; margin-bottom:12px; }
-        .brand { font-family: ${PDF_FONT_SEMIBOLD_FAMILY}; font-weight:600; font-size:18px; }
-        strong, th { font-family: ${PDF_FONT_SEMIBOLD_FAMILY}; font-weight:600; }
-        table { width:100%; border-collapse:collapse; margin-top:8px; font-size:13px; }
-        th { background:#0f172a; color:#fff; padding:8px; text-align:left; }
-        td { padding:8px; border-bottom:1px solid #e2e8f0; }
-      </style>
-      </head>
-      <body>
-        <div class="header">
-          <div>
-            <div class="brand">Uniforma</div>
-            <div>Comprobante de pago</div>
-          </div>
-        <div style="text-align:right">
-            <div>Pedido: ${pedido.folio || `P-${pedido.id}`}</div>
-            <div>${fecha.toLocaleDateString()} ${fecha.toLocaleTimeString()}</div>
-          </div>
-        </div>
-        <table>
-          <tbody>
-            <tr><td>Cliente</td><td>${pedido.cliente?.nombre || "Mostrador"}</td></tr>
-            <tr><td>Bodega</td><td>${pedido.bodega?.nombre || "N/D"}</td></tr>
-            <tr><td>Monto</td><td>Q ${Number(monto || 0).toFixed(2)}</td></tr>
-            <tr><td>Metodo</td><td>${metodo}</td></tr>
-            ${referencia ? `<tr><td>Referencia</td><td>${referencia}</td></tr>` : ""}
-            <tr><td>Tipo</td><td>${tipo}</td></tr>
-            <tr><td>Saldo pendiente</td><td>Q ${Number(saldoCalculado || 0).toFixed(2)}</td></tr>
-          </tbody>
-        </table>
-        <script>window.onload = function(){ window.print(); }</script>
-      </body></html>`;
-    win.document.write(html);
-    win.document.close();
   };
 
   if (!pedido) {
@@ -541,7 +448,7 @@ export default function PedidoDetalle() {
         <Chip
           label={pedido.estado}
           color={
-            esAnulado ? "error" : esRecibido ? "success" : "info"
+            esAnulado ? "error" : esRegresadoProduccion ? "warning" : esRecibido ? "success" : "info"
           }
           size="small"
         />
@@ -567,6 +474,11 @@ export default function PedidoDetalle() {
       {esAnulado && (
         <Typography variant="body2" color="error" sx={{ mb: 2, fontWeight: 600 }}>
           Este pedido esta anulado. Solo se permite visualizar la informacion.
+        </Typography>
+      )}
+      {esRegresadoProduccion && (
+        <Typography variant="body2" color="warning.main" sx={{ mb: 2, fontWeight: 600 }}>
+          Este pedido fue regresado por inconformidades de produccion.
         </Typography>
       )}
 
@@ -621,97 +533,7 @@ export default function PedidoDetalle() {
       <Divider sx={{ my: 2 }} />
 
       <Grid container spacing={3} sx={{ mt: 1, alignItems: "stretch" }}>
-        <Grid size={{ xs: 12, md: 6 }} sx={{ minWidth: 0 }}>
-          <Paper
-            variant="outlined"
-            sx={{ p: 2, height: "100%", display: "flex", flexDirection: "column", borderRadius: 2, width: "100%", boxSizing: "border-box" }}
-          >
-            <Stack spacing={1.5}>
-              <Typography variant="h6">Pagos</Typography>
-              <Stack direction="row" justifyContent="space-between">
-                <Typography>Estimado</Typography>
-                <Typography>{`Q ${Number(pedido.totalEstimado || 0).toFixed(2)}`}</Typography>
-              </Stack>
-              <Stack direction="row" justifyContent="space-between">
-                <Typography>Pagado</Typography>
-                <Typography>{`Q ${totalPagado.toFixed(2)}`}</Typography>
-              </Stack>
-              <Stack direction="row" justifyContent="space-between">
-                <Typography fontWeight={700}>Saldo</Typography>
-                <Typography fontWeight={700}>{`Q ${Number(saldoCalculado || 0).toFixed(2)}`}</Typography>
-              </Stack>
-              <Divider />
-              <Typography variant="subtitle2">Registrar pago de saldo</Typography>
-              <Stack
-                direction={{ xs: "column", sm: "row" }}
-                spacing={1.5}
-                sx={{ alignItems: { xs: "stretch", sm: "center" }, flexWrap: "wrap", columnGap: 2, rowGap: 1.2 }}
-              >
-                <TextField
-                  label="Monto"
-                  type="number"
-                  size="small"
-                  value={pagoFinal}
-                  onChange={(e) => setPagoFinal(Number(e.target.value))}
-                  disabled={esAnulado}
-                  sx={{ flex: 1, minWidth: 180 }}
-                />
-                <FormControl size="small" sx={{ minWidth: 200, flex: 1 }} disabled={esAnulado}>
-                  <InputLabel>Metodo</InputLabel>
-                  <Select
-                    label="Metodo"
-                    value={metodoPagoFinal}
-                    onChange={(e) => {
-                      const nextMetodo = e.target.value;
-                      setMetodoPagoFinal(nextMetodo);
-                      if (nextMetodo === "efectivo") setReferenciaPagoFinal("");
-                      if (nextMetodo !== "tarjeta" && nextMetodo !== "visalink") setPorcRecargoFinal(0);
-                    }}
-                  >
-                    <MenuItem value="efectivo">Efectivo</MenuItem>
-                    <MenuItem value="tarjeta">Tarjeta</MenuItem>
-                    <MenuItem value="visalink">Visalink</MenuItem>
-                    <MenuItem value="transferencia">Transferencia</MenuItem>
-                  </Select>
-                </FormControl>
-                {metodoFinalUsaRecargo && (
-                  <TextField
-                    label="Recargo %"
-                    type="number"
-                    size="small"
-                    value={porcRecargoFinal}
-                    onChange={(e) => setPorcRecargoFinal(Number(e.target.value))}
-                    disabled={esAnulado}
-                    sx={{ width: { xs: "100%", sm: 180 } }}
-                  />
-                )}
-                {metodoFinalRequiereReferencia && (
-                  <TextField
-                    label="Referencia"
-                    size="small"
-                    value={referenciaPagoFinal}
-                    onChange={(e) => setReferenciaPagoFinal(e.target.value)}
-                    disabled={esAnulado}
-                    sx={{ flex: 1, minWidth: 220 }}
-                    helperText="Numero de transaccion"
-                  />
-                )}
-                <Button
-                  variant="contained"
-                  size="small"
-                  startIcon={<PaidOutlined />}
-                  onClick={pagarSaldo}
-                  disabled={esAnulado}
-                  sx={{ width: { xs: "100%", sm: "auto" }, minWidth: { sm: 150 }, mt: { xs: 1, sm: 0 } }}
-                >
-                  Pagar
-                </Button>
-              </Stack>
-            </Stack>
-          </Paper>
-        </Grid>
-
-        <Grid size={{ xs: 12, md: 6 }} sx={{ minWidth: 0 }}>
+        <Grid size={{ xs: 12 }} sx={{ minWidth: 0 }}>
           <Paper
             variant="outlined"
             sx={{ p: 2, height: "100%", display: "flex", flexDirection: "column", borderRadius: 2, width: "100%", boxSizing: "border-box" }}
@@ -734,26 +556,37 @@ export default function PedidoDetalle() {
                 </Select>
               </FormControl>
               <Typography variant="body2" color="text.secondary">
-                Este boton solo cambiara el estado del pedido a recibido. No se movera stock al inventario.
+                Este boton cambiara el estado del pedido a pendiente de pago si aun tiene saldo. No se movera stock al inventario.
               </Typography>
               <Button
                 variant="contained"
                 color="success"
                 startIcon={<DoneAllOutlined />}
                 onClick={terminar}
-                disabled={esAnulado || esRecibido || loading || saldoCalculado > 0}
+                disabled={esAnulado || esRecibido || loading}
               >
                 Marcar como recibido
               </Button>
-              {esRecibido && (
+              {esPendientePago && (
+                <Typography variant="caption" color="warning.main">
+                  Este pedido ya fue recibido y quedo pendiente de pago.
+                </Typography>
+              )}
+              {esRecibido && !esPendientePago && (
                 <Typography variant="caption" color="success.main">
                   Este pedido ya fue marcado como recibido.
                 </Typography>
               )}
-              {saldoCalculado > 0 && (
-                <Typography variant="caption" color="error">
-                  Liquida el saldo antes de marcarlo como recibido.
-                </Typography>
+              {esRecibido && (
+                <Button
+                  variant="outlined"
+                  color="warning"
+                  startIcon={<AssignmentReturnOutlined />}
+                  onClick={regresarPorInconformidad}
+                  disabled={loading}
+                >
+                  Regresar por inconformidad
+                </Button>
               )}
             </Stack>
           </Paper>

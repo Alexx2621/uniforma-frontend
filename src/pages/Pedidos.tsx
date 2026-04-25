@@ -840,7 +840,14 @@ export default function Pedidos() {
       width: 140,
       renderCell: (p) => {
         const estado = `${p.value || ""}`.trim().toLowerCase();
-        const color = estado === "anulado" ? "error" : ["completado", "recibido"].includes(estado) ? "success" : "info";
+        const color =
+          estado === "anulado"
+            ? "error"
+            : estado === "regresado_produccion"
+              ? "warning"
+              : ["completado", "recibido", "pendiente_pago"].includes(estado)
+                ? "success"
+                : "info";
         return <Chip label={p.value} size="small" color={color} />;
       },
     },

@@ -20,6 +20,7 @@ import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 import AdminPanelSettingsOutlined from "@mui/icons-material/AdminPanelSettingsOutlined";
 import SummarizeOutlined from "@mui/icons-material/SummarizeOutlined";
 import RequestQuoteOutlined from "@mui/icons-material/RequestQuoteOutlined";
+import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 
 export interface MenuItem {
   label: string;
@@ -79,6 +80,10 @@ export const menuSections: MenuSection[] = [
   {
     title: "PRODUCCION",
     items: [{ label: "Pedidos", icon: <ShoppingBagOutlined />, path: "/produccion" }],
+  },
+  {
+    title: "PAGOS",
+    items: [{ label: "Pagos pedidos", icon: <ReceiptLongOutlined />, path: "/pagos/pedidos" }],
   },
   {
     title: "GESTION",
