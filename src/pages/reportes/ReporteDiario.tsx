@@ -16,6 +16,10 @@ import {
   TableBody,
   IconButton,
   Chip,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from "@mui/material";
 import AddCircleOutlineOutlined from "@mui/icons-material/AddCircleOutlineOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
@@ -43,6 +47,12 @@ interface DocumentoGenerado {
   creadoEn: string;
   actualizadoEn: string;
   usuario?: { nombre?: string | null; usuario?: string | null };
+}
+
+interface Usuario {
+  id: number;
+  nombre: string;
+  usuario: string;
 }
 
 interface Venta {
@@ -736,16 +746,18 @@ const buildReporteDiarioHtml = ({
           Generado desde Uniforma el ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}.
         </div>
       </div>
-      <script>window.onload = function(){ window.print(); }</script>
+      <script>window.onload = function(){ window.print(); window.onafterprint = function(){ window.close(); } window.onafterprint = function(){ window.close(); } }</script>
     </body>
   </html>`;
 };
 
 export default function ReporteDiario() {
   const today = toDateOnly(new Date());
-  const { nombre, primerNombre, primerApellido, usuario } = useAuthStore();
+  const { nombre, primerNombre, primerApellido, usuario, rol, id: userId } = useAuthStore();
   const location = useLocation();
   const [documentos, setDocumentos] = useState<DocumentoGenerado[]>([]);
+  const [usuarios, setUsuarios] = useState<Usuario[]>([]);
+  const [filtroUsuarioId, setFiltroUsuarioId] = useState<number | null | "">("");
   const [documentoId, setDocumentoId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [filtroDesde, setFiltroDesde] = useState("");
@@ -758,6 +770,8 @@ export default function ReporteDiario() {
   const [tiendaManualRows, setTiendaManualRows] = useState<TiendaRow[]>(() => [createTiendaRow(today)]);
   const [loading, setLoading] = useState(false);
 
+  const isAdmin = rol === "ADMIN";
+
   const cargarSiguienteLiquidacion = async () => {
     try {
       const resp = await api.get("/correlativos/usuario-operaciones/actual/reporteDiario");
@@ -769,7 +783,13 @@ export default function ReporteDiario() {
 
   const cargarDocumentos = async () => {
     try {
-      const resp = await api.get("/documentos", { params: { tipo: "reporteDiario" } });
+      const params: any = { tipo: "reporteDiario" };
+      if (!isAdmin && !userId) {
+        setDocumentos([]);
+        return;
+      }
+      if (typeof filtroUsuarioId === 'number') params.usuarioId = filtroUsuarioId;
+      const resp = await api.get("/documentos", { params });
       setDocumentos(resp.data || []);
     } catch {
       Swal.fire("Error", "No se pudieron cargar los reportes diarios generados", "error");
@@ -789,8 +809,15 @@ export default function ReporteDiario() {
   };
 
   useEffect(() => {
+    if (isAdmin) {
+      api.get("/usuarios").then(resp => setUsuarios(resp.data || []));
+    }
+    setFiltroUsuarioId(isAdmin ? "" : userId ?? "");
+  }, [isAdmin, userId]);
+
+  useEffect(() => {
     void cargarDocumentos();
-  }, []);
+  }, [filtroUsuarioId]);
 
   useEffect(() => {
     if ((location.state as any)?.sidebarClickAt) {
@@ -818,25 +845,6 @@ export default function ReporteDiario() {
     setCapitalRows([createCapitalRow(today)]);
     setDepartamentoRows([createDepartamentoRow(today)]);
     setTiendaManualRows([createTiendaRow(today)]);
-    setShowForm(true);
-  };
-
-  const abrirDocumento = (doc: DocumentoGenerado) => {
-    const data = doc.data || {};
-    const docFecha = data.fecha || today;
-    setDocumentoId(doc.id);
-    setLiquidacionNo(doc.correlativo);
-    setFecha(docFecha);
-    setCapitalRows(Array.isArray(data.capitalRows) && data.capitalRows.length ? data.capitalRows : [createCapitalRow(docFecha)]);
-    setDepartamentoRows(
-      Array.isArray(data.departamentoRows) && data.departamentoRows.length
-        ? data.departamentoRows
-        : [createDepartamentoRow(docFecha)]
-    );
-    setTiendaManualRows(
-      Array.isArray(data.tiendaManualRows) && data.tiendaManualRows.length ? data.tiendaManualRows : [createTiendaRow(docFecha)]
-    );
-    setVentas(Array.isArray(data.ventasSnapshot) ? data.ventasSnapshot : []);
     setShowForm(true);
   };
 
@@ -1051,6 +1059,23 @@ export default function ReporteDiario() {
         <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 2 }}>
           <TextField label="Desde" type="date" size="small" value={filtroDesde} onChange={(e) => setFiltroDesde(e.target.value)} InputLabelProps={{ shrink: true }} />
           <TextField label="Hasta" type="date" size="small" value={filtroHasta} onChange={(e) => setFiltroHasta(e.target.value)} InputLabelProps={{ shrink: true }} />
+          {isAdmin && (
+            <FormControl size="small" sx={{ minWidth: 200 }}>
+              <InputLabel>Usuario</InputLabel>
+              <Select
+                label="Usuario"
+                value={filtroUsuarioId}
+                onChange={(e) => setFiltroUsuarioId(e.target.value as number | null | "")}
+              >
+                <MenuItem value="">Todos</MenuItem>
+                {usuarios.map((u) => (
+                  <MenuItem key={u.id} value={u.id}>
+                    {u.nombre || u.usuario}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
         </Stack>
         <TableContainer>
           <Table size="small">
@@ -1084,9 +1109,6 @@ export default function ReporteDiario() {
                     <TableCell>{doc.usuario?.nombre || doc.usuario?.usuario || "N/D"}</TableCell>
                     <TableCell align="right">
                       <Stack direction="row" spacing={1} justifyContent="flex-end">
-                        <Button size="small" variant="outlined" onClick={() => abrirDocumento(doc)}>
-                          Abrir
-                        </Button>
                         <Button size="small" variant="contained" color="secondary" onClick={() => reimprimirDocumento(doc)}>
                           Reimprimir
                         </Button>

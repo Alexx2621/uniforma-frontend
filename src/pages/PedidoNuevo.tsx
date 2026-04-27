@@ -344,6 +344,12 @@ export default function PedidoNuevo() {
     rolId,
     bodegaId: userBodegaId,
   } = useAuthStore();
+  const usuarioSolicitante =
+    [primerNombre?.trim(), primerApellido?.trim()].filter(Boolean).join(" ") ||
+    nombre?.trim() ||
+    usuario?.trim() ||
+    authBodegaNombre?.trim() ||
+    "usuario";
   const { crossStoreRoleIds, fetchConfig } = useSystemConfigStore();
   const navigate = useNavigate();
   const canAccessAllBodegas = rol === "ADMIN" || crossStoreRoleIds.includes(Number(rolId));
@@ -900,12 +906,7 @@ export default function PedidoNuevo() {
     const clienteParaPedido = await resolverClientePedido();
     if (clienteParaPedido === false) return;
 
-    const solicitadoPor =
-      [primerNombre?.trim(), primerApellido?.trim()].filter(Boolean).join(" ") ||
-      nombre?.trim() ||
-      usuario?.trim() ||
-      authBodegaNombre?.trim() ||
-      "usuario";
+    const solicitadoPor = usuarioSolicitante;
 
     const payload = {
       clienteId: clienteParaPedido.id && Number(clienteParaPedido.id) > 0 ? Number(clienteParaPedido.id) : null,
@@ -1028,6 +1029,10 @@ export default function PedidoNuevo() {
             <div class="info-card">
               <div class="info-title">BODEGA</div>
               <div class="info-value">${escapeHtml(bodegaNombre)}</div>
+            </div>
+            <div class="info-card">
+              <div class="info-title">USUARIO</div>
+              <div class="info-value">${escapeHtml(usuarioSolicitante)}</div>
             </div>
             <div class="info-card">
               <div class="info-title">METODO DE PAGO</div>
@@ -1155,6 +1160,10 @@ export default function PedidoNuevo() {
             <div class="info-card">
               <div class="info-title">BODEGA</div>
               <div class="info-value">${escapeHtml(bodegaNombre)}</div>
+            </div>
+            <div class="info-card">
+              <div class="info-title">USUARIO</div>
+              <div class="info-value">${escapeHtml(usuarioSolicitante)}</div>
             </div>
             <div class="info-card">
               <div class="info-title">ARTICULOS</div>

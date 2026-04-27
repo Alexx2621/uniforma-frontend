@@ -79,6 +79,7 @@ interface Pedido {
   observaciones?: string | null;
   metodoPago?: string | null;
   recargo?: number;
+  solicitadoPor?: string | null;
   cliente?: { nombre: string };
   bodega?: { nombre: string };
   bodegaId?: number | null;
@@ -478,6 +479,10 @@ export default function PedidoDetalle() {
               <div class="info-value">${escapeHtml(pedido.bodega?.nombre || "N/D")}</div>
             </div>
             <div class="info-card">
+              <div class="info-title">USUARIO</div>
+              <div class="info-value">${escapeHtml((pedido as any).solicitadoPor || "N/D")}</div>
+            </div>
+            <div class="info-card">
               <div class="info-title">METODO DE PAGO</div>
               <div class="info-value">${escapeHtml((pedido as any).metodoPago || "efectivo")}</div>
             </div>
@@ -528,21 +533,20 @@ export default function PedidoDetalle() {
     const fecha = new Date();
     const logoUrl = uniformaLogo;
     const filasHtml = pedido.detalle
-      .map((d: any, idx: number) => {
+      .map((d: any) => {
         const prod: any = d.producto || {};
         return `<tr>
-          <td>${idx + 1}</td>
-          <td>${escapeHtml(prod.codigo || d.productoId)}</td>
+          <td>${escapeHtml(d.cantidad)}</td>
           <td>${escapeHtml(prod.tipo || "N/D")}</td>
           <td>${escapeHtml(prod.genero || "N/D")}</td>
           <td>${escapeHtml(obtenerTela(prod))}</td>
           <td>${escapeHtml(obtenerColor(prod))}</td>
           <td>${escapeHtml(obtenerTalla(prod))}</td>
-          <td>${escapeHtml(d.cantidad)}</td>
           <td class="text-left">${escapeHtml(d.descripcion || "")}</td>
         </tr>`;
       })
       .join("");
+
     const html = `<!doctype html>
       <html><head><meta charset="utf-8" />
       <title>Orden de produccion</title>
@@ -582,8 +586,8 @@ export default function PedidoDetalle() {
               <div class="info-value">${escapeHtml(pedido.bodega?.nombre || "N/D")}</div>
             </div>
             <div class="info-card">
-              <div class="info-title">ARTICULOS</div>
-              <div class="info-value">${escapeHtml(pedido.detalle.length)}</div>
+              <div class="info-title">USUARIO</div>
+              <div class="info-value">${escapeHtml((pedido as any).solicitadoPor || "N/D")}</div>
             </div>
             <div class="info-card">
               <div class="info-title">FECHA Y HORA</div>

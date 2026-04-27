@@ -15,6 +15,10 @@ import {
   TableHead,
   TableRow,
   IconButton,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from "@mui/material";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
@@ -43,6 +47,12 @@ interface DocumentoGenerado {
   creadoEn: string;
   actualizadoEn: string;
   usuario?: { nombre?: string | null; usuario?: string | null };
+}
+
+interface Usuario {
+  id: number;
+  nombre: string;
+  usuario: string;
 }
 
 const createKey = () => Date.now() + Math.floor(Math.random() * 100000);
@@ -549,16 +559,24 @@ const buildCotizacionHtml = ({
         </div>
       </div>
       <script>
-        window.addEventListener('load', () => setTimeout(() => window.print(), 350));
+        window.addEventListener('load', () => setTimeout(() => {
+          window.print();
+          window.onafterprint = () => window.close();
+        }
+          window.print();
+          window.onafterprint = () => window.close();
+        }, 350));
       </script>
     </body>
   </html>`;
 };
 
 export default function Cotizaciones() {
-  const { nombre, usuario } = useAuthStore();
+  const { nombre, usuario, rol, id: userId } = useAuthStore();
   const location = useLocation();
   const [documentos, setDocumentos] = useState<DocumentoGenerado[]>([]);
+  const [usuarios, setUsuarios] = useState<Usuario[]>([]);
+  const [filtroUsuarioId, setFiltroUsuarioId] = useState<number | null | "">("");
   const [documentoId, setDocumentoId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [filtroDesde, setFiltroDesde] = useState("");
@@ -585,6 +603,8 @@ export default function Cotizaciones() {
   const banco = "ACREDITAR A CUENTA MONETARIA BANRURAL";
   const cuenta = "0310 2300 3413 83 UNIFORMA GUATEMALA";
   const [validez, setValidez] = useState("COTIZACIÓN CON VALIDEZ DE 3 DÍAS.");
+
+  const isAdmin = rol === "ADMIN";
 
   const total = useMemo(
     () => items.reduce((sum, item) => sum + Number(item.cantidad || 0) * Number(item.precioUnitario || 0), 0),
@@ -613,7 +633,13 @@ export default function Cotizaciones() {
 
   const cargarDocumentos = async () => {
     try {
-      const resp = await api.get("/documentos", { params: { tipo: "cotizacion" } });
+      const params: any = { tipo: "cotizacion" };
+      if (!isAdmin && !userId) {
+        setDocumentos([]);
+        return;
+      }
+      if (typeof filtroUsuarioId === 'number') params.usuarioId = filtroUsuarioId;
+      const resp = await api.get("/documentos", { params });
       setDocumentos(resp.data || []);
     } catch {
       Swal.fire("Error", "No se pudieron cargar las cotizaciones generadas", "error");
@@ -621,8 +647,15 @@ export default function Cotizaciones() {
   };
 
   useEffect(() => {
+    if (isAdmin) {
+      api.get("/usuarios").then(resp => setUsuarios(resp.data || []));
+    }
+    setFiltroUsuarioId(isAdmin ? "" : userId ?? "");
+  }, [isAdmin, userId]);
+
+  useEffect(() => {
     void cargarDocumentos();
-  }, []);
+  }, [filtroUsuarioId]);
 
   useEffect(() => {
     if ((location.state as any)?.sidebarClickAt) {
@@ -645,23 +678,6 @@ export default function Cotizaciones() {
 
   const nuevaCotizacion = async () => {
     await resetForm();
-    setShowForm(true);
-  };
-
-  const abrirDocumento = (doc: DocumentoGenerado) => {
-    const data = doc.data || {};
-    setDocumentoId(doc.id);
-    setCotizacionNo(doc.correlativo);
-    setDirigidoA(data.dirigidoA || "");
-    setCliente(data.cliente || "");
-    setEntrega(data.entrega || "7 DÃAS HÃBILES UNA VEZ RECIBIDO EL ANTICIPO.");
-    setFecha(data.fecha || todayInput());
-    setEjecutivo(data.ejecutivo || nombre || usuario || "");
-    setCelular(data.celular || "");
-    setItems(Array.isArray(data.items) && data.items.length ? data.items : [createItem()]);
-    setNotasCalidad(data.notasCalidad || notasCalidad);
-    setCondicionesPago(data.condicionesPago || condicionesPago);
-    setValidez(data.validez || validez);
     setShowForm(true);
   };
 
@@ -804,6 +820,23 @@ export default function Cotizaciones() {
         <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 2 }}>
           <TextField label="Desde" type="date" size="small" value={filtroDesde} onChange={(e) => setFiltroDesde(e.target.value)} InputLabelProps={{ shrink: true }} />
           <TextField label="Hasta" type="date" size="small" value={filtroHasta} onChange={(e) => setFiltroHasta(e.target.value)} InputLabelProps={{ shrink: true }} />
+          {isAdmin && (
+            <FormControl size="small" sx={{ minWidth: 200 }}>
+              <InputLabel>Usuario</InputLabel>
+              <Select
+                label="Usuario"
+                value={filtroUsuarioId}
+                onChange={(e) => setFiltroUsuarioId(e.target.value as number | null | "")}
+              >
+                <MenuItem value="">Todos</MenuItem>
+                {usuarios.map((u) => (
+                  <MenuItem key={u.id} value={u.id}>
+                    {u.nombre || u.usuario}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
         </Stack>
         <TableContainer>
           <Table size="small">
@@ -822,12 +855,9 @@ export default function Cotizaciones() {
                   <TableCell>{doc.correlativo}</TableCell>
                   <TableCell>{doc.titulo || doc.data?.cliente || "Sin cliente"}</TableCell>
                   <TableCell>{doc.data?.fecha || new Date(doc.creadoEn).toLocaleDateString()}</TableCell>
-                  <TableCell>{doc.usuario?.nombre || doc.usuario?.usuario || "N/D"}</TableCell>
+                  <TableCell>{doc.usuario?.nombre || "Desconocido"}</TableCell>
                   <TableCell align="right">
                     <Stack direction="row" spacing={1} justifyContent="flex-end">
-                      <Button size="small" variant="outlined" onClick={() => abrirDocumento(doc)}>
-                        Abrir
-                      </Button>
                       <Button size="small" variant="contained" color="secondary" onClick={() => reimprimirDocumento(doc)}>
                         Reimprimir
                       </Button>

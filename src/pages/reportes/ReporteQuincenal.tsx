@@ -15,6 +15,9 @@ import {
   TableHead,
   TableRow,
   MenuItem,
+  FormControl,
+  InputLabel,
+  Select,
 } from "@mui/material";
 import PictureAsPdfOutlined from "@mui/icons-material/PictureAsPdfOutlined";
 import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
@@ -41,6 +44,12 @@ interface DocumentoGenerado {
   creadoEn: string;
   actualizadoEn: string;
   usuario?: { nombre?: string | null; usuario?: string | null };
+}
+
+interface Usuario {
+  id: number;
+  nombre: string;
+  usuario: string;
 }
 
 const monthNames = [
@@ -279,16 +288,18 @@ const buildReporteQuincenalHtml = ({
           Generado desde Uniforma el ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}.
         </div>
       </div>
-      <script>window.onload = function(){ window.print(); }</script>
+      <script>window.onload = function(){ window.print(); window.onafterprint = function(){ window.close(); } }</script>
     </body>
   </html>`;
 };
 
 export default function ReporteQuincenal() {
   const currentDate = new Date();
-  const { bodegaNombre, usuario, nombre, primerNombre, primerApellido } = useAuthStore();
+  const { bodegaNombre, usuario, nombre, primerNombre, primerApellido, rol, id: userId } = useAuthStore();
   const location = useLocation();
   const [documentos, setDocumentos] = useState<DocumentoGenerado[]>([]);
+  const [usuarios, setUsuarios] = useState<Usuario[]>([]);
+  const [filtroUsuarioId, setFiltroUsuarioId] = useState<number | null | "">("");
   const [documentoId, setDocumentoId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [filtroDesde, setFiltroDesde] = useState("");
@@ -305,6 +316,8 @@ export default function ReporteQuincenal() {
   const [reporteNo, setReporteNo] = useState("Pendiente");
   const [ventasPorDia, setVentasPorDia] = useState<Record<number, number>>({});
 
+  const isAdmin = rol === "ADMIN";
+
   const cargarSiguienteReporte = async () => {
     try {
       const resp = await api.get("/correlativos/usuario-operaciones/actual/reporteQuincenal");
@@ -316,7 +329,13 @@ export default function ReporteQuincenal() {
 
   const cargarDocumentos = async () => {
     try {
-      const resp = await api.get("/documentos", { params: { tipo: "reporteQuincenal" } });
+      const params: any = { tipo: "reporteQuincenal" };
+      if (!isAdmin && !userId) {
+        setDocumentos([]);
+        return;
+      }
+      if (typeof filtroUsuarioId === 'number') params.usuarioId = filtroUsuarioId;
+      const resp = await api.get("/documentos", { params });
       setDocumentos(resp.data || []);
     } catch {
       Swal.fire("Error", "No se pudieron cargar los reportes quincenales generados", "error");
@@ -324,8 +343,15 @@ export default function ReporteQuincenal() {
   };
 
   useEffect(() => {
+    if (isAdmin) {
+      api.get("/usuarios").then(resp => setUsuarios(resp.data || []));
+    }
+    setFiltroUsuarioId(isAdmin ? "" : userId ?? "");
+  }, [isAdmin, userId]);
+
+  useEffect(() => {
     void cargarDocumentos();
-  }, []);
+  }, [filtroUsuarioId]);
 
   useEffect(() => {
     if ((location.state as any)?.sidebarClickAt) {
@@ -357,18 +383,6 @@ export default function ReporteQuincenal() {
     setShowForm(true);
   };
 
-  const abrirDocumento = (doc: DocumentoGenerado) => {
-    const data = doc.data || {};
-    setDocumentoId(doc.id);
-    setReporteNo(doc.correlativo);
-    setMonth(Number(data.month || currentDate.getMonth() + 1));
-    setYear(Number(data.year || currentDate.getFullYear()));
-    setMetaMes(Number(data.metaMes || 130000));
-    setPromedioDiario(Number(data.promedioDiario || 9000));
-    setQuincena(data.quincena === "1" ? "1" : "2");
-    setVentasPorDia(data.ventasPorDia || {});
-    setShowForm(true);
-  };
 
   const getPayload = () => ({
     tienda,
@@ -498,6 +512,23 @@ export default function ReporteQuincenal() {
         <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 2 }}>
           <TextField label="Desde" type="date" size="small" value={filtroDesde} onChange={(e) => setFiltroDesde(e.target.value)} InputLabelProps={{ shrink: true }} />
           <TextField label="Hasta" type="date" size="small" value={filtroHasta} onChange={(e) => setFiltroHasta(e.target.value)} InputLabelProps={{ shrink: true }} />
+          {isAdmin && (
+            <FormControl size="small" sx={{ minWidth: 200 }}>
+              <InputLabel>Usuario</InputLabel>
+              <Select
+                label="Usuario"
+                value={filtroUsuarioId}
+                onChange={(e) => setFiltroUsuarioId(e.target.value as number | null | "")}
+              >
+                <MenuItem value="">Todos</MenuItem>
+                {usuarios.map((u) => (
+                  <MenuItem key={u.id} value={u.id}>
+                    {u.nombre || u.usuario}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
         </Stack>
         <TableContainer>
           <Table size="small">
@@ -519,9 +550,6 @@ export default function ReporteQuincenal() {
                   <TableCell>{doc.usuario?.nombre || doc.usuario?.usuario || "N/D"}</TableCell>
                   <TableCell align="right">
                     <Stack direction="row" spacing={1} justifyContent="flex-end">
-                      <Button size="small" variant="outlined" onClick={() => abrirDocumento(doc)}>
-                        Abrir
-                      </Button>
                       <Button size="small" variant="contained" color="secondary" onClick={() => reimprimirDocumento(doc)}>
                         Reimprimir
                       </Button>

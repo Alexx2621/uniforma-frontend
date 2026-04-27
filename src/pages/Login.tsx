@@ -55,6 +55,7 @@ export default function Login() {
         permisos: data.permisos || [],
         bodegaId: data.bodegaId ?? null,
         bodegaNombre: data.bodegaNombre ?? null,
+        id: data.id ?? null,
       });
 
       Swal.fire({
