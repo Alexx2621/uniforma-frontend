@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Box,
   Button,
   Card,
   CardContent,
   Chip,
   Divider,
   FormControl,
-  Grid,
   InputLabel,
   MenuItem,
   Paper,
@@ -21,6 +21,7 @@ import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../utils/fontFamily";
+import { useAuthStore } from "../auth/useAuthStore";
 
 interface Pago {
   monto: number;
@@ -38,6 +39,7 @@ interface PedidoPago {
   clienteNombre?: string | null;
   bodega?: { nombre?: string | null } | null;
   pagos?: Pago[];
+  vendedor: string;
 }
 
 type PagoForm = {
@@ -56,10 +58,15 @@ const metodoRequiereReferencia = (metodo: string) => metodo !== "efectivo";
 const getPagoAplicado = (pago: Pago) => Number(pago.monto || 0) + Number(pago.recargo || 0);
 
 export default function PagosPedidos() {
+  const { usuario, usuarioCorrelativo, rol } = useAuthStore();
+  const currentUser = `${usuario || ""}`.trim().toLowerCase();
+  const currentUserAlt = `${usuarioCorrelativo || ""}`.trim().toLowerCase();
+  const isAdmin = Boolean(rol?.toLowerCase().includes("admin"));
   const [pedidos, setPedidos] = useState<PedidoPago[]>([]);
   const [forms, setForms] = useState<Record<number, PagoForm>>({});
   const [filtroDesde, setFiltroDesde] = useState("");
   const [filtroHasta, setFiltroHasta] = useState("");
+  const [selectedVendedor, setSelectedVendedor] = useState("all");
   const [loading, setLoading] = useState(false);
 
   const cargar = async () => {
@@ -77,6 +84,7 @@ export default function PagosPedidos() {
               recargo: Number(pago?.recargo || 0),
             }))
           : [],
+        vendedor: `${pedido?.solicitadoPor || pedido?.vendedor || pedido?.usuario || (pedido?.usuario?.usuario ?? "") || "N/D"}`.trim(),
       }));
       setPedidos(data);
       setForms((current) => {
@@ -104,6 +112,20 @@ export default function PagosPedidos() {
     void cargar();
   }, []);
 
+  const vendedores = useMemo(
+    () => Array.from(new Set(pedidos.map((pedido) => pedido.vendedor).filter((value) => value))).sort((a, b) => a.localeCompare(b)),
+    [pedidos]
+  );
+
+  const matchesCurrentUser = useCallback(
+    (value?: string) => {
+      const normalized = `${value || ""}`.trim().toLowerCase();
+      if (!normalized) return false;
+      return [currentUser, currentUserAlt].some((key) => key && normalized.includes(key));
+    },
+    [currentUser, currentUserAlt]
+  );
+
   const pendientes = useMemo(
     () =>
       pedidos.filter((pedido) => {
@@ -114,9 +136,13 @@ export default function PagosPedidos() {
         if (Number(pedido.saldoPendiente || 0) <= 0) return false;
         if (filtroDesde && fecha < filtroDesde) return false;
         if (filtroHasta && fecha > filtroHasta) return false;
+        if (!isAdmin) {
+          return matchesCurrentUser(pedido.vendedor);
+        }
+        if (selectedVendedor !== "all" && pedido.vendedor !== selectedVendedor) return false;
         return true;
       }),
-    [pedidos, filtroDesde, filtroHasta]
+    [pedidos, filtroDesde, filtroHasta, isAdmin, selectedVendedor, matchesCurrentUser]
   );
 
   const updateForm = (pedidoId: number, patch: Partial<PagoForm>) => {
@@ -227,6 +253,24 @@ export default function PagosPedidos() {
       </Stack>
 
       <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 2 }}>
+        {isAdmin ? (
+          <FormControl size="small" sx={{ minWidth: 220 }}>
+            <InputLabel>Vendedor</InputLabel>
+            <Select
+              label="Vendedor"
+              value={selectedVendedor}
+              onChange={(e) => setSelectedVendedor(e.target.value)}
+            >
+              <MenuItem value="all">Todos</MenuItem>
+              {vendedores.map((vendedor) => (
+                <MenuItem key={vendedor} value={vendedor}>
+                  {vendedor}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        ) : null}
+
         <TextField
           label="Desde"
           type="date"
@@ -245,14 +289,14 @@ export default function PagosPedidos() {
         />
       </Stack>
 
-      <Grid container spacing={2}>
+      <Box display="grid" gap={2} gridTemplateColumns={{ xs: "1fr", md: "repeat(2, minmax(0, 1fr))", xl: "repeat(3, minmax(0, 1fr))" }}>
         {pendientes.map((pedido) => {
           const totalPagado = (pedido.pagos || []).reduce((sum, pago) => sum + getPagoAplicado(pago), 0);
           const form = forms[pedido.id] || { monto: pedido.saldoPendiente, metodo: "efectivo", porcentajeRecargo: 0, referencia: "" };
           const usaRecargo = metodoUsaRecargo(form.metodo);
           const requiereReferencia = metodoRequiereReferencia(form.metodo);
           return (
-            <Grid key={pedido.id} size={{ xs: 12, md: 6, xl: 4 }}>
+            <Box key={pedido.id}>
               <Card variant="outlined" sx={{ height: "100%" }}>
                 <CardContent>
                   <Stack spacing={1.5}>
@@ -262,6 +306,9 @@ export default function PagosPedidos() {
                     </Stack>
                     <Typography variant="body2" color="text.secondary">
                       {pedido.cliente?.nombre || pedido.clienteNombre || "Mostrador"} | {pedido.bodega?.nombre || "N/D"}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Vendedor: {pedido.vendedor || "-"}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
                       {pedido.fecha ? new Date(pedido.fecha).toLocaleString() : ""}
@@ -335,17 +382,17 @@ export default function PagosPedidos() {
                   </Stack>
                 </CardContent>
               </Card>
-            </Grid>
+            </Box>
           );
         })}
         {!pendientes.length && (
-          <Grid size={{ xs: 12 }}>
+          <Box sx={{ gridColumn: "1 / -1" }}>
             <Paper variant="outlined" sx={{ p: 4, textAlign: "center" }}>
               <Typography color="text.secondary">No hay pedidos pendientes de pago.</Typography>
             </Paper>
-          </Grid>
+          </Box>
         )}
-      </Grid>
+      </Box>
     </Paper>
   );
 }

@@ -15,6 +15,7 @@ export const routePermissionMap: Record<string, string> = {
   "/produccion": "produccion.view",
   "/produccion/nuevo": "produccion.manage",
   "/pagos/pedidos": "pagos.view",
+  "/pagos/recibidos": "pagos.view",
   "/cotizaciones": "cotizaciones.view",
   "/clientes": "clientes.view",
   "/usuarios": "usuarios.view",

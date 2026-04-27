@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import {
   Paper,
   Typography,
@@ -10,13 +10,18 @@ import {
   FormControl,
   InputLabel,
   Select,
+  Menu,
   MenuItem,
+  ListItemIcon,
 } from "@mui/material";
 import { DataGrid, GridColDef } from "@mui/x-data-grid";
 import AddIcon from "@mui/icons-material/Add";
 import MergeTypeOutlined from "@mui/icons-material/MergeTypeOutlined";
 import PlaylistAddCheckOutlined from "@mui/icons-material/PlaylistAddCheckOutlined";
 import BlockOutlined from "@mui/icons-material/BlockOutlined";
+import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
+import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
+import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import { useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
 import jsPDF from "jspdf";
@@ -25,6 +30,7 @@ import { io, Socket } from "socket.io-client";
 import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
+import TransactionRelationMap, { RelationEdge, RelationNode } from "../components/TransactionRelationMap";
 import uniformaLogo from "../assets/3-logos.png";
 
 interface ProductoCatalogo {
@@ -73,7 +79,13 @@ interface PedidoRow {
   displayFolio?: string;
   solicitadoPor?: string | null;
   detalle?: PedidoDetalle[];
+  pagos?: Array<{ id: number; total: number; fecha?: string }>;
+  avances?: Array<{ id: number; total: number; fecha?: string }>;
 }
+
+interface RelationNodeItem extends RelationNode {}
+
+interface RelationEdgeItem extends RelationEdge {}
 
 interface Bodega {
   id: number;
@@ -216,6 +228,110 @@ export default function Pedidos() {
   const canAccessAllBodegas = rol === "ADMIN" || crossStoreRoleIds.includes(Number(rolId));
   const canUnifyPedidos = rol === "ADMIN" || unifyOrderRoleIds.includes(Number(rolId));
 
+  const [relationModalOpen, setRelationModalOpen] = useState(false);
+  const [relationModalData, setRelationModalData] = useState<{ nodes: RelationNodeItem[]; edges: RelationEdgeItem[] } | null>(null);
+  const [contextMenuAnchor, setContextMenuAnchor] = useState<{ mouseX: number; mouseY: number } | null>(null);
+  const [contextMenuPedido, setContextMenuPedido] = useState<PedidoRow | null>(null);
+
+  const buildRelationData = (pedido: PedidoRow) => {
+    const rootNode: RelationNodeItem = {
+      id: `pedido-${pedido.id}`,
+      type: "pedido",
+      title: pedido.displayFolio || pedido.folio || `Pedido ${pedido.id}`,
+      subtitle: `Cliente: ${obtenerNombreCliente(pedido)}`,
+      amount: pedido.totalEstimado,
+      date: pedido.fecha,
+      sourceId: pedido.id,
+    };
+
+    const childNodes: RelationNodeItem[] = [];
+
+    (pedido.pagos || []).forEach((pago) => {
+      childNodes.push({
+        id: `pago-${pago.id}`,
+        type: "pago",
+        title: `Pago #${pago.id}`,
+        subtitle: pago.fecha || "Fecha no disponible",
+        amount: pago.total,
+        sourceId: pedido.id,
+      });
+    });
+
+    (pedido.avances || []).forEach((avance) => {
+      childNodes.push({
+        id: `avance-${avance.id}`,
+        type: "avance",
+        title: `Avance #${avance.id}`,
+        subtitle: avance.fecha || "Fecha no disponible",
+        amount: avance.total,
+        sourceId: pedido.id,
+      });
+    });
+
+    const edges: RelationEdgeItem[] = childNodes.map((node) => ({
+      from: rootNode.id,
+      to: node.id,
+      label: node.type === "pago" ? "Pago" : "Avance",
+    }));
+
+    return {
+      nodes: [rootNode, ...childNodes],
+      edges,
+    };
+  };
+
+  const openRelationModal = (pedido: PedidoRow) => {
+    setRelationModalData(buildRelationData(pedido));
+    setRelationModalOpen(true);
+  };
+
+  const closeRelationModal = () => {
+    setRelationModalOpen(false);
+    setRelationModalData(null);
+  };
+
+  const handleRelationNodeDoubleClick = (node: RelationNodeItem) => {
+    if (node.sourceId) {
+      navigate(`/produccion/${node.sourceId}`);
+    }
+  };
+
+  const handleGridContextMenu = (event: MouseEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement | null;
+    const rowElement = target?.closest("[data-id]") as HTMLElement | null;
+    const rowId = rowElement?.getAttribute("data-id");
+    if (!rowId) return;
+    const row = filtered.find((item) => String(item.id) === rowId);
+    if (!row) return;
+    event.preventDefault();
+    setContextMenuPedido(row);
+    setContextMenuAnchor({ mouseX: event.clientX - 2, mouseY: event.clientY - 4 });
+  };
+
+  const handleCloseContextMenu = () => {
+    setContextMenuAnchor(null);
+    setContextMenuPedido(null);
+  };
+
+  const handleContextMenuAction = (action: "relations" | "open" | "payments") => {
+    if (!contextMenuPedido) {
+      handleCloseContextMenu();
+      return;
+    }
+    switch (action) {
+      case "relations":
+        openRelationModal(contextMenuPedido);
+        break;
+      case "open":
+        navigate(`/produccion/${contextMenuPedido.id}`);
+        break;
+      case "payments":
+        navigate(`/pagos/recibidos?pedido=${contextMenuPedido.id}`);
+        break;
+    }
+    handleCloseContextMenu();
+  };
+
   const obtenerNombreCliente = (row: any) =>
     row?.clienteDisplay ||
     row?.clienteNombre ||
@@ -233,15 +349,6 @@ export default function Pedidos() {
     row?.bodega_name ||
     (typeof row?.bodega === "string" ? row?.bodega : undefined) ||
     "N/D";
-
-  const obtenerGenerosPedido = (row: PedidoRow) => {
-    const generos = (row.detalle || [])
-      .map((detalle) => detalle.producto?.genero || productosMap.get(Number(detalle.productoId))?.genero || "")
-      .map((genero) => `${genero || ""}`.trim())
-      .filter(Boolean);
-    const unicos = Array.from(new Set(generos));
-    return unicos.length ? unicos.join(", ") : "N/D";
-  };
 
   const normalizarTexto = (value?: string | null) => {
     const limpio = `${value || ""}`.trim();
@@ -822,13 +929,6 @@ export default function Pedidos() {
       renderCell: (p) => <span>{obtenerNombreBodega((p as any)?.row)}</span>,
     },
     {
-      field: "genero",
-      headerName: "Genero",
-      width: 150,
-      sortable: false,
-      renderCell: (p) => <span>{obtenerGenerosPedido((p as any)?.row)}</span>,
-    },
-    {
       field: "solicitadoPor",
       headerName: "Registrado por",
       width: 200,
@@ -969,7 +1069,7 @@ export default function Pedidos() {
         </Grid>
       </Grid>
 
-      <div style={{ height: 620, width: "100%" }}>
+      <div style={{ height: 620, width: "100%" }} onContextMenu={handleGridContextMenu}>
         <DataGrid
           rows={filtered}
           columns={columns}
@@ -978,6 +1078,43 @@ export default function Pedidos() {
           initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
         />
       </div>
+
+      <Menu
+        open={Boolean(contextMenuAnchor)}
+        onClose={handleCloseContextMenu}
+        anchorReference="anchorPosition"
+        anchorPosition={
+          contextMenuAnchor ? { top: contextMenuAnchor.mouseY, left: contextMenuAnchor.mouseX } : undefined
+        }
+      >
+        <MenuItem onClick={() => handleContextMenuAction("relations")}> 
+          <ListItemIcon>
+            <VisibilityOutlined fontSize="small" />
+          </ListItemIcon>
+          Ver relaciones
+        </MenuItem>
+        <MenuItem onClick={() => handleContextMenuAction("open")}> 
+          <ListItemIcon>
+            <OpenInNewOutlined fontSize="small" />
+          </ListItemIcon>
+          Abrir pedido
+        </MenuItem>
+        <MenuItem onClick={() => handleContextMenuAction("payments")}> 
+          <ListItemIcon>
+            <PaymentsOutlined fontSize="small" />
+          </ListItemIcon>
+          Ver pagos del pedido
+        </MenuItem>
+      </Menu>
+
+      <TransactionRelationMap
+        open={relationModalOpen}
+        title="Relaciones del pedido"
+        nodes={relationModalData?.nodes || []}
+        edges={relationModalData?.edges || []}
+        onClose={closeRelationModal}
+        onCardDoubleClick={handleRelationNodeDoubleClick}
+      />
     </Paper>
   );
 }

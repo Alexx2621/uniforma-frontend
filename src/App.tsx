@@ -26,6 +26,7 @@ import Pedidos from "./pages/Pedidos";
 import PedidoNuevo from "./pages/PedidoNuevo";
 import PedidoDetalle from "./pages/PedidoDetalle";
 import PagosPedidos from "./pages/PagosPedidos";
+import PagosRecibidos from "./pages/PagosRecibidos";
 import VentasDiarias from "./pages/reportes/VentasDiarias";
 import ReporteDiario from "./pages/reportes/ReporteDiario";
 import ReporteQuincenal from "./pages/reportes/ReporteQuincenal";
@@ -68,6 +69,7 @@ export default function App() {
           <Route path="/produccion/nuevo" element={<PedidoNuevo />} />
           <Route path="/produccion/:id" element={<PedidoDetalle />} />
           <Route path="/pagos/pedidos" element={<PagosPedidos />} />
+          <Route path="/pagos/recibidos" element={<PagosRecibidos />} />
           <Route path="/reportes/reporte-diario" element={<ReporteDiario />} />
           <Route path="/reportes/reporte-quincenal" element={<ReporteQuincenal />} />
           <Route path="/reportes/ventas-diarias" element={<VentasDiarias />} />

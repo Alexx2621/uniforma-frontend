@@ -21,6 +21,7 @@ import AdminPanelSettingsOutlined from "@mui/icons-material/AdminPanelSettingsOu
 import SummarizeOutlined from "@mui/icons-material/SummarizeOutlined";
 import RequestQuoteOutlined from "@mui/icons-material/RequestQuoteOutlined";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
+import PaidOutlined from "@mui/icons-material/PaidOutlined";
 
 export interface MenuItem {
   label: string;
@@ -83,7 +84,10 @@ export const menuSections: MenuSection[] = [
   },
   {
     title: "PAGOS",
-    items: [{ label: "Pagos pedidos", icon: <ReceiptLongOutlined />, path: "/pagos/pedidos" }],
+    items: [
+      { label: "Pagos pedidos", icon: <ReceiptLongOutlined />, path: "/pagos/pedidos" },
+      { label: "Pagos recibidos", icon: <PaidOutlined />, path: "/pagos/recibidos" },
+    ],
   },
   {
     title: "GESTION",

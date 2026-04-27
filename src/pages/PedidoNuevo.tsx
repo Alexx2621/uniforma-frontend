@@ -941,10 +941,11 @@ export default function PedidoNuevo() {
       const resp = await api.post("/produccion", payload);
       Swal.fire("Guardado", "Pedido creado", "success");
       const folioPedido = resp.data?.folio || (resp.data?.id ? `P-${resp.data.id}` : "PEND");
-      generarPdfPedidoProduccion(folioPedido, clienteParaPedido);
+      const fechaPedido = resp.data?.fecha ? new Date(resp.data.fecha) : new Date();
+      generarPdfPedidoProduccion(folioPedido, clienteParaPedido, fechaPedido);
       // Pequeño retraso para que el navegador no bloquee la segunda ventana
       setTimeout(() => {
-        generarPdfReciboPedido(folioPedido, clienteParaPedido);
+        generarPdfReciboPedido(folioPedido, clienteParaPedido, fechaPedido);
         // Navegar después de que ambos PDFs se hayan abierto
         setTimeout(() => {
           navigate("/produccion");
@@ -956,13 +957,13 @@ export default function PedidoNuevo() {
     }
   };
 
-  const generarPdfReciboPedido = (id: number | string, clienteSnapshot?: ClientePedido) => {
+  const generarPdfReciboPedido = (id: number | string, clienteSnapshot?: ClientePedido, fechaPedido?: Date | string) => {
     const win = window.open("", "_blank");
     if (!win) {
       Swal.fire("Aviso", "Habilita las ventanas emergentes para ver el PDF", "info");
       return;
     }
-    const fecha = new Date();
+    const fecha = fechaPedido ? new Date(fechaPedido) : new Date();
     const clienteNombrePdf =
       clienteSnapshot?.nombre ||
       clienteNombre.trim() ||
@@ -1094,13 +1095,13 @@ export default function PedidoNuevo() {
     win.document.close();
   };
 
-  const generarPdfPedidoProduccion = (id: number | string, clienteSnapshot?: ClientePedido) => {
+  const generarPdfPedidoProduccion = (id: number | string, clienteSnapshot?: ClientePedido, fechaPedido?: Date | string) => {
     const win = window.open("", "_blank");
     if (!win) {
       Swal.fire("Aviso", "Habilita las ventanas emergentes para ver el PDF", "info");
       return;
     }
-    const fecha = new Date();
+    const fecha = fechaPedido ? new Date(fechaPedido) : new Date();
     const clienteNombrePdf =
       clienteSnapshot?.nombre ||
       clienteNombre.trim() ||
