@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import {
   Paper,
@@ -327,7 +327,7 @@ export default function ReporteQuincenal() {
     }
   };
 
-  const cargarDocumentos = async () => {
+  const cargarDocumentos = useCallback(async () => {
     try {
       const params: any = { tipo: "reporteQuincenal" };
       if (!isAdmin && !userId) {
@@ -340,7 +340,7 @@ export default function ReporteQuincenal() {
     } catch {
       Swal.fire("Error", "No se pudieron cargar los reportes quincenales generados", "error");
     }
-  };
+  }, [filtroUsuarioId, isAdmin, userId]);
 
   useEffect(() => {
     if (isAdmin) {
@@ -351,14 +351,14 @@ export default function ReporteQuincenal() {
 
   useEffect(() => {
     void cargarDocumentos();
-  }, [filtroUsuarioId]);
+  }, [cargarDocumentos]);
 
   useEffect(() => {
     if ((location.state as any)?.sidebarClickAt) {
       setShowForm(false);
       void cargarDocumentos();
     }
-  }, [location.state]);
+  }, [location.state, cargarDocumentos]);
 
   const documentosFiltrados = useMemo(
     () =>

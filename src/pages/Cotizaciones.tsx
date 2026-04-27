@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import {
   Paper,
@@ -631,7 +631,7 @@ export default function Cotizaciones() {
     }
   };
 
-  const cargarDocumentos = async () => {
+  const cargarDocumentos = useCallback(async () => {
     try {
       const params: any = { tipo: "cotizacion" };
       if (!isAdmin && !userId) {
@@ -644,7 +644,7 @@ export default function Cotizaciones() {
     } catch {
       Swal.fire("Error", "No se pudieron cargar las cotizaciones generadas", "error");
     }
-  };
+  }, [filtroUsuarioId, isAdmin, userId]);
 
   useEffect(() => {
     if (isAdmin) {
@@ -655,14 +655,14 @@ export default function Cotizaciones() {
 
   useEffect(() => {
     void cargarDocumentos();
-  }, [filtroUsuarioId]);
+  }, [cargarDocumentos]);
 
   useEffect(() => {
     if ((location.state as any)?.sidebarClickAt) {
       setShowForm(false);
       void cargarDocumentos();
     }
-  }, [location.state]);
+  }, [location.state, cargarDocumentos]);
 
   const resetForm = async () => {
     setDocumentoId(null);

@@ -307,6 +307,7 @@ export default function PagosPedidos() {
                           <MenuItem value="tarjeta">Tarjeta</MenuItem>
                           <MenuItem value="visalink">Visalink</MenuItem>
                           <MenuItem value="transferencia">Transferencia</MenuItem>
+                          <MenuItem value="deposito_bancario">Deposito bancario</MenuItem>
                         </Select>
                       </FormControl>
                     </Stack>

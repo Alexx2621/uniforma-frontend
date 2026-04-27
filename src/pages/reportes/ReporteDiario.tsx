@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import {
   Paper,
@@ -781,7 +781,7 @@ export default function ReporteDiario() {
     }
   };
 
-  const cargarDocumentos = async () => {
+  const cargarDocumentos = useCallback(async () => {
     try {
       const params: any = { tipo: "reporteDiario" };
       if (!isAdmin && !userId) {
@@ -794,7 +794,7 @@ export default function ReporteDiario() {
     } catch {
       Swal.fire("Error", "No se pudieron cargar los reportes diarios generados", "error");
     }
-  };
+  }, [filtroUsuarioId, isAdmin, userId]);
 
   const cargar = async () => {
     try {
@@ -817,14 +817,14 @@ export default function ReporteDiario() {
 
   useEffect(() => {
     void cargarDocumentos();
-  }, [filtroUsuarioId]);
+  }, [cargarDocumentos]);
 
   useEffect(() => {
     if ((location.state as any)?.sidebarClickAt) {
       setShowForm(false);
       void cargarDocumentos();
     }
-  }, [location.state]);
+  }, [location.state, cargarDocumentos]);
 
   const documentosFiltrados = useMemo(
     () =>

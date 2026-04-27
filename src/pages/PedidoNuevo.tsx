@@ -355,6 +355,7 @@ export default function PedidoNuevo() {
   const canAccessAllBodegas = rol === "ADMIN" || crossStoreRoleIds.includes(Number(rolId));
   const metodoUsaRecargo = metodoPago === "tarjeta" || metodoPago === "visalink";
   const metodoRequiereReferencia = metodoPago !== "efectivo";
+  const metodoPermiteSinAnticipo = metodoPago === "orden_compra";
   const clienteSeleccionado = clientes.find((c) => c.id === clienteId) || null;
 
   const cargarCatalogos = async () => {
@@ -445,9 +446,13 @@ export default function PedidoNuevo() {
   }, [detalle, anticipo, metodoUsaRecargo, porcentajeRecargo]);
 
   useEffect(() => {
+    if (metodoPermiteSinAnticipo) {
+      setAnticipo(0);
+      return;
+    }
     const anticipoCalculado = detalle.length ? Number((totals.total * 0.5).toFixed(2)) : 0;
     setAnticipo(anticipoCalculado);
-  }, [detalle, totals.total]);
+  }, [detalle, totals.total, metodoPermiteSinAnticipo]);
 
   const obtenerTela = (prod?: Producto) => {
     return resolveTelaNombre(prod, telas);
@@ -886,7 +891,7 @@ export default function PedidoNuevo() {
       Swal.fire("Validacion", "Selecciona una bodega", "warning");
       return;
     }
-    if ((Number(anticipo) || 0) <= 0) {
+    if (!metodoPermiteSinAnticipo && (Number(anticipo) || 0) <= 0) {
       Swal.fire("Validacion", "Ingresa un anticipo mayor a 0", "warning");
       return;
     }
@@ -1605,6 +1610,10 @@ export default function PedidoNuevo() {
               onChange={(e) => {
                 const nextMetodo = e.target.value;
                 setMetodoPago(nextMetodo);
+                if (nextMetodo === "orden_compra") setAnticipo(0);
+                if (metodoPago === "orden_compra" && nextMetodo !== "orden_compra" && totals.total > 0) {
+                  setAnticipo(Number((totals.total * 0.5).toFixed(2)));
+                }
                 if (nextMetodo === "efectivo") setReferenciaPago("");
                 if (nextMetodo !== "tarjeta" && nextMetodo !== "visalink") setPorcentajeRecargo(0);
               }}
@@ -1613,6 +1622,8 @@ export default function PedidoNuevo() {
               <MenuItem value="tarjeta">Tarjeta</MenuItem>
               <MenuItem value="visalink">Visalink</MenuItem>
               <MenuItem value="transferencia">Transferencia</MenuItem>
+              <MenuItem value="deposito_bancario">Deposito bancario</MenuItem>
+              <MenuItem value="orden_compra">Orden de compra</MenuItem>
             </Select>
           </FormControl>
         </Grid>
