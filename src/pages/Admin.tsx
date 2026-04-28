@@ -39,6 +39,18 @@ interface NotifConfig {
   unifyOrderRoleIds: number[];
   emailEnabled: boolean;
   whatsappEnabled: boolean;
+  smtpHost: string;
+  smtpPort: number;
+  smtpUser: string;
+  smtpPass: string;
+  smtpFrom: string;
+  resendEnabled: boolean;
+  resendFrom: string;
+  resendTemplateId: string;
+  reportesConfig?: unknown;
+  dailyReportEnabled: boolean;
+  dailyReportEmailTo: string;
+  dailyReportSubject: string;
   productMassConfig?: unknown;
 }
 
@@ -273,6 +285,17 @@ export default function Admin() {
     unifyOrderRoleIds: [],
     emailEnabled: false,
     whatsappEnabled: false,
+    smtpHost: "smtp.gmail.com",
+    smtpPort: 587,
+    smtpUser: "",
+    smtpPass: "",
+    smtpFrom: "noreply@uniforma.com",
+    resendEnabled: false,
+    resendFrom: "noreply@uniforma.com",
+    resendTemplateId: "",
+    dailyReportEnabled: false,
+    dailyReportEmailTo: "",
+    dailyReportSubject: "Reporte diario {fecha}",
   });
   const [savedPedidoAlertRoleIds, setSavedPedidoAlertRoleIds] = useState<number[]>([]);
   const [savedCrossStoreRoleIds, setSavedCrossStoreRoleIds] = useState<number[]>([]);
@@ -281,9 +304,12 @@ export default function Admin() {
   const [usuarios, setUsuarios] = useState<UsuarioModulo[]>([]);
   const [roles, setRoles] = useState<RolOption[]>([]);
   const [disabledPathsDraft, setDisabledPathsDraft] = useState<string[]>([]);
+  const [smtpPassDraft, setSmtpPassDraft] = useState('');
+  const [resendApiKeyDraft, setResendApiKeyDraft] = useState('');
   const [userDisabledPathsDraft, setUserDisabledPathsDraft] = useState<Record<string, string[]>>({});
   const [selectedUsuario, setSelectedUsuario] = useState("");
   const [selectedUserDisabledPathsDraft, setSelectedUserDisabledPathsDraft] = useState<string[]>([]);
+  const [mensajeActualizacion, setMensajeActualizacion] = useState("");
   const [productMassConfigDraft, setProductMassConfigDraft] = useState<ProductMassConfigDraft>(
     createEmptyMassConfigDraft()
   );
@@ -332,6 +358,21 @@ export default function Admin() {
         canManageAdmin ? api.get("/roles").catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
       ]);
       const data = respConfig.data || {};
+      const reportesConfig = data.reportesConfig || {
+        reportes: [
+          {
+            tipo: 'reporteDiario',
+            enabled: false,
+            emailTo: '',
+            subject: 'Reporte diario {fecha}',
+            triggerOn: ['create'],
+          },
+        ],
+      };
+      const reporteDiario = Array.isArray(reportesConfig.reportes)
+        ? reportesConfig.reportes.find((item: any) => item?.tipo === 'reporteDiario')
+        : undefined;
+
       setConfig({
         emailTo: data.emailTo || "",
         whatsappTo: data.whatsappTo || "",
@@ -342,8 +383,22 @@ export default function Admin() {
         unifyOrderRoleIds: normalizeRoleIds(data.unifyOrderRoleIds),
         emailEnabled: Boolean(data.emailTo),
         whatsappEnabled: Boolean(data.whatsappTo),
+        smtpHost: data.smtpHost || 'smtp.gmail.com',
+        smtpPort: Number(data.smtpPort) || 587,
+        smtpUser: data.smtpUser || '',
+        smtpPass: '',
+        smtpFrom: data.smtpFrom || 'noreply@uniforma.com',
+        resendEnabled: Boolean(data.resendEnabled),
+        resendFrom: data.resendFrom || 'noreply@uniforma.com',
+        resendTemplateId: data.resendTemplateId || '',
+        reportesConfig,
+        dailyReportEnabled: Boolean(reporteDiario?.enabled),
+        dailyReportEmailTo: reporteDiario?.emailTo || '',
+        dailyReportSubject: reporteDiario?.subject || 'Reporte diario {fecha}',
         productMassConfig: data.productMassConfig,
       });
+      setSmtpPassDraft('');
+      setResendApiKeyDraft('');
       setSavedPedidoAlertRoleIds(normalizeRoleIds(data.pedidoAlertRoleIds));
       setSavedCrossStoreRoleIds(normalizeRoleIds(data.crossStoreRoleIds));
       setSavedUnifyOrderRoleIds(normalizeRoleIds(data.unifyOrderRoleIds));
@@ -424,6 +479,26 @@ export default function Admin() {
         pedidoAlertRoleIds: config.pedidoAlertRoleIds,
         crossStoreRoleIds: config.crossStoreRoleIds,
         unifyOrderRoleIds: config.unifyOrderRoleIds,
+        smtpHost: config.smtpHost,
+        smtpPort: config.smtpPort,
+        smtpUser: config.smtpUser,
+        smtpPass: smtpPassDraft || undefined,
+        smtpFrom: config.smtpFrom,
+        resendEnabled: config.resendEnabled,
+        resendFrom: config.resendFrom,
+        resendTemplateId: config.resendTemplateId,
+        ...(resendApiKeyDraft ? { resendApiKey: resendApiKeyDraft } : {}),
+        reportesConfig: {
+          reportes: [
+            {
+              tipo: 'reporteDiario',
+              enabled: config.dailyReportEnabled,
+              emailTo: config.dailyReportEmailTo,
+              subject: config.dailyReportSubject,
+              triggerOn: ['create'],
+            },
+          ],
+        },
       });
       Swal.fire("Guardado", "Preferencias de notificacion actualizadas", "success");
     } catch {
@@ -552,6 +627,41 @@ export default function Admin() {
       );
     } catch {
       Swal.fire("Error", "No se pudo guardar la configuracion por usuario", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const enviarMensajeActualizacion = async () => {
+    const mensaje = mensajeActualizacion.trim();
+    if (!mensaje) {
+      Swal.fire("Validacion", "Escribe el mensaje de actualizacion", "info");
+      return;
+    }
+
+    const result = await Swal.fire({
+      title: "Enviar mensaje y cerrar sesiones",
+      text: "Todos los usuarios recibiran la notificacion y sus sesiones activas se cerraran.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Enviar y cerrar sesiones",
+      cancelButtonText: "Cancelar",
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      setLoading(true);
+      const { data } = await api.post("/alertas/mensaje-actualizacion", { mensaje });
+      setMensajeActualizacion("");
+      Swal.fire(
+        "Mensaje enviado",
+        `Notificaciones creadas: ${data?.creadas ?? 0}. Las sesiones activas fueron notificadas para cerrar.`,
+        "success",
+      );
+    } catch (error: any) {
+      const msg = error?.response?.data?.message || "No se pudo enviar el mensaje de actualizacion";
+      Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
     } finally {
       setLoading(false);
     }
@@ -998,6 +1108,178 @@ export default function Admin() {
           </>
         )}
       </Stack>
+
+      {canManageAdmin && (
+        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+          <Stack spacing={1.5}>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <NotificationsActiveOutlined color="primary" />
+              <Typography variant="h6">Mensaje por actualizacion</Typography>
+            </Stack>
+            <Typography variant="body2" color="text.secondary">
+              Envia un aviso a todos los usuarios activos, crea una notificacion interna para cada uno y cierra sus sesiones abiertas para aplicar cambios recientes.
+            </Typography>
+            <TextField
+              label="Mensaje para los usuarios"
+              value={mensajeActualizacion}
+              onChange={(e) => setMensajeActualizacion(e.target.value)}
+              multiline
+              minRows={3}
+              fullWidth
+              placeholder="Ej. Se aplico una actualizacion. Inicia sesion nuevamente para cargar la nueva version del sistema."
+            />
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1} justifyContent="flex-end">
+              <Button
+                variant="contained"
+                color="warning"
+                onClick={enviarMensajeActualizacion}
+                disabled={loading || !mensajeActualizacion.trim()}
+              >
+                Enviar mensaje y cerrar sesiones
+              </Button>
+            </Stack>
+          </Stack>
+        </Paper>
+      )}
+
+      {canManageAdmin && (
+        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+          <Stack spacing={1.5}>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <NotificationsActiveOutlined color="primary" />
+              <Typography variant="h6">Reportes automáticos</Typography>
+            </Stack>
+            <Typography variant="body2" color="text.secondary">
+              Configura el envío de reporte diario cuando todas las tiendas completen su reporte y los parámetros SMTP.
+            </Typography>
+            <Grid container spacing={2}>
+              <Grid size={{ xs: 12, md: 3 }}>
+                <TextField
+                  label="SMTP Host"
+                  fullWidth
+                  value={config.smtpHost}
+                  onChange={(e) => setConfig((prev) => ({ ...prev, smtpHost: e.target.value }))}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 3 }}>
+                <TextField
+                  label="SMTP Port"
+                  type="number"
+                  fullWidth
+                  value={config.smtpPort}
+                  onChange={(e) => setConfig((prev) => ({ ...prev, smtpPort: Number(e.target.value) || 0 }))}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 3 }}>
+                <TextField
+                  label="SMTP User"
+                  fullWidth
+                  value={config.smtpUser}
+                  onChange={(e) => setConfig((prev) => ({ ...prev, smtpUser: e.target.value }))}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 3 }}>
+                <TextField
+                  label="SMTP Pass"
+                  type="password"
+                  fullWidth
+                  value={config.smtpPass}
+                  onChange={(e) => setConfig((prev) => ({ ...prev, smtpPass: e.target.value }))}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <TextField
+                  label="Correo desde"
+                  fullWidth
+                  value={config.smtpFrom}
+                  onChange={(e) => setConfig((prev) => ({ ...prev, smtpFrom: e.target.value }))}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 3 }}>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={config.resendEnabled}
+                      onChange={(e) => setConfig((prev) => ({ ...prev, resendEnabled: e.target.checked }))}
+                    />
+                  }
+                  label="Usar Resend para envíos de correo"
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 3 }}>
+                <TextField
+                  label="Resend API Key"
+                  type="password"
+                  fullWidth
+                  value={resendApiKeyDraft}
+                  onChange={(e) => setResendApiKeyDraft(e.target.value)}
+                  helperText="Dejar vacío para mantener la clave actual"
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <TextField
+                  label="Correo desde Resend"
+                  fullWidth
+                  value={config.resendFrom}
+                  onChange={(e) => setConfig((prev) => ({ ...prev, resendFrom: e.target.value }))}
+                  helperText="Opcional: si no se especifica, se usa el remitente SMTP"
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <TextField
+                  label="Template Resend (opcional)"
+                  fullWidth
+                  value={config.resendTemplateId}
+                  onChange={(e) => setConfig((prev) => ({ ...prev, resendTemplateId: e.target.value }))}
+                  helperText="ID de plantilla Resend para envíos con template"
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <TextField
+                  label="Correo desde"
+                  fullWidth
+                  value={config.smtpFrom}
+                  onChange={(e) => setConfig((prev) => ({ ...prev, smtpFrom: e.target.value }))}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={config.dailyReportEnabled}
+                      onChange={(e) => setConfig((prev) => ({ ...prev, dailyReportEnabled: e.target.checked }))}
+                    />
+                  }
+                  label="Enviar reporte diario al completarse"
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <TextField
+                  label="Correo destino reporte diario"
+                  fullWidth
+                  value={config.dailyReportEmailTo}
+                  onChange={(e) => setConfig((prev) => ({ ...prev, dailyReportEmailTo: e.target.value }))}
+                  helperText="Separar varios correos con comas"
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <TextField
+                  label="Asunto del correo"
+                  fullWidth
+                  value={config.dailyReportSubject}
+                  onChange={(e) => setConfig((prev) => ({ ...prev, dailyReportSubject: e.target.value }))}
+                  helperText="Usa {fecha} para incluir la fecha del reporte"
+                />
+              </Grid>
+            </Grid>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="flex-end">
+              <Button variant="contained" onClick={guardar} disabled={loading}>
+                Guardar configuración de reportes
+              </Button>
+            </Stack>
+          </Stack>
+        </Paper>
+      )}
 
       {canManageAdmin && (
         <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>

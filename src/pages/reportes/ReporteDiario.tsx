@@ -954,7 +954,24 @@ export default function ReporteDiario() {
     return doc;
   };
 
+  const descargarDocumentoPdf = async (doc: DocumentoGenerado) => {
+    const resp = await api.get(`/documentos/${doc.id}/pdf`, {
+      responseType: "blob",
+    });
+    const url = window.URL.createObjectURL(new Blob([resp.data], { type: "application/pdf" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `Reporte diario ${doc.data?.fecha || fecha}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  };
+
   const reimprimirDocumento = (doc: DocumentoGenerado) => {
+    void descargarDocumentoPdf(doc).catch(() => {
+      Swal.fire("Error", "No se pudo descargar el PDF del reporte diario", "error");
+    });
     const win = window.open("", "_blank");
     if (!win) {
       Swal.fire("Aviso", "Habilita ventanas emergentes para imprimir o guardar en PDF", "info");
@@ -1009,41 +1026,18 @@ export default function ReporteDiario() {
   };
 
   const imprimir = async () => {
-    const win = window.open("", "_blank");
-    if (!win) {
-      Swal.fire("Aviso", "Habilita ventanas emergentes para imprimir o guardar en PDF", "info");
-      return;
-    }
-
-    let correlativo = liquidacionNo;
+    let docGenerado: DocumentoGenerado;
     try {
-      const doc = await guardarDocumento();
-      correlativo = doc.correlativo || liquidacionNo;
-      setLiquidacionNo(correlativo);
+      docGenerado = await guardarDocumento();
+      setLiquidacionNo(docGenerado.correlativo || liquidacionNo);
+      await descargarDocumentoPdf(docGenerado);
     } catch (error: any) {
-      win.close();
-      const msg = error?.response?.data?.message || "No se pudo guardar el reporte diario";
+      const msg = error?.response?.data?.message || "No se pudo generar o descargar el reporte diario";
       Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
       return;
     }
 
-    const generadoPor = getGeneradoPor();
-
-    const html = buildReporteDiarioHtml({
-      fecha,
-      liquidacionNo: correlativo,
-      generadoPor,
-      capitalRows,
-      departamentoRows,
-      tiendaRows,
-      subtotalCapital,
-      subtotalDepartamento,
-      subtotalTienda,
-      totalResumen,
-    });
-
-    win.document.write(html);
-    win.document.close();
+    Swal.fire("Listo", "El PDF del cierre diario se descargo automaticamente.", "success");
     void cargarDocumentos();
   };
 

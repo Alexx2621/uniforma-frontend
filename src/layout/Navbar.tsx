@@ -21,6 +21,7 @@ import LogoutIcon from "@mui/icons-material/Logout";
 import SettingsIcon from "@mui/icons-material/Settings";
 import NotificationsOutlinedIcon from "@mui/icons-material/NotificationsOutlined";
 import { io, Socket } from "socket.io-client";
+import Swal from "sweetalert2";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useNavigate } from "react-router-dom";
 import uniformaLogo from "../assets/uniforma-logo.png";
@@ -193,17 +194,32 @@ export default function Navbar() {
     const refrescarAlertas = () => {
       void cargarAlertas();
     };
+    const manejarActualizacionSistema = (payload: { titulo?: string; mensaje?: string }) => {
+      void Swal.fire({
+        title: payload?.titulo || "Actualizacion del sistema",
+        text: payload?.mensaje || "Se aplico una actualizacion. Inicia sesion nuevamente.",
+        icon: "info",
+        confirmButtonText: "Entendido",
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+      }).then(() => {
+        logout();
+        window.location.href = "/login";
+      });
+    };
 
     socket.on("connect", refrescarAlertas);
     socket.on("alertas:actualizadas", refrescarAlertas);
+    socket.on("sistema:actualizacion", manejarActualizacionSistema);
 
     return () => {
       socket.off("connect", refrescarAlertas);
       socket.off("alertas:actualizadas", refrescarAlertas);
+      socket.off("sistema:actualizacion", manejarActualizacionSistema);
       socket.disconnect();
       alertasSocketRef.current = null;
     };
-  }, []);
+  }, [logout]);
 
   useEffect(() => {
     const unreadCount = alertas.filter((alerta) => !alerta.leida).length;
