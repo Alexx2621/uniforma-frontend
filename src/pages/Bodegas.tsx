@@ -170,7 +170,7 @@ export default function Bodegas() {
       </Stack>
 
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-        Listado de bodegas registradas.
+        Listado de bodegas registradas en el sistema.
       </Typography>
 
       <TableContainer>
