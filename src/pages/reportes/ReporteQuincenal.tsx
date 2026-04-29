@@ -23,6 +23,7 @@ import PictureAsPdfOutlined from "@mui/icons-material/PictureAsPdfOutlined";
 import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
+import PlaylistAddCheckOutlined from "@mui/icons-material/PlaylistAddCheckOutlined";
 import Swal from "sweetalert2";
 import { api } from "../../api/axios";
 import { useAuthStore } from "../../auth/useAuthStore";
@@ -89,6 +90,45 @@ const getRows = (year: number, month: number, quincena: "1" | "2"): QuincenaRow[
       };
     })
     .filter((row) => row.weekday !== "DOMINGO");
+};
+
+const toDateKey = (year: number, month: number, day: number) =>
+  `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+
+const asArray = (value: unknown): any[] => (Array.isArray(value) ? value : []);
+
+const getTiendaRowTotal = (row: any) =>
+  Number(row?.total || 0) ||
+  Number(row?.transferencia || 0) + Number(row?.tarjeta || 0) + Number(row?.efectivo || 0);
+
+const metodoCuentaComoTarjeta = (metodo?: string | null) => {
+  const normalized = `${metodo || ""}`.trim().toLowerCase();
+  return normalized === "tarjeta" || normalized === "visalink";
+};
+
+const getReporteDiarioTotal = (data: any) => {
+  const capital = asArray(data?.capitalRows).reduce(
+    (sum, row) =>
+      sum + Number(row?.transferencia || 0) + Number(row?.deposito || 0) + Number(row?.efectivo || 0),
+    0
+  );
+  const departamento = asArray(data?.departamentoRows).reduce(
+    (sum, row) => sum + Number(row?.transferencia || 0) + Number(row?.deposito || 0),
+    0
+  );
+  const ventasSnapshotRows = asArray(data?.ventasSnapshot).map((venta) => {
+    const total = Number(venta?.total || 0);
+    const metodo = `${venta?.metodoPago || ""}`.trim().toLowerCase();
+    return {
+      transferencia: metodo === "transferencia" ? total : 0,
+      tarjeta: metodoCuentaComoTarjeta(metodo) ? total : 0,
+      efectivo: metodo === "efectivo" ? total : 0,
+      total,
+    };
+  });
+  const tiendaRows = [...ventasSnapshotRows, ...asArray(data?.tiendaManualRows)];
+  const tienda = tiendaRows.reduce((sum, row) => sum + getTiendaRowTotal(row), 0);
+  return capital + departamento + tienda;
 };
 
 const buildReporteQuincenalHtml = ({
@@ -315,6 +355,7 @@ export default function ReporteQuincenal() {
   const [quincena, setQuincena] = useState<"1" | "2">("2");
   const [reporteNo, setReporteNo] = useState("Pendiente");
   const [ventasPorDia, setVentasPorDia] = useState<Record<number, number>>({});
+  const [rellenando, setRellenando] = useState(false);
 
   const isAdmin = rol === "ADMIN";
 
@@ -429,6 +470,45 @@ export default function ReporteQuincenal() {
 
   const limpiarCapturas = () => {
     setVentasPorDia({});
+  };
+
+  const rellenarDesdeReportesDiarios = async () => {
+    if (rellenando) return;
+    try {
+      setRellenando(true);
+      const quincenaRows = getRows(year, month, quincena);
+      const fechasQuincena = new Set(quincenaRows.map((row) => toDateKey(year, month, row.day)));
+      const params: any = { tipo: "reporteDiario" };
+      if (userId) params.usuarioId = userId;
+      const resp = await api.get("/documentos", { params });
+      const reportesDiarios = Array.isArray(resp.data) ? resp.data : [];
+      const ventasEncontradas: Record<number, number> = {};
+
+      for (const doc of reportesDiarios) {
+        const fechaReporte = `${doc?.data?.fecha || ""}`.slice(0, 10);
+        if (!fechasQuincena.has(fechaReporte)) continue;
+        const day = Number(fechaReporte.slice(8, 10));
+        if (!Number.isInteger(day) || ventasEncontradas[day] !== undefined) continue;
+        ventasEncontradas[day] = getReporteDiarioTotal(doc.data || {});
+      }
+
+      if (!Object.keys(ventasEncontradas).length) {
+        Swal.fire("Sin datos", "No se encontraron reportes diarios para esta quincena.", "info");
+        return;
+      }
+
+      setVentasPorDia((prev) => ({ ...prev, ...ventasEncontradas }));
+      Swal.fire(
+        "Listo",
+        `Se rellenaron ${Object.keys(ventasEncontradas).length} dia(s) con reportes diarios generados.`,
+        "success"
+      );
+    } catch (error: any) {
+      const msg = error?.response?.data?.message || "No se pudieron consultar los reportes diarios";
+      Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
+    } finally {
+      setRellenando(false);
+    }
   };
 
   const reimprimirDocumento = (doc: DocumentoGenerado) => {
@@ -578,6 +658,15 @@ export default function ReporteQuincenal() {
         <Stack direction="row" spacing={1}>
           <Button startIcon={<ArrowBackOutlined />} variant="outlined" size="small" onClick={() => { setShowForm(false); void cargarDocumentos(); }}>
             Volver
+          </Button>
+          <Button
+            startIcon={<PlaylistAddCheckOutlined />}
+            variant="outlined"
+            size="small"
+            onClick={rellenarDesdeReportesDiarios}
+            disabled={rellenando}
+          >
+            {rellenando ? "Rellenando..." : "Rellenar"}
           </Button>
           <Button startIcon={<CleaningServicesOutlined />} variant="outlined" size="small" onClick={limpiarCapturas}>
             Limpiar capturas
