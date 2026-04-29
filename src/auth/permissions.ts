@@ -2,6 +2,8 @@ export const routePermissionMap: Record<string, string> = {
   "/": "dashboard.view",
   "/ventas": "ventas.view",
   "/ventas/nueva": "ventas.manage",
+  "/cambios": "postventa.view",
+  "/devoluciones": "postventa.view",
   "/productos": "productos.view",
   "/productos/nuevo": "productos.manage",
   "/catalogos/categorias": "productos.manage",
@@ -36,6 +38,8 @@ export const routePermissionMap: Record<string, string> = {
 const defaultRoutePriority = [
   "/",
   "/ventas",
+  "/cambios",
+  "/devoluciones",
   "/productos",
   "/inventario",
   "/inventario/resumen",

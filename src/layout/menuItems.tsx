@@ -22,6 +22,8 @@ import SummarizeOutlined from "@mui/icons-material/SummarizeOutlined";
 import RequestQuoteOutlined from "@mui/icons-material/RequestQuoteOutlined";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import PaidOutlined from "@mui/icons-material/PaidOutlined";
+import AssignmentReturnOutlined from "@mui/icons-material/AssignmentReturnOutlined";
+import SwapHorizOutlined from "@mui/icons-material/SwapHorizOutlined";
 
 export interface MenuItem {
   label: string;
@@ -47,6 +49,8 @@ export const menuSections: MenuSection[] = [
     items: [
       { label: "Dashboard", icon: <DashboardOutlined />, path: "/" },
       { label: "Ventas", icon: <PointOfSaleOutlined />, path: "/ventas" },
+      { label: "Cambios", icon: <SwapHorizOutlined />, path: "/cambios" },
+      { label: "Devoluciones", icon: <AssignmentReturnOutlined />, path: "/devoluciones" },
     ],
   },
   {
