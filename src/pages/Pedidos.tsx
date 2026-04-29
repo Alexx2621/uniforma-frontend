@@ -78,6 +78,7 @@ interface PedidoRow {
   folio?: string;
   displayFolio?: string;
   solicitadoPor?: string | null;
+  unificado?: boolean;
   detalle?: PedidoDetalle[];
   pagos?: Array<{ id: number; total: number; fecha?: string }>;
   avances?: Array<{ id: number; total: number; fecha?: string }>;
@@ -136,6 +137,23 @@ const sanitizeFilename = (value: string) =>
     .replace(/\s+/g, "_");
 
 const PEDIDOS_AUTO_REFRESH_MS = 30000;
+
+const compareText = (a?: string | null, b?: string | null) =>
+  `${a || ""}`.localeCompare(`${b || ""}`, "es", { numeric: true, sensitivity: "base" });
+
+const compareArticuloUnificadoPorPedido = (a: ArticuloUnificado, b: ArticuloUnificado) => {
+  const porPedido = compareText(a.tipo, b.tipo);
+  if (porPedido !== 0) return porPedido;
+  const porTela = compareText(a.tela, b.tela);
+  if (porTela !== 0) return porTela;
+  const porColor = compareText(a.color, b.color);
+  if (porColor !== 0) return porColor;
+  const porTalla = compareText(a.talla, b.talla);
+  if (porTalla !== 0) return porTalla;
+  const porSexo = compareText(a.genero, b.genero);
+  if (porSexo !== 0) return porSexo;
+  return compareText(a.descripcion, b.descripcion);
+};
 
 const loadImageAsDataUrl = async (src: string) =>
   new Promise<string>((resolve, reject) => {
@@ -817,11 +835,7 @@ export default function Pedidos() {
         });
       });
 
-      const articulos = Array.from(agrupados.values()).sort((a, b) => {
-        const porCodigo = a.codigo.localeCompare(b.codigo);
-        if (porCodigo !== 0) return porCodigo;
-        return a.nombre.localeCompare(b.nombre);
-      });
+      const articulos = Array.from(agrupados.values()).sort(compareArticuloUnificadoPorPedido);
 
       const bodegaCorrelativo = filterBodega === "all" ? null : Number(filterBodega);
       const filtroTienda =
@@ -949,6 +963,22 @@ export default function Pedidos() {
                 ? "success"
                 : "info";
         return <Chip label={p.value} size="small" color={color} />;
+      },
+    },
+    {
+      field: "unificado",
+      headerName: "Unificacion",
+      width: 140,
+      renderCell: (p) => {
+        const unificado = Boolean(p.row.unificado);
+        return (
+          <Chip
+            label={unificado ? "Unificado" : "Sin unificar"}
+            size="small"
+            color={unificado ? "success" : "default"}
+            variant={unificado ? "filled" : "outlined"}
+          />
+        );
       },
     },
     {
