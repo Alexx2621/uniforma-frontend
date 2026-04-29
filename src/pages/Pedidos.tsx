@@ -601,7 +601,7 @@ export default function Pedidos() {
     if (!canUnifyPedidos) return [];
     return filtered.filter((pedido) => {
       const estado = `${pedido.estado || ""}`.trim().toLowerCase();
-      return estado !== "anulado";
+      return estado !== "anulado" && !pedido.unificado;
     });
   }, [filtered, canUnifyPedidos]);
 
@@ -773,9 +773,20 @@ export default function Pedidos() {
   const abrirVistaPreviaUnificada = async () => {
     if (!canUnifyPedidos || generandoUnificado) return;
     if (!pedidosUnificables.length) {
-      Swal.fire("Aviso", "No hay pedidos disponibles para unificar", "info");
+      Swal.fire("Aviso", "No hay pedidos nuevos sin unificar.", "info");
       return;
     }
+
+    const confirmacion = await Swal.fire({
+      title: "Unificar pedidos nuevos",
+      text: `Se unificaran ${pedidosUnificables.length} pedido(s) sin unificar. Los pedidos ya unificados no se incluiran.`,
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "Si, unificar",
+      cancelButtonText: "Cancelar",
+    });
+
+    if (!confirmacion.isConfirmed) return;
 
     setGenerandoUnificado(true);
 
@@ -1037,9 +1048,9 @@ export default function Pedidos() {
               startIcon={<MergeTypeOutlined />}
               variant="outlined"
               onClick={abrirVistaPreviaUnificada}
-              disabled={generandoUnificado}
+              disabled={generandoUnificado || pedidosUnificables.length === 0}
             >
-              Unificar
+              {generandoUnificado ? "Unificando..." : `Unificar nuevos (${pedidosUnificables.length})`}
             </Button>
           )}
           <Button startIcon={<AddIcon />} variant="contained" onClick={() => navigate("/produccion/nuevo")}>
