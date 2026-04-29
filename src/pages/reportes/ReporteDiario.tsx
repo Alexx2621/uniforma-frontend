@@ -20,6 +20,7 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  CircularProgress,
 } from "@mui/material";
 import AddCircleOutlineOutlined from "@mui/icons-material/AddCircleOutlineOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
@@ -31,8 +32,6 @@ import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import Swal from "sweetalert2";
 import { api } from "../../api/axios";
 import { useAuthStore } from "../../auth/useAuthStore";
-import LOGO_URL from "../../assets/3-logos.png";
-import { PDF_FONT_BOLD_FAMILY, PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../../utils/fontFamily";
 
 interface PagoVenta {
   referencia?: string | null;
@@ -175,582 +174,6 @@ const hasTiendaRowData = (row: TiendaRow) =>
       Number(row.total || 0) > 0
   );
 
-const hasCapitalRowData = (row: CapitalRow) =>
-  Boolean(
-    `${row.envio || ""}`.trim() ||
-      `${row.autorizacion || ""}`.trim() ||
-      `${row.boleta || ""}`.trim() ||
-      `${row.banco || ""}`.trim() ||
-      `${row.observaciones || ""}`.trim() ||
-      Number(row.transferencia || 0) > 0 ||
-      Number(row.deposito || 0) > 0 ||
-      Number(row.efectivo || 0) > 0
-  );
-
-const hasDepartamentoRowData = (row: DepartamentoRow) =>
-  Boolean(
-    `${row.envio || ""}`.trim() ||
-      `${row.autorizacion || ""}`.trim() ||
-      `${row.boleta || ""}`.trim() ||
-      `${row.banco || ""}`.trim() ||
-      `${row.observaciones || ""}`.trim() ||
-      Number(row.transferencia || 0) > 0 ||
-      Number(row.deposito || 0) > 0
-  );
-
-const buildReporteDiarioHtml = ({
-  fecha,
-  liquidacionNo,
-  generadoPor,
-  capitalRows,
-  departamentoRows,
-  tiendaRows,
-  subtotalCapital,
-  subtotalDepartamento,
-  subtotalTienda,
-  totalResumen,
-}: {
-  fecha: string;
-  liquidacionNo: string;
-  generadoPor: string;
-  capitalRows: CapitalRow[];
-  departamentoRows: DepartamentoRow[];
-  tiendaRows: TiendaRow[];
-  subtotalCapital: number;
-  subtotalDepartamento: number;
-  subtotalTienda: number;
-  totalResumen: number;
-}) => {
-  const buildRows = (rows: string, colspan = 10) => (rows || `<tr><td colspan="${colspan}" class="empty">Sin datos</td></tr>`);
-  const capitalRowsWithData = capitalRows.filter(hasCapitalRowData);
-  const departamentoRowsWithData = departamentoRows.filter(hasDepartamentoRowData);
-  const tiendaRowsWithData = tiendaRows.filter(hasTiendaRowData);
-  const totalCapitalTransferencia = capitalRowsWithData.reduce((sum, row) => sum + Number(row.transferencia || 0), 0);
-  const totalCapitalDeposito = capitalRowsWithData.reduce((sum, row) => sum + Number(row.deposito || 0), 0);
-  const totalCapitalEfectivo = capitalRowsWithData.reduce((sum, row) => sum + Number(row.efectivo || 0), 0);
-  const totalCapitalGeneral = capitalRowsWithData.reduce(
-    (sum, row) => sum + Number(row.transferencia || 0) + Number(row.deposito || 0) + Number(row.efectivo || 0),
-    0
-  );
-  const totalDepartamentoTransferencia = departamentoRowsWithData.reduce((sum, row) => sum + Number(row.transferencia || 0), 0);
-  const totalDepartamentoDeposito = departamentoRowsWithData.reduce((sum, row) => sum + Number(row.deposito || 0), 0);
-  const totalDepartamentoGeneral = departamentoRowsWithData.reduce(
-    (sum, row) => sum + Number(row.transferencia || 0) + Number(row.deposito || 0),
-    0
-  );
-  const totalTiendaTransferencia = tiendaRowsWithData.reduce((sum, row) => sum + Number(row.transferencia || 0), 0);
-  const totalTiendaTarjeta = tiendaRowsWithData.reduce((sum, row) => sum + Number(row.tarjeta || 0), 0);
-  const totalTiendaEfectivo = tiendaRowsWithData.reduce((sum, row) => sum + Number(row.efectivo || 0), 0);
-  const totalTiendaGeneral = tiendaRowsWithData.reduce((sum, row) => sum + getTiendaRowTotal(row), 0);
-
-  return `<!doctype html>
-  <html>
-    <head>
-      <meta charset="utf-8" />
-      <title>Reporte diario ${fecha}</title>
-      <style>
-        @page { size: portrait; margin: 10mm; }
-        html, body, .page, table, th, td, .section-title, .summary-box {
-          -webkit-print-color-adjust: exact;
-          print-color-adjust: exact;
-        }
-        body {
-          font-family: ${PDF_FONT_FAMILY};
-          color: #111827;
-          margin: 0;
-          background: #fff;
-        }
-        .page {
-          padding: 10px 12px 18px;
-        }
-        .header {
-          display: flex;
-          align-items: center;
-          justify-content: flex-start;
-          margin-bottom: 6px;
-        }
-        .brand {
-          display: flex;
-          align-items: center;
-        }
-        .brand img {
-          width: 112px;
-          height: 112px;
-          object-fit: contain;
-        }
-        .top-info-row {
-          position: relative;
-          display: flex;
-          align-items: flex-end;
-          justify-content: flex-end;
-          gap: 16px;
-          width: 100%;
-          margin: 4px 0 8px;
-          min-height: 36px;
-        }
-        .top-meta-row {
-          display: flex;
-          justify-content: flex-end;
-          margin-left: auto;
-          width: 100%;
-        }
-        .report-meta {
-          display: flex;
-          flex-direction: column;
-          align-items: flex-end;
-          justify-content: center;
-          gap: 4px;
-          margin-left: auto;
-        }
-        .report-date {
-          font-family: ${PDF_FONT_SEMIBOLD_FAMILY};
-          font-weight: 600;
-          font-family: ${PDF_FONT_BOLD_FAMILY};
-          font-weight: 700;
-          font-size: 10px;
-          line-height: 1.1;
-          width: 100%;
-          text-align: center;
-        }
-        .report-user {
-          display: inline-block;
-          background-color: #1f3f87;
-          color: #fff;
-          padding: 4px 24px;
-          text-align: center;
-          text-transform: uppercase;
-          font-family: ${PDF_FONT_BOLD_FAMILY};
-          font-weight: 700;
-          font-size: 10px;
-          line-height: 1.1;
-          border: none;
-        }
-        .liquidacion-wrap {
-          margin: 0;
-          text-align: center;
-          position: absolute;
-          left: 50%;
-          bottom: 0;
-          transform: translateX(-50%);
-        }
-        .liquidacion-row {
-          background-color: #d90000;
-          color: #fff;
-          padding: 4px 10px;
-          font-size: 11px;
-          display: inline-block;
-          font-family: ${PDF_FONT_BOLD_FAMILY};
-          font-weight: 700;
-        }
-        .liquidacion-label {
-          letter-spacing: 0.2px;
-        }
-        .liquidacion-number {
-          font-family: ${PDF_FONT_BOLD_FAMILY};
-          font-weight: 700;
-        }
-        .section-title, th, .summary-box h3, .summary-label, .summary-value {
-          font-family: ${PDF_FONT_BOLD_FAMILY};
-          font-weight: 700;
-        }
-        .section {
-          margin-top: 10px;
-        }
-        .section-title {
-          background-color: #d90000;
-          color: #fff;
-          padding: 3px 10px;
-          font-size: 10px;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-          text-align: center;
-        }
-        table {
-          width: 100%;
-          border-collapse: collapse;
-          table-layout: fixed;
-          font-size: 10px;
-        }
-        thead tr:last-child th {
-          border-bottom: 3px solid #fff !important;
-        }
-        tbody tr:first-child td {
-          box-shadow: inset 0 1px 0 #000;
-        }
-        th, td {
-          border: 1px solid #000;
-          padding: 2px 5px;
-          vertical-align: middle;
-          text-align: center;
-          word-break: break-word;
-          background-color: #fff;
-        }
-        th {
-          background-color: #1f3f87;
-          color: #fff;
-          text-align: center;
-          text-transform: uppercase;
-          border-left: none;
-          border-right: none;
-          border-top: none;
-        }
-        .compact-table th {
-          white-space: nowrap;
-          font-size: 8.5px;
-          padding: 3px 4px;
-        }
-        .compact-table td {
-          font-size: 8.5px;
-        }
-        .block-total-cell {
-          font-family: ${PDF_FONT_BOLD_FAMILY};
-          font-weight: 700;
-          color: #fff;
-          text-align: center;
-          white-space: nowrap;
-          padding: 2px 6px;
-          border: none !important;
-        }
-        .block-total-blue {
-          background-color: #1f3f87 !important;
-        }
-        .block-total-red {
-          background-color: #d90000 !important;
-        }
-        .block-total-empty {
-          background-color: #fff !important;
-          border: none !important;
-        }
-        .block-total-spacer td {
-          height: 3px;
-          padding: 0;
-          background-color: #fff !important;
-          border: none !important;
-        }
-        .tienda-table th {
-          white-space: nowrap;
-          font-size: 8.5px;
-          padding: 3px 4px;
-        }
-        .tienda-table td {
-          font-size: 8.5px;
-        }
-        .aligned-grid col:nth-child(1) { width: 8.5%; }
-        .aligned-grid col:nth-child(2) { width: 6.5%; }
-        .aligned-grid col:nth-child(3) { width: 11%; }
-        .aligned-grid col:nth-child(4) { width: 12%; }
-        .aligned-grid col:nth-child(5) { width: 9.5%; }
-        .aligned-grid col:nth-child(6) { width: 9.5%; }
-        .aligned-grid col:nth-child(7) { width: 9.5%; }
-        .aligned-grid col:nth-child(8) { width: 9.5%; }
-        .aligned-grid col:nth-child(9) { width: 11%; }
-        .aligned-grid col:nth-child(10) { width: 13%; }
-        .obs-span {
-          padding-left: 8px;
-          padding-right: 8px;
-          text-align: left;
-        }
-        td.obs-cell {
-          text-align: left;
-        }
-        @media print {
-          html, body, .page, table, th, td, .section-title, .summary-box {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-          th,
-          .section-title {
-            background-color: #d90000 !important;
-            color: #fff !important;
-          }
-          th {
-            background-color: #1f3f87 !important;
-          }
-        }
-        td.num {
-          text-align: center;
-          white-space: nowrap;
-        }
-        td.center {
-          text-align: center;
-        }
-        td.empty {
-          text-align: center;
-          color: #6b7280;
-          padding: 10px 0;
-        }
-        .summary-grid {
-          display: grid;
-          grid-template-columns: 1fr;
-          gap: 14px;
-          margin-top: 36px;
-          width: 50%;
-          min-width: 320px;
-        }
-        .summary-box {
-          padding: 0;
-          box-sizing: border-box;
-          overflow: visible;
-        }
-        .summary-box h3 {
-          margin: 0;
-          padding: 3px 10px;
-          font-size: 10px;
-          text-transform: uppercase;
-          text-align: center;
-          color: #fff;
-          background-color: #1f3f87;
-          border-bottom: none;
-          border: none;
-        }
-        .summary-spacer {
-          height: 3px;
-          background-color: #fff;
-          border: none;
-        }
-        .summary-row {
-          display: flex;
-          justify-content: space-between;
-          gap: 16px;
-          padding: 3px 10px;
-          border-left: 1px solid #000;
-          border-right: 1px solid #000;
-          border-top: 1px solid #000;
-          font-size: 10px;
-          background-color: #fff;
-          text-transform: uppercase;
-        }
-        .summary-row:first-of-type {
-          border-top: none;
-        }
-        .summary-row.before-total {
-          border-bottom: 1px solid #000;
-        }
-        .summary-row.total {
-          border: none;
-          font-size: 10px;
-          color: #fff;
-          background-color: #d90000;
-          font-family: ${PDF_FONT_BOLD_FAMILY};
-          font-weight: 700;
-        }
-        .footer-note {
-          margin-top: 8px;
-          font-size: 10px;
-          color: #4b5563;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="page">
-        <div class="header">
-          <div class="brand">
-            <img src="${LOGO_URL}" alt="Uniforma" />
-          </div>
-        </div>
-        <div class="top-info-row">
-          <div class="liquidacion-wrap">
-            <div class="liquidacion-row"><span class="liquidacion-label">LIQUIDACIÓN No.:</span> <span class="liquidacion-number">${liquidacionNo || "-"}</span></div>
-          </div>
-          <div class="top-meta-row">
-            <div class="report-meta">
-              <div class="report-date">${formatDisplayDate(fecha)}</div>
-              <div class="report-user">${generadoPor || "-"}</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="section">
-          <div class="section-title">Capital / Mensajero</div>
-          <table class="compact-table aligned-grid">
-            <colgroup>
-              <col /><col /><col /><col /><col /><col /><col /><col /><col /><col />
-            </colgroup>
-            <thead>
-              <tr>
-                <th>Fecha</th>
-                <th>Envío</th>
-                <th>Transferencia</th>
-                <th>Autorización</th>
-                <th>Depósito</th>
-                <th>Boleta</th>
-                <th>Banco</th>
-                <th>Efectivo</th>
-                <th>Total</th>
-                <th>Observaciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${buildRows(
-                capitalRowsWithData
-                  .map((row) => {
-                    const total = Number(row.transferencia || 0) + Number(row.deposito || 0) + Number(row.efectivo || 0);
-                    return `<tr>
-                      <td class="center">${formatDisplayDate(row.fecha)}</td>
-                      <td>${row.envio || ""}</td>
-                      <td class="num">${money(row.transferencia)}</td>
-                      <td>${row.autorizacion || ""}</td>
-                      <td class="num">${money(row.deposito)}</td>
-                      <td>${row.boleta || ""}</td>
-                      <td>${row.banco || ""}</td>
-                      <td class="num">${money(row.efectivo)}</td>
-                      <td class="num">${money(total)}</td>
-                      <td class="obs-cell">${row.observaciones || ""}</td>
-                    </tr>`;
-                  })
-                  .join("")
-              , 10)}
-              <tr class="block-total-spacer">
-                <td colspan="10"></td>
-              </tr>
-              <tr>
-                <td class="block-total-empty"></td>
-                <td class="block-total-empty"></td>
-                <td class="block-total-cell block-total-blue">${money(totalCapitalTransferencia)}</td>
-                <td class="block-total-empty"></td>
-                <td class="block-total-cell block-total-blue">${money(totalCapitalDeposito)}</td>
-                <td class="block-total-empty"></td>
-                <td class="block-total-empty"></td>
-                <td class="block-total-cell block-total-blue">${money(totalCapitalEfectivo)}</td>
-                <td class="block-total-cell block-total-red">${money(totalCapitalGeneral)}</td>
-                <td class="block-total-empty"></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div class="section">
-          <div class="section-title">Departamentos / Cargo Expreso</div>
-          <table class="compact-table aligned-grid">
-            <colgroup>
-              <col /><col /><col /><col /><col /><col /><col /><col /><col /><col />
-            </colgroup>
-            <thead>
-              <tr>
-                <th>Fecha</th>
-                <th>Envío</th>
-                <th>Transferencia</th>
-                <th>Autorización</th>
-                <th>Depósito</th>
-                <th>Boleta</th>
-                <th>Banco</th>
-                <th>Total</th>
-                <th colspan="2">Observaciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${buildRows(
-                departamentoRowsWithData
-                  .map((row) => {
-                    const total = Number(row.transferencia || 0) + Number(row.deposito || 0);
-                    return `<tr>
-                      <td class="center">${formatDisplayDate(row.fecha)}</td>
-                      <td>${row.envio || ""}</td>
-                      <td class="num">${money(row.transferencia)}</td>
-                      <td>${row.autorizacion || ""}</td>
-                      <td class="num">${money(row.deposito)}</td>
-                      <td>${row.boleta || ""}</td>
-                      <td>${row.banco || ""}</td>
-                      <td class="num">${money(total)}</td>
-                      <td class="obs-span" colspan="2">${row.observaciones || ""}</td>
-                    </tr>`;
-                  })
-                  .join("")
-              , 10)}
-              <tr class="block-total-spacer">
-                <td colspan="10"></td>
-              </tr>
-              <tr>
-                <td class="block-total-empty"></td>
-                <td class="block-total-empty"></td>
-                <td class="block-total-cell block-total-blue">${money(totalDepartamentoTransferencia)}</td>
-                <td class="block-total-empty"></td>
-                <td class="block-total-cell block-total-blue">${money(totalDepartamentoDeposito)}</td>
-                <td class="block-total-empty"></td>
-                <td class="block-total-empty"></td>
-                <td class="block-total-cell block-total-red">${money(totalDepartamentoGeneral)}</td>
-                <td class="block-total-empty" colspan="2"></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div class="section">
-          <div class="section-title">Tienda</div>
-          <table class="tienda-table aligned-grid">
-            <colgroup>
-              <col /><col /><col /><col /><col /><col /><col /><col /><col /><col />
-            </colgroup>
-            <thead>
-              <tr>
-                <th>Fecha</th>
-                <th>Recibo</th>
-                <th>Transferencia</th>
-                <th>Autorización</th>
-                <th>Tarjeta</th>
-                <th>Autorización</th>
-                <th>Efectivo</th>
-                <th>Total</th>
-                <th colspan="2">Observaciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${buildRows(
-                tiendaRowsWithData
-                  .map(
-                    (row) => `<tr>
-                      <td class="center">${formatDisplayDate(row.fecha)}</td>
-                      <td>${row.recibo}</td>
-                      <td class="num">${money(row.transferencia)}</td>
-                      <td>${row.autorizacionTransferencia || ""}</td>
-                      <td class="num">${money(row.tarjeta)}</td>
-                      <td>${row.autorizacionTarjeta || ""}</td>
-                      <td class="num">${money(row.efectivo)}</td>
-                      <td class="num">${money(getTiendaRowTotal(row))}</td>
-                      <td class="obs-span" colspan="2">${row.observaciones || ""}</td>
-                    </tr>`
-                  )
-                  .join("")
-              , 10)}
-              <tr class="block-total-spacer">
-                <td colspan="10"></td>
-              </tr>
-              <tr>
-                <td class="block-total-empty"></td>
-                <td class="block-total-empty"></td>
-                <td class="block-total-cell block-total-blue">${money(totalTiendaTransferencia)}</td>
-                <td class="block-total-empty"></td>
-                <td class="block-total-cell block-total-blue">${money(totalTiendaTarjeta)}</td>
-                <td class="block-total-empty"></td>
-                <td class="block-total-cell block-total-blue">${money(totalTiendaEfectivo)}</td>
-                <td class="block-total-cell block-total-red">${money(totalTiendaGeneral)}</td>
-                <td class="block-total-empty" colspan="2"></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div class="summary-grid">
-          <div class="summary-box">
-            <h3>Resumen</h3>
-            <div class="summary-spacer"></div>
-            <div class="summary-row"><span class="summary-label">CAPITAL</span><span class="summary-value">${money(subtotalCapital)}</span></div>
-            <div class="summary-row"><span class="summary-label">DEPARTAMENTO</span><span class="summary-value">${money(subtotalDepartamento)}</span></div>
-            <div class="summary-row before-total"><span class="summary-label">TIENDA</span><span class="summary-value">${money(subtotalTienda)}</span></div>
-            <div class="summary-spacer"></div>
-            <div class="summary-row total"><span class="summary-label">TOTAL</span><span class="summary-value">${money(totalResumen)}</span></div>
-          </div>
-        </div>
-
-        <div class="footer-note">
-          Generado desde Uniforma el ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}.
-        </div>
-      </div>
-      <script>window.onload = function(){ window.print(); window.onafterprint = function(){ window.close(); } window.onafterprint = function(){ window.close(); } }</script>
-    </body>
-  </html>`;
-};
-
 export default function ReporteDiario() {
   const today = toDateOnly(new Date());
   const { nombre, primerNombre, primerApellido, usuario, rol, id: userId } = useAuthStore();
@@ -769,6 +192,7 @@ export default function ReporteDiario() {
   const [departamentoRows, setDepartamentoRows] = useState<DepartamentoRow[]>(() => [createDepartamentoRow(today)]);
   const [tiendaManualRows, setTiendaManualRows] = useState<TiendaRow[]>(() => [createTiendaRow(today)]);
   const [loading, setLoading] = useState(false);
+  const [generandoPdf, setGenerandoPdf] = useState(false);
 
   const isAdmin = rol === "ADMIN";
 
@@ -968,64 +392,21 @@ export default function ReporteDiario() {
     window.URL.revokeObjectURL(url);
   };
 
-  const reimprimirDocumento = (doc: DocumentoGenerado) => {
-    void descargarDocumentoPdf(doc).catch(() => {
+  const reimprimirDocumento = async (doc: DocumentoGenerado) => {
+    if (generandoPdf) return;
+    try {
+      setGenerandoPdf(true);
+      await descargarDocumentoPdf(doc);
+    } catch {
       Swal.fire("Error", "No se pudo descargar el PDF del reporte diario", "error");
-    });
-    const win = window.open("", "_blank");
-    if (!win) {
-      Swal.fire("Aviso", "Habilita ventanas emergentes para imprimir o guardar en PDF", "info");
-      return;
+    } finally {
+      setGenerandoPdf(false);
     }
-    const data = doc.data || {};
-    const docFecha = data.fecha || today;
-    const capitalDocRows = Array.isArray(data.capitalRows) ? data.capitalRows : [];
-    const departamentoDocRows = Array.isArray(data.departamentoRows) ? data.departamentoRows : [];
-    const tiendaManualDocRows = Array.isArray(data.tiendaManualRows) ? data.tiendaManualRows : [];
-    const ventasSnapshot = Array.isArray(data.ventasSnapshot) ? data.ventasSnapshot : [];
-    const tiendaAutoDocRows: TiendaRow[] = ventasSnapshot.map((venta: any) => {
-      const metodo = `${venta.metodoPago || ""}`.trim().toLowerCase();
-      const referencia = `${venta.pagos?.[0]?.referencia || ""}`.trim();
-      return {
-        id: venta.id,
-        fecha: docFecha,
-        recibo: `V-${venta.id}`,
-        transferencia: metodo === "transferencia" ? Number(venta.total || 0) : 0,
-        autorizacionTransferencia: metodo === "transferencia" ? referencia : "",
-        tarjeta: metodoCuentaComoTarjeta(metodo) ? Number(venta.total || 0) : 0,
-        autorizacionTarjeta: metodoCuentaComoTarjeta(metodo) ? referencia : "",
-        efectivo: metodo === "efectivo" ? Number(venta.total || 0) : 0,
-        total: Number(venta.total || 0),
-        observaciones: `${venta.clienteNombre || ""}`.trim(),
-      };
-    });
-    const tiendaDocRows = [...tiendaAutoDocRows, ...tiendaManualDocRows.filter(hasTiendaRowData)];
-    const subtotalCapitalDoc = capitalDocRows.reduce(
-      (sum: number, row: any) => sum + Number(row.transferencia || 0) + Number(row.deposito || 0) + Number(row.efectivo || 0),
-      0
-    );
-    const subtotalDepartamentoDoc = departamentoDocRows.reduce(
-      (sum: number, row: any) => sum + Number(row.transferencia || 0) + Number(row.deposito || 0),
-      0
-    );
-    const subtotalTiendaDoc = tiendaDocRows.reduce((sum, row) => sum + getTiendaRowTotal(row), 0);
-    const html = buildReporteDiarioHtml({
-      fecha: docFecha,
-      liquidacionNo: doc.correlativo,
-      generadoPor: data.generadoPor || doc.usuario?.nombre || doc.usuario?.usuario || "Usuario",
-      capitalRows: capitalDocRows,
-      departamentoRows: departamentoDocRows,
-      tiendaRows: tiendaDocRows,
-      subtotalCapital: subtotalCapitalDoc,
-      subtotalDepartamento: subtotalDepartamentoDoc,
-      subtotalTienda: subtotalTiendaDoc,
-      totalResumen: subtotalCapitalDoc + subtotalDepartamentoDoc + subtotalTiendaDoc,
-    });
-    win.document.write(html);
-    win.document.close();
   };
 
   const imprimir = async () => {
+    if (generandoPdf) return;
+    setGenerandoPdf(true);
     let docGenerado: DocumentoGenerado;
     try {
       docGenerado = await guardarDocumento();
@@ -1035,6 +416,8 @@ export default function ReporteDiario() {
       const msg = error?.response?.data?.message || "No se pudo generar o descargar el reporte diario";
       Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
       return;
+    } finally {
+      setGenerandoPdf(false);
     }
 
     Swal.fire("Listo", "El PDF del cierre diario se descargo automaticamente.", "success");
@@ -1103,8 +486,15 @@ export default function ReporteDiario() {
                     <TableCell>{doc.usuario?.nombre || doc.usuario?.usuario || "N/D"}</TableCell>
                     <TableCell align="right">
                       <Stack direction="row" spacing={1} justifyContent="flex-end">
-                        <Button size="small" variant="contained" color="secondary" onClick={() => reimprimirDocumento(doc)}>
-                          Reimprimir
+                        <Button
+                          size="small"
+                          variant="contained"
+                          color="secondary"
+                          disabled={generandoPdf}
+                          startIcon={generandoPdf ? <CircularProgress size={14} color="inherit" /> : undefined}
+                          onClick={() => reimprimirDocumento(doc)}
+                        >
+                          {generandoPdf ? "Generando..." : "Reimprimir"}
                         </Button>
                       </Stack>
                     </TableCell>
@@ -1130,28 +520,30 @@ export default function ReporteDiario() {
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
         <Typography variant="h4">Reporte diario</Typography>
         <Stack direction="row" spacing={1}>
-          <Button startIcon={<ArrowBackOutlined />} variant="outlined" size="small" onClick={() => { setShowForm(false); void cargarDocumentos(); }}>
+          <Button startIcon={<ArrowBackOutlined />} variant="outlined" size="small" disabled={generandoPdf} onClick={() => { setShowForm(false); void cargarDocumentos(); }}>
             Volver
           </Button>
-          <Button startIcon={<RefreshOutlined />} variant="outlined" size="small" onClick={cargar} disabled={loading}>
+          <Button startIcon={<RefreshOutlined />} variant="outlined" size="small" onClick={cargar} disabled={loading || generandoPdf}>
             Recargar ventas
           </Button>
           <Button
             startIcon={<CleaningServicesOutlined />}
             variant="outlined"
             size="small"
+            disabled={generandoPdf}
             onClick={limpiarCapturas}
           >
             Limpiar capturas
           </Button>
           <Button
-            startIcon={<PictureAsPdfOutlined />}
+            startIcon={generandoPdf ? <CircularProgress size={16} color="inherit" /> : <PictureAsPdfOutlined />}
             variant="contained"
             color="secondary"
             size="small"
             onClick={imprimir}
+            disabled={generandoPdf}
           >
-            Imprimir / PDF
+            {generandoPdf ? "Generando PDF..." : "Imprimir / PDF"}
           </Button>
         </Stack>
       </Stack>
@@ -1165,6 +557,7 @@ export default function ReporteDiario() {
             size="small"
             InputLabelProps={{ shrink: true }}
             value={fecha}
+            disabled={generandoPdf}
             onChange={(e) => setFecha(e.target.value)}
           />
         </Grid>
