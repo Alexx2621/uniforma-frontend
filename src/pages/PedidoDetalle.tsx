@@ -79,6 +79,7 @@ interface Pedido {
   observaciones?: string | null;
   metodoPago?: string | null;
   recargo?: number;
+  envio?: number;
   solicitadoPor?: string | null;
   cliente?: { nombre: string };
   bodega?: { nombre: string };
@@ -251,6 +252,7 @@ const normalizePedido = (pedido: any): Pedido => ({
   anticipo: Number(pedido?.anticipo || 0),
   saldoPendiente: Number(pedido?.saldoPendiente || 0),
   recargo: Number(pedido?.recargo || 0),
+  envio: Number(pedido?.envio || 0),
   detalle: Array.isArray(pedido?.detalle) ? pedido.detalle.map(normalizeDetalle) : [],
   pagos: Array.isArray(pedido?.pagos)
     ? pedido.pagos.map((p: any) => ({
@@ -415,7 +417,8 @@ export default function PedidoDetalle() {
       return sum + cantidad * (precioConDescuento + bordado);
     }, 0);
     const recargo = Number((pedido as any).recargo || 0);
-    const total = Number((pedido as any).totalEstimado || subtotal + recargo);
+    const envio = Number((pedido as any).envio || 0);
+    const total = Number((pedido as any).totalEstimado || subtotal + recargo + envio);
     const anticipo = Number((pedido as any).anticipo || 0);
     const logoUrl = uniformaLogo;
     const filasHtml = pedido.detalle
@@ -514,6 +517,7 @@ export default function PedidoDetalle() {
           <div class="totals">
             <div class="totals-row"><span>Subtotal</span><span>Q ${escapeHtml(subtotal.toFixed(2))}</span></div>
             ${recargo ? `<div class="totals-row"><span>Recargo</span><span>Q ${escapeHtml(recargo.toFixed(2))}</span></div>` : ""}
+            <div class="totals-row"><span>Envio</span><span>Q ${escapeHtml(envio.toFixed(2))}</span></div>
             <div class="totals-row"><span>Anticipo</span><span>Q ${escapeHtml(anticipo.toFixed(2))}</span></div>
             <div class="totals-row total"><span>Total</span><span>Q ${escapeHtml(total.toFixed(2))}</span></div>
           </div>

@@ -323,6 +323,7 @@ export default function PedidoNuevo() {
   const [porcentajeRecargo, setPorcentajeRecargo] = useState<number>(0);
   const [referenciaPago, setReferenciaPago] = useState("");
   const [anticipo, setAnticipo] = useState<number>(0);
+  const [envio, setEnvio] = useState<number>(0);
   const [detalle, setDetalle] = useState<DetalleRow[]>([]);
   const [articuloActual, setArticuloActual] = useState<CapturaArticulo>(detalleInicial);
   const [cantidadInput, setCantidadInput] = useState("1");
@@ -440,10 +441,11 @@ export default function PedidoNuevo() {
       return sum + cantidad * (precioConDescuento + bordado);
     }, 0);
     const recargo = metodoUsaRecargo ? subtotal * ((porcentajeRecargo || 0) / 100) : 0;
-    const total = subtotal + recargo;
+    const envioMonto = Math.max(0, Number(envio) || 0);
+    const total = subtotal + recargo + envioMonto;
     const saldoPendiente = total - (Number(anticipo) || 0);
-    return { subtotal, recargo, total, saldoPendiente };
-  }, [detalle, anticipo, metodoUsaRecargo, porcentajeRecargo]);
+    return { subtotal, recargo, envio: envioMonto, total, saldoPendiente };
+  }, [detalle, anticipo, metodoUsaRecargo, porcentajeRecargo, envio]);
 
   useEffect(() => {
     if (metodoPermiteSinAnticipo) {
@@ -922,6 +924,7 @@ export default function PedidoNuevo() {
       solicitadoPor,
       totalEstimado: totals.total,
       anticipo: Number(anticipo) || 0,
+      envio: totals.envio,
       metodoPago,
       porcentajeRecargo: metodoUsaRecargo ? porcentajeRecargo : 0,
       referenciaPago: metodoRequiereReferencia ? referenciaPago.trim() : null,
@@ -1085,6 +1088,7 @@ export default function PedidoNuevo() {
               ? `<div class="totals-row"><span>Recargo (${porcentajeRecargo || 0}%)</span><span>Q ${totals.recargo.toFixed(2)}</span></div>`
               : ""
             }
+            <div class="totals-row"><span>Envio</span><span>Q ${escapeHtml(totals.envio.toFixed(2))}</span></div>
             <div class="totals-row"><span>Anticipo</span><span>Q ${escapeHtml((Number(anticipo) || 0).toFixed(2))}</span></div>
             <div class="totals-row total"><span>Total</span><span>Q ${escapeHtml(totals.total.toFixed(2))}</span></div>
           </div>
@@ -1651,6 +1655,16 @@ export default function PedidoNuevo() {
             />
           </Grid>
         )}
+        <Grid size={{ xs: 12, sm: 4 }}>
+          <TextField
+            label="Envio"
+            type="number"
+            fullWidth
+            value={envio}
+            onChange={(e) => setEnvio(Math.max(0, Number(e.target.value) || 0))}
+            helperText="Monto cobrado por envio en este pedido"
+          />
+        </Grid>
       </Grid>
 
       <Divider sx={{ my: 2 }} />
@@ -1669,6 +1683,14 @@ export default function PedidoNuevo() {
                   <Typography>{`Q ${totals.recargo.toFixed(2)}`}</Typography>
                 </Stack>
               )}
+              <Stack direction="row" justifyContent="space-between">
+                <Typography>Envio</Typography>
+                <Typography>{`Q ${totals.envio.toFixed(2)}`}</Typography>
+              </Stack>
+              <Stack direction="row" justifyContent="space-between">
+                <Typography fontWeight={700}>Total</Typography>
+                <Typography fontWeight={700}>{`Q ${totals.total.toFixed(2)}`}</Typography>
+              </Stack>
               <Stack direction="row" justifyContent="space-between">
                 <Typography>Anticipo</Typography>
                 <Typography>{`Q ${(Number(anticipo) || 0).toFixed(2)}`}</Typography>
