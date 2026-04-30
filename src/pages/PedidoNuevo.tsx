@@ -447,6 +447,27 @@ export default function PedidoNuevo() {
     return { subtotal, recargo, envio: envioMonto, total, saldoPendiente };
   }, [detalle, anticipo, metodoUsaRecargo, porcentajeRecargo, envio]);
 
+  const detalleTableTotals = useMemo(
+    () =>
+      detalle.reduce(
+        (sum, row) => ({
+          cantidad: sum.cantidad + (Number(row.cantidad) || 0),
+          precio: sum.precio + (Number(row.precioUnit) || 0),
+          bordado: sum.bordado + (Number(row.bordado) || 0),
+          estiloEspecial:
+            sum.estiloEspecial +
+            (row.estiloEspecial ? Number(row.estiloEspecialMonto) || 0 : 0),
+        }),
+        {
+          cantidad: 0,
+          precio: 0,
+          bordado: 0,
+          estiloEspecial: 0,
+        },
+      ),
+    [detalle],
+  );
+
   useEffect(() => {
     if (metodoPermiteSinAnticipo) {
       setAnticipo(0);
@@ -1578,6 +1599,28 @@ export default function PedidoNuevo() {
                 </TableRow>
               );
             })}
+            {detalle.length > 0 && (
+              <TableRow sx={{ backgroundColor: "action.hover" }}>
+                <TableCell align="right" colSpan={6} sx={{ fontWeight: 700 }}>
+                  Totales
+                </TableCell>
+                <TableCell align="center" sx={{ fontWeight: 700 }}>
+                  {detalleTableTotals.cantidad}
+                </TableCell>
+                <TableCell align="center" sx={{ fontWeight: 700 }}>
+                  {`Q ${detalleTableTotals.precio.toFixed(2)}`}
+                </TableCell>
+                <TableCell align="center" sx={{ fontWeight: 700 }}>
+                  {`Q ${detalleTableTotals.bordado.toFixed(2)}`}
+                </TableCell>
+                <TableCell align="center" sx={{ fontWeight: 700 }}>
+                  {`Q ${detalleTableTotals.estiloEspecial.toFixed(2)}`}
+                </TableCell>
+                <TableCell align="center">-</TableCell>
+                <TableCell align="center">-</TableCell>
+                <TableCell align="center">-</TableCell>
+              </TableRow>
+            )}
             {!detalle.length && (
               <TableRow>
                 <TableCell colSpan={13} align="center">
