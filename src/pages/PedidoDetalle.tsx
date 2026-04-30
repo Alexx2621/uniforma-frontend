@@ -80,6 +80,9 @@ interface Pedido {
   metodoPago?: string | null;
   recargo?: number;
   envio?: number;
+  postventaId?: number | null;
+  postventaCobro?: string | null;
+  postventa?: { folio?: string | null; tipo?: string | null; motivo?: string | null } | null;
   solicitadoPor?: string | null;
   cliente?: { nombre: string };
   bodega?: { nombre: string };
@@ -624,6 +627,13 @@ export default function PedidoDetalle() {
           }
           size="small"
         />
+        {pedido.postventa && (
+          <Chip
+            label={`${pedido.postventa.folio || "Postventa"}${pedido.postventaCobro === "sin_cobro" ? " - sin cobro" : ""}`}
+            color={pedido.postventaCobro === "sin_cobro" ? "warning" : "default"}
+            size="small"
+          />
+        )}
         <Stack direction="row" spacing={1} sx={{ ml: "auto" }}>
           <Button size="small" variant="outlined" startIcon={<PictureAsPdfOutlined />} onClick={generarPdfReciboPedido}>
             PDF Recibo
@@ -643,6 +653,13 @@ export default function PedidoDetalle() {
         Cliente: {pedido.cliente?.nombre || (pedido as any).clienteNombre || "Mostrador"} | Bodega:{" "}
         {pedido.bodega?.nombre || "N/D"} | Fecha: {pedido.fecha ? new Date(pedido.fecha).toLocaleString() : ""}
       </Typography>
+      {pedido.postventa && (
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          Vinculado a {pedido.postventa.tipo === "devolucion" ? "devolucion" : "cambio"}{" "}
+          {pedido.postventa.folio || `#${pedido.postventaId}`} |{" "}
+          {pedido.postventaCobro === "sin_cobro" ? "Sin valor monetario para el cliente" : "Con cobro normal"}
+        </Typography>
+      )}
       {esAnulado && (
         <Typography variant="body2" color="error" sx={{ mb: 2, fontWeight: 600 }}>
           Este pedido esta anulado. Solo se permite visualizar la informacion.

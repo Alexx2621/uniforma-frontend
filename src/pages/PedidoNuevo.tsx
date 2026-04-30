@@ -9,6 +9,7 @@ import {
   Select,
   MenuItem,
   Checkbox,
+  FormControlLabel,
   InputAdornment,
   Button,
   Stack,
@@ -61,6 +62,19 @@ interface Producto {
 interface Bodega {
   id: number;
   nombre: string;
+}
+
+interface RegistroPostventa {
+  id: number;
+  folio: string;
+  tipo: "cambio" | "devolucion";
+  fecha: string;
+  clienteNombre: string;
+  clienteTelefono?: string | null;
+  documentoReferencia?: string | null;
+  motivo: string;
+  estado: string;
+  monto: number;
 }
 
 interface DetalleRow {
@@ -167,6 +181,12 @@ const escapeInputValue = (value?: string | null) =>
     .replace(/"/g, "&quot;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
+
+const getApiErrorMessage = (error: any, fallback: string) => {
+  const data = error?.response?.data;
+  const message = data?.message || data?.error || error?.message;
+  return Array.isArray(message) ? message.join(", ") : message || fallback;
+};
 
 const buildPdfStyles = () => `
   <style>
@@ -312,6 +332,7 @@ export default function PedidoNuevo() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [bodegas, setBodegas] = useState<Bodega[]>([]);
+  const [postventaDocs, setPostventaDocs] = useState<RegistroPostventa[]>([]);
   const [telas, setTelas] = useState<any[]>([]);
   const [tallas, setTallas] = useState<any[]>([]);
   const [colores, setColores] = useState<any[]>([]);
@@ -324,6 +345,8 @@ export default function PedidoNuevo() {
   const [referenciaPago, setReferenciaPago] = useState("");
   const [anticipo, setAnticipo] = useState<number>(0);
   const [envio, setEnvio] = useState<number>(0);
+  const [postventaId, setPostventaId] = useState<number | "">("");
+  const [postventaCobro, setPostventaCobro] = useState<"normal" | "sin_cobro">("normal");
   const [detalle, setDetalle] = useState<DetalleRow[]>([]);
   const [articuloActual, setArticuloActual] = useState<CapturaArticulo>(detalleInicial);
   const [cantidadInput, setCantidadInput] = useState("1");
@@ -358,16 +381,19 @@ export default function PedidoNuevo() {
   const metodoRequiereReferencia = metodoPago !== "efectivo";
   const metodoPermiteSinAnticipo = metodoPago === "orden_compra";
   const clienteSeleccionado = clientes.find((c) => c.id === clienteId) || null;
+  const postventaSeleccionada = postventaDocs.find((doc) => doc.id === Number(postventaId)) || null;
+  const pedidoSinCobro = Boolean(postventaSeleccionada && postventaCobro === "sin_cobro");
 
   const cargarCatalogos = async () => {
     try {
-      const [respCli, respProd, respBod, respTelas, respTallas, respColores] = await Promise.all([
+      const [respCli, respProd, respBod, respTelas, respTallas, respColores, respPostventa] = await Promise.all([
         api.get("/clientes"),
         api.get("/productos"),
         api.get("/bodegas"),
         api.get("/telas").catch(() => ({ data: [] })),
         api.get("/tallas").catch(() => ({ data: [] })),
         api.get("/colores").catch(() => ({ data: [] })),
+        api.get("/postventa").catch(() => ({ data: [] })),
       ]);
       setClientes(respCli.data || []);
       setProductos(respProd.data || []);
@@ -375,6 +401,11 @@ export default function PedidoNuevo() {
       setTelas(respTelas.data || []);
       setTallas(respTallas.data || []);
       setColores(respColores.data || []);
+      setPostventaDocs(
+        (Array.isArray(respPostventa.data) ? respPostventa.data : []).filter(
+          (doc: RegistroPostventa) => `${doc.estado || ""}`.toLowerCase() !== "anulado",
+        ),
+      );
     } catch {
       Swal.fire("Error", "No se pudieron cargar catalogos", "error");
     }
@@ -429,6 +460,18 @@ export default function PedidoNuevo() {
     }
   }, [userBodegaId, canAccessAllBodegas, bodegas]);
 
+  useEffect(() => {
+    if (!postventaSeleccionada) {
+      setPostventaCobro("normal");
+      return;
+    }
+    if (postventaSeleccionada.clienteNombre) {
+      setClienteNombre(postventaSeleccionada.clienteNombre);
+      setClienteTelefono(`${postventaSeleccionada.clienteTelefono || ""}`.trim());
+      if (clienteId !== "" && Number(clienteId) > 0) setClienteId("");
+    }
+  }, [postventaSeleccionada, clienteId]);
+
   const totals = useMemo(() => {
     const subtotal = detalle.reduce((sum, d) => {
       const precio = Number(d.precioUnit) || 0;
@@ -446,6 +489,10 @@ export default function PedidoNuevo() {
     const saldoPendiente = total - (Number(anticipo) || 0);
     return { subtotal, recargo, envio: envioMonto, total, saldoPendiente };
   }, [detalle, anticipo, metodoUsaRecargo, porcentajeRecargo, envio]);
+
+  const totalsPedido = pedidoSinCobro
+    ? { subtotal: 0, recargo: 0, envio: 0, total: 0, saldoPendiente: 0 }
+    : totals;
 
   const detalleTableTotals = useMemo(
     () =>
@@ -469,13 +516,13 @@ export default function PedidoNuevo() {
   );
 
   useEffect(() => {
-    if (metodoPermiteSinAnticipo) {
+    if (pedidoSinCobro || metodoPermiteSinAnticipo) {
       setAnticipo(0);
       return;
     }
     const anticipoCalculado = detalle.length ? Number((totals.total * 0.5).toFixed(2)) : 0;
     setAnticipo(anticipoCalculado);
-  }, [detalle, totals.total, metodoPermiteSinAnticipo]);
+  }, [detalle, totals.total, metodoPermiteSinAnticipo, pedidoSinCobro]);
 
   const obtenerTela = (prod?: Producto) => {
     return resolveTelaNombre(prod, telas);
@@ -914,7 +961,11 @@ export default function PedidoNuevo() {
       Swal.fire("Validacion", "Selecciona una bodega", "warning");
       return;
     }
-    if (!metodoPermiteSinAnticipo && (Number(anticipo) || 0) <= 0) {
+    if (postventaCobro === "sin_cobro" && !postventaSeleccionada) {
+      Swal.fire("Validacion", "Selecciona el documento de cambio/devolucion para crear un pedido sin valor monetario", "warning");
+      return;
+    }
+    if (!pedidoSinCobro && !metodoPermiteSinAnticipo && (Number(anticipo) || 0) <= 0) {
       Swal.fire("Validacion", "Ingresa un anticipo mayor a 0", "warning");
       return;
     }
@@ -922,11 +973,11 @@ export default function PedidoNuevo() {
       Swal.fire("Validacion", "Agrega al menos un producto", "warning");
       return;
     }
-    if ((Number(anticipo) || 0) > totals.total) {
+    if ((Number(anticipo) || 0) > totalsPedido.total) {
       Swal.fire("Validacion", "El anticipo no puede ser mayor al total del pedido", "warning");
       return;
     }
-    if (metodoRequiereReferencia && !referenciaPago.trim()) {
+    if (!pedidoSinCobro && metodoRequiereReferencia && !referenciaPago.trim()) {
       Swal.fire("Validacion", "Ingresa la referencia o numero de transaccion del pago", "warning");
       return;
     }
@@ -941,14 +992,18 @@ export default function PedidoNuevo() {
       clienteNombre: clienteParaPedido.nombre,
       clienteTelefono: clienteParaPedido.telefono || null,
       bodegaId: Number(bodegaId),
-      observaciones: null,
+      observaciones: postventaSeleccionada
+        ? `Vinculado a ${postventaSeleccionada.folio} (${postventaSeleccionada.tipo}). ${pedidoSinCobro ? "Pedido sin valor monetario por cambio/devolucion." : "Pedido con cobro normal."}`
+        : null,
       solicitadoPor,
-      totalEstimado: totals.total,
-      anticipo: Number(anticipo) || 0,
-      envio: totals.envio,
-      metodoPago,
-      porcentajeRecargo: metodoUsaRecargo ? porcentajeRecargo : 0,
-      referenciaPago: metodoRequiereReferencia ? referenciaPago.trim() : null,
+      totalEstimado: totalsPedido.total,
+      anticipo: pedidoSinCobro ? 0 : Number(anticipo) || 0,
+      envio: totalsPedido.envio,
+      metodoPago: pedidoSinCobro ? "sin_cobro" : metodoPago,
+      porcentajeRecargo: pedidoSinCobro ? 0 : metodoUsaRecargo ? porcentajeRecargo : 0,
+      referenciaPago: !pedidoSinCobro && metodoRequiereReferencia ? referenciaPago.trim() : null,
+      postventaId: postventaSeleccionada?.id || null,
+      postventaCobro,
       detalle: detalle.map((d) => ({
         productoId: d.productoId,
         cantidad: d.cantidad,
@@ -976,8 +1031,7 @@ export default function PedidoNuevo() {
         }, 300);
       }, 300);
     } catch (error: any) {
-      const msg = error?.response?.data?.message || error?.message || "No se pudo guardar";
-      Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
+      Swal.fire("Error", getApiErrorMessage(error, "No se pudo guardar"), "error");
     }
   };
 
@@ -1039,7 +1093,7 @@ export default function PedidoNuevo() {
             <div class="meta-label">RECIBO DE PEDIDO</div>
             <div class="meta-boxes">
               <div class="meta-primary">${escapeHtml(bodegaNombre.toUpperCase())}</div>
-              <div class="meta-secondary">${escapeHtml(metodoPago.toUpperCase())}</div>
+              <div class="meta-secondary">${escapeHtml(pedidoSinCobro ? "SIN COBRO" : metodoPago.toUpperCase())}</div>
             </div>
           </div>
 
@@ -1066,10 +1120,18 @@ export default function PedidoNuevo() {
             </div>
             <div class="info-card">
               <div class="info-title">METODO DE PAGO</div>
-              <div class="info-value">${escapeHtml(metodoPago)}</div>
+              <div class="info-value">${escapeHtml(pedidoSinCobro ? "Sin cobro por cambio/devolucion" : metodoPago)}</div>
             </div>
             ${
-              metodoRequiereReferencia
+              postventaSeleccionada
+                ? `<div class="info-card">
+                    <div class="info-title">DOCUMENTO CAMBIO/DEV.</div>
+                    <div class="info-value">${escapeHtml(postventaSeleccionada.folio)}</div>
+                  </div>`
+                : ""
+            }
+            ${
+              !pedidoSinCobro && metodoRequiereReferencia
                 ? `<div class="info-card">
                     <div class="info-title">REFERENCIA</div>
                     <div class="info-value">${escapeHtml(referenciaPago.trim())}</div>
@@ -1103,15 +1165,20 @@ export default function PedidoNuevo() {
             <tbody>${filasHtml}</tbody>
           </table>
 
+          ${
+            pedidoSinCobro
+              ? `<div class="footer-note"><strong>Pedido sin valor monetario:</strong> cubierto por ${escapeHtml(postventaSeleccionada?.folio || "documento de cambio/devolucion")}.</div>`
+              : ""
+          }
           <div class="totals">
-            <div class="totals-row"><span>Subtotal</span><span>Q ${escapeHtml(totals.subtotal.toFixed(2))}</span></div>
-            ${metodoUsaRecargo
-              ? `<div class="totals-row"><span>Recargo (${porcentajeRecargo || 0}%)</span><span>Q ${totals.recargo.toFixed(2)}</span></div>`
+            <div class="totals-row"><span>Subtotal</span><span>Q ${escapeHtml(totalsPedido.subtotal.toFixed(2))}</span></div>
+            ${!pedidoSinCobro && metodoUsaRecargo
+              ? `<div class="totals-row"><span>Recargo (${porcentajeRecargo || 0}%)</span><span>Q ${totalsPedido.recargo.toFixed(2)}</span></div>`
               : ""
             }
-            <div class="totals-row"><span>Envio</span><span>Q ${escapeHtml(totals.envio.toFixed(2))}</span></div>
-            <div class="totals-row"><span>Anticipo</span><span>Q ${escapeHtml((Number(anticipo) || 0).toFixed(2))}</span></div>
-            <div class="totals-row total"><span>Total</span><span>Q ${escapeHtml(totals.total.toFixed(2))}</span></div>
+            <div class="totals-row"><span>Envio</span><span>Q ${escapeHtml(totalsPedido.envio.toFixed(2))}</span></div>
+            <div class="totals-row"><span>Anticipo</span><span>Q ${escapeHtml((pedidoSinCobro ? 0 : Number(anticipo) || 0).toFixed(2))}</span></div>
+            <div class="totals-row total"><span>Total</span><span>Q ${escapeHtml(totalsPedido.total.toFixed(2))}</span></div>
           </div>
         </div>
         <script>window.onload = function(){ window.print(); }</script>
@@ -1302,6 +1369,71 @@ export default function PedidoNuevo() {
           />
         </Grid>
       </Grid>
+
+      <Divider sx={{ my: 2 }} />
+
+      <Typography variant="h6" sx={{ mb: 2 }}>
+        Vinculo con cambio/devolucion
+      </Typography>
+
+      <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+        <Grid container spacing={2} alignItems="center">
+          <Grid size={{ xs: 12, md: 6 }}>
+            <FormControl fullWidth>
+              <InputLabel>Documento de cambio/devolucion</InputLabel>
+              <Select
+                label="Documento de cambio/devolucion"
+                value={postventaId === "" ? "" : postventaId}
+                onChange={(e) => {
+                  const value = e.target.value as string | number;
+                  setPostventaId(value === "" ? "" : Number(value));
+                }}
+              >
+                <MenuItem value="">Sin vincular</MenuItem>
+                {postventaDocs.map((doc) => (
+                  <MenuItem key={doc.id} value={doc.id}>
+                    {`${doc.folio} - ${doc.tipo === "cambio" ? "Cambio" : "Devolucion"} - ${doc.clienteNombre}`}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid size={{ xs: 12, md: 3 }}>
+            <FormControl fullWidth disabled={!postventaSeleccionada}>
+              <InputLabel>Tratamiento del cobro</InputLabel>
+              <Select
+                label="Tratamiento del cobro"
+                value={postventaCobro}
+                onChange={(e) => setPostventaCobro(e.target.value as "normal" | "sin_cobro")}
+              >
+                <MenuItem value="normal">Con cobro normal</MenuItem>
+                <MenuItem value="sin_cobro">Sin valor monetario</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid size={{ xs: 12, md: 3 }}>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={pedidoSinCobro}
+                  disabled={!postventaSeleccionada}
+                  onChange={(e) => setPostventaCobro(e.target.checked ? "sin_cobro" : "normal")}
+                />
+              }
+              label="Cubierto por cambio/devolucion"
+            />
+          </Grid>
+          {postventaSeleccionada && (
+            <Grid size={{ xs: 12 }}>
+              <Alert severity={pedidoSinCobro ? "warning" : "info"}>
+                {pedidoSinCobro
+                  ? `El pedido quedara ligado a ${postventaSeleccionada.folio} y se enviara a produccion sin total, anticipo ni saldo pendiente.`
+                  : `El pedido quedara ligado a ${postventaSeleccionada.folio}, pero se cobrara normalmente.`}
+              </Alert>
+            </Grid>
+          )}
+        </Grid>
+      </Paper>
 
       <Divider sx={{ my: 2 }} />
 
@@ -1646,6 +1778,7 @@ export default function PedidoNuevo() {
             fullWidth
             value={anticipo}
             onChange={(e) => setAnticipo(Number(e.target.value))}
+            disabled={pedidoSinCobro}
             helperText="Se calcula automaticamente como el 50% del total y puedes modificarlo"
           />
         </Grid>
@@ -1655,6 +1788,7 @@ export default function PedidoNuevo() {
             <Select
               label="Metodo de pago anticipo"
               value={metodoPago}
+              disabled={pedidoSinCobro}
               onChange={(e) => {
                 const nextMetodo = e.target.value;
                 setMetodoPago(nextMetodo);
@@ -1675,7 +1809,7 @@ export default function PedidoNuevo() {
             </Select>
           </FormControl>
         </Grid>
-        {metodoUsaRecargo && (
+        {!pedidoSinCobro && metodoUsaRecargo && (
           <Grid size={{ xs: 12, sm: 4 }}>
             <TextField
               label="Recargo %"
@@ -1687,7 +1821,7 @@ export default function PedidoNuevo() {
             />
           </Grid>
         )}
-        {metodoRequiereReferencia && (
+        {!pedidoSinCobro && metodoRequiereReferencia && (
           <Grid size={{ xs: 12, sm: 4 }}>
             <TextField
               label="Referencia"
@@ -1705,6 +1839,7 @@ export default function PedidoNuevo() {
             fullWidth
             value={envio}
             onChange={(e) => setEnvio(Math.max(0, Number(e.target.value) || 0))}
+            disabled={pedidoSinCobro}
             helperText="Monto cobrado por envio en este pedido"
           />
         </Grid>
@@ -1718,29 +1853,29 @@ export default function PedidoNuevo() {
             <Stack spacing={1}>
               <Stack direction="row" justifyContent="space-between">
                 <Typography>Subtotal</Typography>
-                <Typography>{`Q ${totals.subtotal.toFixed(2)}`}</Typography>
+                <Typography>{`Q ${totalsPedido.subtotal.toFixed(2)}`}</Typography>
               </Stack>
-              {metodoUsaRecargo && (
+              {!pedidoSinCobro && metodoUsaRecargo && (
                 <Stack direction="row" justifyContent="space-between">
                   <Typography>Recargo</Typography>
-                  <Typography>{`Q ${totals.recargo.toFixed(2)}`}</Typography>
+                  <Typography>{`Q ${totalsPedido.recargo.toFixed(2)}`}</Typography>
                 </Stack>
               )}
               <Stack direction="row" justifyContent="space-between">
                 <Typography>Envio</Typography>
-                <Typography>{`Q ${totals.envio.toFixed(2)}`}</Typography>
+                <Typography>{`Q ${totalsPedido.envio.toFixed(2)}`}</Typography>
               </Stack>
               <Stack direction="row" justifyContent="space-between">
                 <Typography fontWeight={700}>Total</Typography>
-                <Typography fontWeight={700}>{`Q ${totals.total.toFixed(2)}`}</Typography>
+                <Typography fontWeight={700}>{`Q ${totalsPedido.total.toFixed(2)}`}</Typography>
               </Stack>
               <Stack direction="row" justifyContent="space-between">
                 <Typography>Anticipo</Typography>
-                <Typography>{`Q ${(Number(anticipo) || 0).toFixed(2)}`}</Typography>
+                <Typography>{`Q ${(pedidoSinCobro ? 0 : Number(anticipo) || 0).toFixed(2)}`}</Typography>
               </Stack>
               <Stack direction="row" justifyContent="space-between">
                 <Typography fontWeight={700}>Saldo estimado</Typography>
-                <Typography fontWeight={700}>{`Q ${totals.saldoPendiente.toFixed(2)}`}</Typography>
+                <Typography fontWeight={700}>{`Q ${totalsPedido.saldoPendiente.toFixed(2)}`}</Typography>
               </Stack>
             </Stack>
           </Paper>
