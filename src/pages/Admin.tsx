@@ -51,6 +51,9 @@ interface NotifConfig {
   dailyReportEnabled: boolean;
   dailyReportEmailTo: string;
   dailyReportSubject: string;
+  fortnightlyReportEnabled: boolean;
+  fortnightlyReportEmailTo: string;
+  fortnightlyReportSubject: string;
   productMassConfig?: unknown;
 }
 
@@ -296,6 +299,9 @@ export default function Admin() {
     dailyReportEnabled: false,
     dailyReportEmailTo: "",
     dailyReportSubject: "Reporte diario {fecha}",
+    fortnightlyReportEnabled: false,
+    fortnightlyReportEmailTo: "",
+    fortnightlyReportSubject: "Reporte quincenal {periodo}",
   });
   const [savedPedidoAlertRoleIds, setSavedPedidoAlertRoleIds] = useState<number[]>([]);
   const [savedCrossStoreRoleIds, setSavedCrossStoreRoleIds] = useState<number[]>([]);
@@ -367,10 +373,20 @@ export default function Admin() {
             subject: 'Reporte diario {fecha}',
             triggerOn: ['create'],
           },
+          {
+            tipo: 'reporteQuincenal',
+            enabled: false,
+            emailTo: '',
+            subject: 'Reporte quincenal {periodo}',
+            triggerOn: ['create'],
+          },
         ],
       };
       const reporteDiario = Array.isArray(reportesConfig.reportes)
         ? reportesConfig.reportes.find((item: any) => item?.tipo === 'reporteDiario')
+        : undefined;
+      const reporteQuincenal = Array.isArray(reportesConfig.reportes)
+        ? reportesConfig.reportes.find((item: any) => item?.tipo === 'reporteQuincenal')
         : undefined;
 
       setConfig({
@@ -395,6 +411,9 @@ export default function Admin() {
         dailyReportEnabled: Boolean(reporteDiario?.enabled),
         dailyReportEmailTo: reporteDiario?.emailTo || '',
         dailyReportSubject: reporteDiario?.subject || 'Reporte diario {fecha}',
+        fortnightlyReportEnabled: Boolean(reporteQuincenal?.enabled),
+        fortnightlyReportEmailTo: reporteQuincenal?.emailTo || '',
+        fortnightlyReportSubject: reporteQuincenal?.subject || 'Reporte quincenal {periodo}',
         productMassConfig: data.productMassConfig,
       });
       setSmtpPassDraft('');
@@ -495,6 +514,13 @@ export default function Admin() {
               enabled: config.dailyReportEnabled,
               emailTo: config.dailyReportEmailTo,
               subject: config.dailyReportSubject,
+              triggerOn: ['create'],
+            },
+            {
+              tipo: 'reporteQuincenal',
+              enabled: config.fortnightlyReportEnabled,
+              emailTo: config.fortnightlyReportEmailTo,
+              subject: config.fortnightlyReportSubject,
               triggerOn: ['create'],
             },
           ],
@@ -1269,6 +1295,35 @@ export default function Admin() {
                   value={config.dailyReportSubject}
                   onChange={(e) => setConfig((prev) => ({ ...prev, dailyReportSubject: e.target.value }))}
                   helperText="Usa {fecha} para incluir la fecha del reporte"
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={config.fortnightlyReportEnabled}
+                      onChange={(e) => setConfig((prev) => ({ ...prev, fortnightlyReportEnabled: e.target.checked }))}
+                    />
+                  }
+                  label="Enviar reporte quincenal al generarse"
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <TextField
+                  label="Correo destino reporte quincenal"
+                  fullWidth
+                  value={config.fortnightlyReportEmailTo}
+                  onChange={(e) => setConfig((prev) => ({ ...prev, fortnightlyReportEmailTo: e.target.value }))}
+                  helperText="Separar varios correos con comas"
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <TextField
+                  label="Asunto del correo quincenal"
+                  fullWidth
+                  value={config.fortnightlyReportSubject}
+                  onChange={(e) => setConfig((prev) => ({ ...prev, fortnightlyReportSubject: e.target.value }))}
+                  helperText="Usa {periodo} para incluir la quincena"
                 />
               </Grid>
             </Grid>

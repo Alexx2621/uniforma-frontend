@@ -420,7 +420,8 @@ export default function ReporteDiario() {
       setGenerandoPdf(false);
     }
 
-    Swal.fire("Listo", "El PDF del cierre diario se descargo automaticamente.", "success");
+    await Swal.fire("Listo", "El PDF del cierre diario se descargo automaticamente.", "success");
+    setShowForm(false);
     void cargarDocumentos();
   };
 

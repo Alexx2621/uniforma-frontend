@@ -18,6 +18,7 @@ import {
   FormControl,
   InputLabel,
   Select,
+  CircularProgress,
 } from "@mui/material";
 import PictureAsPdfOutlined from "@mui/icons-material/PictureAsPdfOutlined";
 import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
@@ -75,6 +76,22 @@ const money = (value: number) =>
 
 const percent = (value: number) => `${Number(value || 0).toFixed(2)}%`;
 
+const getApiErrorMessage = async (error: any, fallback: string) => {
+  const data = error?.response?.data;
+  if (data instanceof Blob) {
+    try {
+      const text = await data.text();
+      const parsed = JSON.parse(text);
+      const message = parsed?.message || parsed?.error;
+      return Array.isArray(message) ? message.join(", ") : message || fallback;
+    } catch {
+      return fallback;
+    }
+  }
+  const message = data?.message || error?.message;
+  return Array.isArray(message) ? message.join(", ") : message || fallback;
+};
+
 const getRows = (year: number, month: number, quincena: "1" | "2"): QuincenaRow[] => {
   const lastDay = new Date(year, month, 0).getDate();
   const start = quincena === "1" ? 1 : 16;
@@ -131,6 +148,7 @@ const getReporteDiarioTotal = (data: any) => {
   return capital + departamento + tienda;
 };
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const buildReporteQuincenalHtml = ({
   tienda,
   month,
@@ -356,6 +374,7 @@ export default function ReporteQuincenal() {
   const [reporteNo, setReporteNo] = useState("Pendiente");
   const [ventasPorDia, setVentasPorDia] = useState<Record<number, number>>({});
   const [rellenando, setRellenando] = useState(false);
+  const [generandoPdf, setGenerandoPdf] = useState(false);
 
   const isAdmin = rol === "ADMIN";
 
@@ -428,6 +447,7 @@ export default function ReporteQuincenal() {
   const getPayload = () => ({
     tienda,
     vendedor,
+    generadoPor: vendedor,
     month,
     year,
     metaMes,
@@ -437,8 +457,9 @@ export default function ReporteQuincenal() {
   });
 
   const guardarDocumento = async () => {
+    const quincenaLabel = quincena === "1" ? "1RA" : "2DA";
     const payload = {
-      titulo: `${quincena}RA QUINCENA ${monthNames[month - 1]} ${year}`,
+      titulo: `${quincenaLabel} QUINCENA ${monthNames[month - 1]} ${year}`,
       data: getPayload(),
     };
     if (documentoId) {
@@ -450,6 +471,20 @@ export default function ReporteQuincenal() {
     setDocumentoId(doc.id);
     setReporteNo(doc.correlativo);
     return doc;
+  };
+
+  const descargarDocumentoPdf = async (doc: DocumentoGenerado) => {
+    const resp = await api.get(`/documentos/${doc.id}/pdf`, {
+      responseType: "blob",
+    });
+    const url = window.URL.createObjectURL(new Blob([resp.data], { type: "application/pdf" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `Reporte quincenal ${doc.correlativo}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
   };
 
   const rows = useMemo(
@@ -511,72 +546,37 @@ export default function ReporteQuincenal() {
     }
   };
 
-  const reimprimirDocumento = (doc: DocumentoGenerado) => {
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) {
-      Swal.fire("Aviso", "Habilita ventanas emergentes para imprimir o guardar en PDF", "info");
-      return;
+  const reimprimirDocumento = async (doc: DocumentoGenerado) => {
+    if (generandoPdf) return;
+    try {
+      setGenerandoPdf(true);
+      await descargarDocumentoPdf(doc);
+    } catch (error: any) {
+      const msg = await getApiErrorMessage(error, "No se pudo descargar el PDF del reporte quincenal");
+      Swal.fire("Error", msg, "error");
+    } finally {
+      setGenerandoPdf(false);
     }
-    const data = doc.data || {};
-    const docMonth = Number(data.month || currentDate.getMonth() + 1);
-    const docYear = Number(data.year || currentDate.getFullYear());
-    const docQuincena = data.quincena === "1" ? "1" : "2";
-    const docVentasPorDia = data.ventasPorDia || {};
-    const docRows = getRows(docYear, docMonth, docQuincena).map((row) => ({
-      ...row,
-      ventaDiaria: Number(docVentasPorDia[row.day] || 0),
-    }));
-    printWindow.document.open();
-    printWindow.document.write(
-      buildReporteQuincenalHtml({
-        tienda: data.tienda || tienda,
-        month: docMonth,
-        year: docYear,
-        vendedor: data.vendedor || vendedor,
-        metaMes: Number(data.metaMes || 0),
-        promedioDiario: Number(data.promedioDiario || 0),
-        reporteNo: doc.correlativo,
-        quincena: docQuincena,
-        rows: docRows,
-      })
-    );
-    printWindow.document.close();
   };
 
   const imprimir = async () => {
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) {
-      Swal.fire("Aviso", "Habilita ventanas emergentes para imprimir o guardar en PDF", "info");
-      return;
-    }
-
-    let correlativo = reporteNo;
+    if (generandoPdf) return;
+    setGenerandoPdf(true);
+    let docGenerado: DocumentoGenerado;
     try {
-      const doc = await guardarDocumento();
-      correlativo = doc.correlativo || reporteNo;
-      setReporteNo(correlativo);
+      docGenerado = await guardarDocumento();
+      setReporteNo(docGenerado.correlativo || reporteNo);
+      await descargarDocumentoPdf(docGenerado);
     } catch (error: any) {
-      printWindow.close();
-      const msg = error?.response?.data?.message || "No se pudo guardar el reporte quincenal";
-      Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
+      const msg = await getApiErrorMessage(error, "No se pudo generar o descargar el reporte quincenal");
+      Swal.fire("Error", msg, "error");
       return;
+    } finally {
+      setGenerandoPdf(false);
     }
 
-    printWindow.document.open();
-    printWindow.document.write(
-      buildReporteQuincenalHtml({
-        tienda,
-        month,
-        year,
-        vendedor,
-        metaMes,
-        promedioDiario,
-        reporteNo: correlativo,
-        quincena,
-        rows,
-      })
-    );
-    printWindow.document.close();
+    await Swal.fire("Listo", "El PDF del reporte quincenal se descargo automaticamente.", "success");
+    setShowForm(false);
     void cargarDocumentos();
   };
 
@@ -630,8 +630,15 @@ export default function ReporteQuincenal() {
                   <TableCell>{doc.usuario?.nombre || doc.usuario?.usuario || "N/D"}</TableCell>
                   <TableCell align="right">
                     <Stack direction="row" spacing={1} justifyContent="flex-end">
-                      <Button size="small" variant="contained" color="secondary" onClick={() => reimprimirDocumento(doc)}>
-                        Reimprimir
+                      <Button
+                        size="small"
+                        variant="contained"
+                        color="secondary"
+                        disabled={generandoPdf}
+                        startIcon={generandoPdf ? <CircularProgress size={14} color="inherit" /> : undefined}
+                        onClick={() => reimprimirDocumento(doc)}
+                      >
+                        {generandoPdf ? "Generando..." : "Reimprimir"}
                       </Button>
                     </Stack>
                   </TableCell>
@@ -656,7 +663,7 @@ export default function ReporteQuincenal() {
       <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={2} sx={{ mb: 2 }}>
         <Typography variant="h4">Reporte quincenal</Typography>
         <Stack direction="row" spacing={1}>
-          <Button startIcon={<ArrowBackOutlined />} variant="outlined" size="small" onClick={() => { setShowForm(false); void cargarDocumentos(); }}>
+          <Button startIcon={<ArrowBackOutlined />} variant="outlined" size="small" disabled={generandoPdf} onClick={() => { setShowForm(false); void cargarDocumentos(); }}>
             Volver
           </Button>
           <Button
@@ -664,15 +671,22 @@ export default function ReporteQuincenal() {
             variant="outlined"
             size="small"
             onClick={rellenarDesdeReportesDiarios}
-            disabled={rellenando}
+            disabled={rellenando || generandoPdf}
           >
             {rellenando ? "Rellenando..." : "Rellenar"}
           </Button>
-          <Button startIcon={<CleaningServicesOutlined />} variant="outlined" size="small" onClick={limpiarCapturas}>
+          <Button startIcon={<CleaningServicesOutlined />} variant="outlined" size="small" disabled={generandoPdf} onClick={limpiarCapturas}>
             Limpiar capturas
           </Button>
-          <Button startIcon={<PictureAsPdfOutlined />} variant="contained" color="secondary" size="small" onClick={imprimir}>
-            Imprimir / PDF
+          <Button
+            startIcon={generandoPdf ? <CircularProgress size={16} color="inherit" /> : <PictureAsPdfOutlined />}
+            variant="contained"
+            color="secondary"
+            size="small"
+            onClick={imprimir}
+            disabled={generandoPdf}
+          >
+            {generandoPdf ? "Generando PDF..." : "Imprimir / PDF"}
           </Button>
         </Stack>
       </Stack>
