@@ -79,9 +79,22 @@ interface PedidoRow {
   displayFolio?: string;
   solicitadoPor?: string | null;
   unificado?: boolean;
+  unificaciones?: Array<{ produccionUnificadoId: number }>;
   detalle?: PedidoDetalle[];
   pagos?: Array<{ id: number; total: number; fecha?: string }>;
   avances?: Array<{ id: number; total: number; fecha?: string }>;
+  postventaId?: number | null;
+  postventaCobro?: string | null;
+  postventa?: {
+    id?: number | null;
+    folio?: string | null;
+    tipo?: string | null;
+    motivo?: string | null;
+    monto?: number | null;
+    fecha?: string | null;
+    estado?: string | null;
+    clienteNombre?: string | null;
+  } | null;
 }
 
 interface RelationNodeItem extends RelationNode {}
@@ -264,6 +277,39 @@ export default function Pedidos() {
 
     const childNodes: RelationNodeItem[] = [];
 
+    const postventa = pedido.postventa;
+    if (postventa || pedido.postventaId) {
+      const postventaId = Number(postventa?.id ?? pedido.postventaId ?? 0);
+      const tipoPostventa = `${postventa?.tipo || ""}`.trim().toLowerCase();
+      const tipoLabel = tipoPostventa === "devolucion" ? "Devolucion" : "Cambio";
+      const cobroLabel = pedido.postventaCobro === "sin_cobro" ? "Sin valor monetario" : "Con cobro normal";
+      const motivo = `${postventa?.motivo || ""}`.trim();
+      const estado = `${postventa?.estado || ""}`.trim();
+
+      childNodes.push({
+        id: `postventa-${postventaId || pedido.id}`,
+        type: "postventa",
+        title: postventa?.folio || `${tipoLabel} #${postventaId || pedido.postventaId || pedido.id}`,
+        subtitle: [tipoLabel, motivo || estado, cobroLabel].filter(Boolean).join(" | "),
+        label: tipoPostventa || "cambio",
+        amount: postventa?.monto != null ? Number(postventa.monto) : undefined,
+        date: postventa?.fecha || undefined,
+        sourceId: postventaId || pedido.id,
+      });
+    }
+
+    (pedido.unificaciones || []).forEach((unificacion) => {
+      const unificacionId = Number(unificacion.produccionUnificadoId || 0);
+      if (!unificacionId) return;
+      childNodes.push({
+        id: `unificacion-${unificacionId}`,
+        type: "unificacion",
+        title: `Unificacion #${unificacionId}`,
+        subtitle: "Pedido incluido en documento unificado",
+        sourceId: unificacionId,
+      });
+    });
+
     (pedido.pagos || []).forEach((pago) => {
       childNodes.push({
         id: `pago-${pago.id}`,
@@ -289,7 +335,16 @@ export default function Pedidos() {
     const edges: RelationEdgeItem[] = childNodes.map((node) => ({
       from: rootNode.id,
       to: node.id,
-      label: node.type === "pago" ? "Pago" : "Avance",
+      label:
+        node.type === "pago"
+          ? "Pago"
+          : node.type === "avance"
+            ? "Avance"
+            : node.type === "unificacion"
+              ? "Unificacion"
+              : pedido.postventaCobro === "sin_cobro"
+                ? "Cambio/Devolucion sin cobro"
+                : "Cambio/Devolucion",
     }));
 
     return {
@@ -309,6 +364,14 @@ export default function Pedidos() {
   };
 
   const handleRelationNodeDoubleClick = (node: RelationNodeItem) => {
+    if (node.type === "postventa") {
+      navigate(node.label === "devolucion" ? "/devoluciones" : "/cambios");
+      return;
+    }
+    if (node.type === "unificacion") {
+      navigate("/produccion/correlativos");
+      return;
+    }
     if (node.sourceId) {
       navigate(`/produccion/${node.sourceId}`);
     }

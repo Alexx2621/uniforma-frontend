@@ -23,10 +23,13 @@ import {
   TableRow,
   createFilterOptions,
   Alert,
+  Collapse,
+  IconButton,
 } from "@mui/material";
 import PlaylistAddCheckOutlined from "@mui/icons-material/PlaylistAddCheckOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import DeleteOutline from "@mui/icons-material/DeleteOutline";
+import KeyboardArrowDownOutlined from "@mui/icons-material/KeyboardArrowDownOutlined";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { useNavigate } from "react-router-dom";
@@ -347,6 +350,7 @@ export default function PedidoNuevo() {
   const [envio, setEnvio] = useState<number>(0);
   const [postventaId, setPostventaId] = useState<number | "">("");
   const [postventaCobro, setPostventaCobro] = useState<"normal" | "sin_cobro">("normal");
+  const [postventaSectionOpen, setPostventaSectionOpen] = useState(false);
   const [detalle, setDetalle] = useState<DetalleRow[]>([]);
   const [articuloActual, setArticuloActual] = useState<CapturaArticulo>(detalleInicial);
   const [cantidadInput, setCantidadInput] = useState("1");
@@ -1372,67 +1376,85 @@ export default function PedidoNuevo() {
 
       <Divider sx={{ my: 2 }} />
 
-      <Typography variant="h6" sx={{ mb: 2 }}>
-        Vinculo con cambio/devolucion
-      </Typography>
-
       <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
-        <Grid container spacing={2} alignItems="center">
-          <Grid size={{ xs: 12, md: 6 }}>
-            <FormControl fullWidth>
-              <InputLabel>Documento de cambio/devolucion</InputLabel>
-              <Select
-                label="Documento de cambio/devolucion"
-                value={postventaId === "" ? "" : postventaId}
-                onChange={(e) => {
-                  const value = e.target.value as string | number;
-                  setPostventaId(value === "" ? "" : Number(value));
-                }}
-              >
-                <MenuItem value="">Sin vincular</MenuItem>
-                {postventaDocs.map((doc) => (
-                  <MenuItem key={doc.id} value={doc.id}>
-                    {`${doc.folio} - ${doc.tipo === "cambio" ? "Cambio" : "Devolucion"} - ${doc.clienteNombre}`}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Grid>
-          <Grid size={{ xs: 12, md: 3 }}>
-            <FormControl fullWidth disabled={!postventaSeleccionada}>
-              <InputLabel>Tratamiento del cobro</InputLabel>
-              <Select
-                label="Tratamiento del cobro"
-                value={postventaCobro}
-                onChange={(e) => setPostventaCobro(e.target.value as "normal" | "sin_cobro")}
-              >
-                <MenuItem value="normal">Con cobro normal</MenuItem>
-                <MenuItem value="sin_cobro">Sin valor monetario</MenuItem>
-              </Select>
-            </FormControl>
-          </Grid>
-          <Grid size={{ xs: 12, md: 3 }}>
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={pedidoSinCobro}
-                  disabled={!postventaSeleccionada}
-                  onChange={(e) => setPostventaCobro(e.target.checked ? "sin_cobro" : "normal")}
-                />
-              }
-              label="Cubierto por cambio/devolucion"
-            />
-          </Grid>
-          {postventaSeleccionada && (
-            <Grid size={{ xs: 12 }}>
-              <Alert severity={pedidoSinCobro ? "warning" : "info"}>
-                {pedidoSinCobro
-                  ? `El pedido quedara ligado a ${postventaSeleccionada.folio} y se enviara a produccion sin total, anticipo ni saldo pendiente.`
-                  : `El pedido quedara ligado a ${postventaSeleccionada.folio}, pero se cobrara normalmente.`}
-              </Alert>
+        <Stack
+          direction="row"
+          alignItems="center"
+          justifyContent="space-between"
+          onClick={() => setPostventaSectionOpen((open) => !open)}
+          sx={{ cursor: "pointer" }}
+        >
+          <Typography variant="h6">Vinculo con cambio/devolucion</Typography>
+          <IconButton
+            size="small"
+            aria-label={postventaSectionOpen ? "Ocultar vinculo con cambio/devolucion" : "Mostrar vinculo con cambio/devolucion"}
+            sx={{
+              transform: postventaSectionOpen ? "rotate(180deg)" : "rotate(0deg)",
+              transition: "transform 160ms ease-in-out",
+            }}
+          >
+            <KeyboardArrowDownOutlined />
+          </IconButton>
+        </Stack>
+
+        <Collapse in={postventaSectionOpen} timeout="auto" unmountOnExit>
+          <Grid container spacing={2} alignItems="center" sx={{ mt: 2 }}>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <FormControl fullWidth>
+                <InputLabel>Documento de cambio/devolucion</InputLabel>
+                <Select
+                  label="Documento de cambio/devolucion"
+                  value={postventaId === "" ? "" : postventaId}
+                  onChange={(e) => {
+                    const value = e.target.value as string | number;
+                    setPostventaId(value === "" ? "" : Number(value));
+                  }}
+                >
+                  <MenuItem value="">Sin vincular</MenuItem>
+                  {postventaDocs.map((doc) => (
+                    <MenuItem key={doc.id} value={doc.id}>
+                      {`${doc.folio} - ${doc.tipo === "cambio" ? "Cambio" : "Devolucion"} - ${doc.clienteNombre}`}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
             </Grid>
-          )}
-        </Grid>
+            <Grid size={{ xs: 12, md: 3 }}>
+              <FormControl fullWidth disabled={!postventaSeleccionada}>
+                <InputLabel>Tratamiento del cobro</InputLabel>
+                <Select
+                  label="Tratamiento del cobro"
+                  value={postventaCobro}
+                  onChange={(e) => setPostventaCobro(e.target.value as "normal" | "sin_cobro")}
+                >
+                  <MenuItem value="normal">Con cobro normal</MenuItem>
+                  <MenuItem value="sin_cobro">Sin valor monetario</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid size={{ xs: 12, md: 3 }}>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={pedidoSinCobro}
+                    disabled={!postventaSeleccionada}
+                    onChange={(e) => setPostventaCobro(e.target.checked ? "sin_cobro" : "normal")}
+                  />
+                }
+                label="Cubierto por cambio/devolucion"
+              />
+            </Grid>
+            {postventaSeleccionada && (
+              <Grid size={{ xs: 12 }}>
+                <Alert severity={pedidoSinCobro ? "warning" : "info"}>
+                  {pedidoSinCobro
+                    ? `El pedido quedara ligado a ${postventaSeleccionada.folio} y se enviara a produccion sin total, anticipo ni saldo pendiente.`
+                    : `El pedido quedara ligado a ${postventaSeleccionada.folio}, pero se cobrara normalmente.`}
+                </Alert>
+              </Grid>
+            )}
+          </Grid>
+        </Collapse>
       </Paper>
 
       <Divider sx={{ my: 2 }} />

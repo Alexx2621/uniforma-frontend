@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState, DragEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { Dialog, DialogTitle, DialogContent, DialogActions, Button, Box, Card, CardContent, Typography, Stack } from "@mui/material";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 
 export type RelationNode = {
   id: string;
-  type: "pedido" | "pago" | "avance";
+  type: "pedido" | "pago" | "avance" | "postventa" | "unificacion";
   title: string;
   subtitle?: string;
   label?: string;
@@ -27,6 +27,14 @@ interface Props {
   onClose: () => void;
   onCardDoubleClick?: (node: RelationNode) => void;
 }
+
+const relationTypeLabels: Record<RelationNode["type"], string> = {
+  pedido: "Pedido",
+  pago: "Pago",
+  avance: "Avance",
+  postventa: "Cambio/Devolucion",
+  unificacion: "Unificacion",
+};
 
 function RelationCard({
   node,
@@ -67,12 +75,12 @@ function RelationCard({
               boxShadow: 3,
             }
           : undefined,
-      }}
+        }}
       onDoubleClick={onDoubleClick}
     >
       <CardContent>
         <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-          {node.type === "pedido" ? "Pedido" : node.type === "pago" ? "Pago" : "Avance"}
+          {relationTypeLabels[node.type] || node.type}
         </Typography>
         <Typography variant="h6" gutterBottom>
           {node.title}
@@ -109,11 +117,19 @@ export default function TransactionRelationMap({
   const childNodes = useMemo(() => nodes.filter((node) => node.type !== "pedido"), [nodes]);
   const [orderedChildIds, setOrderedChildIds] = useState<string[]>([]);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const draggingIdRef = useRef<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [dropPosition, setDropPosition] = useState<"before" | "after" | null>(null);
 
   useEffect(() => {
-    setOrderedChildIds(childNodes.map((node) => node.id));
+    setOrderedChildIds((current) => {
+      const ids = childNodes.map((node) => node.id);
+      const next = current.filter((id) => ids.includes(id));
+      ids.forEach((id) => {
+        if (!next.includes(id)) next.push(id);
+      });
+      return next;
+    });
   }, [childNodes]);
 
   const orderedChildNodes = useMemo(
@@ -121,25 +137,31 @@ export default function TransactionRelationMap({
     [orderedChildIds, childNodes]
   );
 
-  const handleDragStart = (id: string) => (event: React.DragEvent<HTMLDivElement>) => {
+  const handleDragStart = (id: string) => (event: DragEvent<HTMLDivElement>) => {
     event.dataTransfer?.setData("text/plain", id);
     event.dataTransfer.effectAllowed = "move";
+    draggingIdRef.current = id;
     setDraggingId(id);
     setDragOverId(null);
     setDropPosition(null);
   };
 
   const handleDragEnd = () => {
+    draggingIdRef.current = null;
     setDraggingId(null);
     setDragOverId(null);
     setDropPosition(null);
   };
 
+  const getDragSourceId = (event?: DragEvent<HTMLDivElement>) =>
+    event?.dataTransfer?.getData("text/plain") || draggingIdRef.current || draggingId;
+
   const handleDragOver = (targetId: string, position: "before" | "after") => (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
 
-    if (!draggingId || draggingId === targetId) {
+    const sourceId = getDragSourceId(event);
+    if (!sourceId || sourceId === targetId) {
       setDragOverId(null);
       setDropPosition(null);
       return;
@@ -151,20 +173,24 @@ export default function TransactionRelationMap({
 
   const handleDragEnter = (targetId: string) => (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
-    if (draggingId && draggingId !== targetId) {
+    const sourceId = getDragSourceId(event);
+    if (sourceId && sourceId !== targetId) {
       setDragOverId(targetId);
     }
   };
 
-  const handleDragLeave = () => {
+  const handleDragLeave = (event: DragEvent<HTMLDivElement>) => {
+    const relatedTarget = event.relatedTarget as Node | null;
+    if (relatedTarget && event.currentTarget.contains(relatedTarget)) return;
     setDragOverId(null);
     setDropPosition(null);
   };
 
   const handleDrop = (targetId: string, position: "before" | "after") => (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
-    const sourceId = event.dataTransfer?.getData("text/plain") || draggingId;
+    const sourceId = getDragSourceId(event);
     if (!sourceId || sourceId === targetId) {
+      draggingIdRef.current = null;
       setDraggingId(null);
       setDragOverId(null);
       setDropPosition(null);
@@ -172,23 +198,19 @@ export default function TransactionRelationMap({
     }
 
     setOrderedChildIds((current) => {
-      const next = [...current];
-      const fromIndex = next.indexOf(sourceId);
-      const targetIndex = next.indexOf(targetId);
-      if (fromIndex === -1 || targetIndex === -1) return next;
-
-      next.splice(fromIndex, 1);
-      const insertionIndex = position === "after"
-        ? fromIndex < targetIndex
-          ? targetIndex
-          : targetIndex + 1
-        : fromIndex < targetIndex
-          ? targetIndex - 1
-          : targetIndex;
-      next.splice(insertionIndex, 0, sourceId);
-      return next;
+      if (!current.includes(sourceId) || !current.includes(targetId)) return current;
+      const withoutSource = current.filter((id) => id !== sourceId);
+      const targetIndex = withoutSource.indexOf(targetId);
+      if (targetIndex === -1) return current;
+      const insertionIndex = position === "after" ? targetIndex + 1 : targetIndex;
+      return [
+        ...withoutSource.slice(0, insertionIndex),
+        sourceId,
+        ...withoutSource.slice(insertionIndex),
+      ];
     });
 
+    draggingIdRef.current = null;
     setDraggingId(null);
     setDragOverId(null);
     setDropPosition(null);
@@ -290,8 +312,16 @@ export default function TransactionRelationMap({
                         draggable
                         onDragStart={handleDragStart(node.id)}
                         onDragEnd={handleDragEnd}
-                        onDragOver={handleDragOver(node.id, "after")}
-                        onDrop={handleDrop(node.id, "after")}
+                        onDragOver={(event) => {
+                          const rect = event.currentTarget.getBoundingClientRect();
+                          const position = event.clientY < rect.top + rect.height / 2 ? "before" : "after";
+                          handleDragOver(node.id, position)(event);
+                        }}
+                        onDrop={(event) => {
+                          const rect = event.currentTarget.getBoundingClientRect();
+                          const position = event.clientY < rect.top + rect.height / 2 ? "before" : "after";
+                          handleDrop(node.id, position)(event);
+                        }}
                         isDragging={draggingId === node.id}
                       />
                     </Box>
