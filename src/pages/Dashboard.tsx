@@ -1,26 +1,35 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Paper,
-  Typography,
-  Grid,
-  Stack,
-  Divider,
-  Chip,
+  Alert,
   Box,
-  ToggleButtonGroup,
-  ToggleButton,
+  Button,
+  Chip,
+  Divider,
+  FormControl,
+  Grid,
+  InputLabel,
+  LinearProgress,
   List,
   ListItem,
   ListItemText,
+  MenuItem,
+  Paper,
+  Select,
+  Stack,
+  ToggleButton,
+  ToggleButtonGroup,
+  Typography,
 } from "@mui/material";
-import ArrowDropUpIcon from "@mui/icons-material/ArrowDropUp";
-import WarningAmberIcon from "@mui/icons-material/WarningAmber";
+import AssignmentOutlined from "@mui/icons-material/AssignmentOutlined";
+import ChangeCircleOutlined from "@mui/icons-material/ChangeCircleOutlined";
 import InventoryIcon from "@mui/icons-material/Inventory";
+import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
+import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
+import PlaylistAddCheckOutlined from "@mui/icons-material/PlaylistAddCheckOutlined";
+import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
-import FormControl from "@mui/material/FormControl";
-import InputLabel from "@mui/material/InputLabel";
-import Select from "@mui/material/Select";
-import MenuItem from "@mui/material/MenuItem";
+import WarningAmberIcon from "@mui/icons-material/WarningAmber";
+import { useNavigate } from "react-router-dom";
 import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
@@ -32,6 +41,44 @@ interface Venta {
   bodegaId?: number | null;
   vendedor?: string | null;
   bodega?: { nombre?: string };
+}
+
+interface PedidoProduccion {
+  id: number;
+  fecha: string;
+  estado: string;
+  totalEstimado: number;
+  anticipo: number;
+  saldoPendiente: number;
+  bodegaId?: number | null;
+  bodega?: { nombre?: string };
+  cliente?: { nombre?: string };
+  clienteNombre?: string | null;
+  displayFolio?: string | null;
+  folio?: string | null;
+  postventaId?: number | null;
+  postventaCobro?: string | null;
+  postventa?: { folio?: string | null; tipo?: string | null } | null;
+}
+
+interface PostventaRow {
+  id: number;
+  folio: string;
+  tipo: "cambio" | "devolucion";
+  fecha: string;
+  clienteNombre: string;
+  motivo: string;
+  estado: string;
+  monto: number;
+}
+
+interface DocumentoRow {
+  id: number;
+  tipo: string;
+  correlativo: string;
+  titulo?: string | null;
+  creadoEn: string;
+  usuario?: { nombre?: string | null; usuario?: string | null } | null;
 }
 
 interface ProductoResumen {
@@ -56,378 +103,392 @@ interface Bodega {
   nombre: string;
 }
 
-const toDateOnly = (d: string | Date) => {
-  const dt = new Date(d);
-  dt.setMinutes(dt.getMinutes() - dt.getTimezoneOffset());
-  return dt.toISOString().slice(0, 10);
+const toDateOnly = (value: string | Date) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 10);
 };
 
-const LineChart = ({ data }: { data: { label: string; value: number }[] }) => {
-  if (!data.length) return <Typography variant="body2">Sin datos.</Typography>;
-  const max = Math.max(...data.map((d) => d.value), 1);
-  const width = 760;
-  const height = 260;
-  const step = width / Math.max(data.length - 1, 1);
-  const points = data.map((d, idx) => {
-    const x = idx * step;
-    const y = height - (d.value / max) * (height * 0.8) - 20;
-    return { x, y };
-  });
-  const pathD = points.map((p, idx) => `${idx === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
+const formatCurrency = (value: number) => `Q ${Number(value || 0).toFixed(2)}`;
 
+const estadoLabel = (estado?: string | null) =>
+  `${estado || "N/D"}`
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+
+const getPedidoFolio = (pedido: PedidoProduccion) =>
+  pedido.displayFolio || pedido.folio || `P-${pedido.id}`;
+
+const getPedidoCliente = (pedido: PedidoProduccion) =>
+  pedido.clienteNombre || pedido.cliente?.nombre || "Mostrador";
+
+const MiniBars = ({ data }: { data: { label: string; value: number }[] }) => {
+  if (!data.length) {
+    return <Typography variant="body2" color="text.secondary">Sin datos para graficar.</Typography>;
+  }
+  const max = Math.max(...data.map((item) => item.value), 1);
   return (
-    <Box sx={{ width: "100%", overflowX: "auto" }}>
-      <svg width={width} height={height} role="img">
-        <path d={pathD} stroke="#1e88e5" strokeWidth={3} fill="none" />
-        {points.map((p, idx) => (
-          <g key={idx}>
-            <title>{`${data[idx].label}: Q ${data[idx].value.toFixed(2)}`}</title>
-            <circle cx={p.x} cy={p.y} r={4} fill="#1e88e5" />
-          </g>
-        ))}
-      </svg>
-      <Stack direction="row" justifyContent="space-between" sx={{ mt: -1, mx: 0.5 }}>
-        {data.map((d, idx) => (
-          <Typography key={idx} variant="caption" color="text.secondary">
-            {d.label}
+    <Stack direction="row" alignItems="flex-end" spacing={0.75} sx={{ height: 150 }}>
+      {data.map((item) => (
+        <Box key={item.label} sx={{ flex: 1, minWidth: 14 }}>
+          <Box
+            title={`${item.label}: ${formatCurrency(item.value)}`}
+            sx={{
+              height: `${Math.max((item.value / max) * 100, item.value > 0 ? 8 : 2)}%`,
+              minHeight: item.value > 0 ? 8 : 2,
+              bgcolor: "primary.main",
+              borderRadius: "6px 6px 2px 2px",
+            }}
+          />
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.75, textAlign: "center" }}>
+            {item.label}
           </Typography>
-        ))}
-      </Stack>
-    </Box>
-  );
-};
-
-const MiniBarChart = ({ data }: { data: { label: string; value: number }[] }) => {
-  if (!data.length) return <Typography variant="body2">Sin datos.</Typography>;
-  const max = Math.max(...data.map((d) => d.value), 1);
-  return (
-    <Stack direction="row" alignItems="flex-end" spacing={0.4} sx={{ height: 120 }}>
-      {data.map((d, idx) => (
-        <Box
-          key={idx}
-          sx={{
-            width: `${100 / data.length}%`,
-            minWidth: 6,
-            backgroundColor: "#1e88e5",
-            height: `${(d.value / max) * 100}%`,
-            borderRadius: 1,
-          }}
-          title={`${d.label}: Q ${d.value.toFixed(2)}`}
-        />
+        </Box>
       ))}
     </Stack>
   );
 };
 
+const MetricCard = ({
+  title,
+  value,
+  helper,
+  icon,
+  tone = "primary",
+}: {
+  title: string;
+  value: string | number;
+  helper?: string;
+  icon: React.ReactNode;
+  tone?: "primary" | "success" | "warning" | "error" | "info";
+}) => (
+  <Paper variant="outlined" sx={{ p: 2, height: "100%", borderRadius: 1 }}>
+    <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
+      <Stack spacing={0.5}>
+        <Typography variant="caption" color="text.secondary">{title}</Typography>
+        <Typography variant="h5" sx={{ fontWeight: 700 }}>{value}</Typography>
+        {helper && <Typography variant="caption" color="text.secondary">{helper}</Typography>}
+      </Stack>
+      <Box sx={{ color: `${tone}.main`, display: "flex" }}>{icon}</Box>
+    </Stack>
+  </Paper>
+);
+
 export default function Dashboard() {
   const [ventas, setVentas] = useState<Venta[]>([]);
+  const [pedidos, setPedidos] = useState<PedidoProduccion[]>([]);
+  const [postventa, setPostventa] = useState<PostventaRow[]>([]);
+  const [documentos, setDocumentos] = useState<DocumentoRow[]>([]);
   const [inventario, setInventario] = useState<InventarioRow[]>([]);
   const [productos, setProductos] = useState<ProductoResumen[]>([]);
   const [bodegas, setBodegas] = useState<Bodega[]>([]);
   const [loading, setLoading] = useState(true);
-  const [rango, setRango] = useState<"7" | "30" | "90" | "all">("30");
+  const [loadError, setLoadError] = useState("");
+  const [rango, setRango] = useState<"7" | "30" | "90">("30");
   const [bodegaFiltro, setBodegaFiltro] = useState<"all" | number>("all");
-  const [vendedorFiltro, setVendedorFiltro] = useState<"all" | string>("all");
-  const { rol, rolId, usuario, bodegaId: userBodegaId } = useAuthStore();
+  const navigate = useNavigate();
+  const { rol, rolId, bodegaId: userBodegaId } = useAuthStore();
   const { crossStoreRoleIds, fetchConfig } = useSystemConfigStore();
   const canAccessAllBodegas = rol === "ADMIN" || crossStoreRoleIds.includes(Number(rolId));
 
   useEffect(() => {
     const load = async () => {
+      setLoading(true);
+      setLoadError("");
       try {
-        const [respVentas, respInv, respProd, respBod] = await Promise.all([
-          api.get("/ventas"),
-          api.get("/inventario/reporte"),
-          api.get("/productos"),
+        const [respVentas, respPedidos, respPostventa, respDocumentos, respInv, respProd, respBod] = await Promise.all([
+          api.get("/ventas").catch(() => ({ data: [] })),
+          api.get("/produccion").catch(() => ({ data: [] })),
+          api.get("/postventa").catch(() => ({ data: [] })),
+          api.get("/documentos").catch(() => ({ data: [] })),
+          api.get("/inventario/reporte").catch(() => ({ data: [] })),
+          api.get("/productos").catch(() => ({ data: [] })),
           api.get("/bodegas").catch(() => ({ data: [] })),
         ]);
         setVentas(respVentas.data || []);
+        setPedidos(respPedidos.data || []);
+        setPostventa(respPostventa.data || []);
+        setDocumentos(respDocumentos.data || []);
         setInventario(respInv.data || []);
         setProductos(respProd.data || []);
         setBodegas(respBod.data || []);
       } catch (error) {
-        console.error("No se pudieron cargar los datos de dashboard", error);
+        setLoadError("No se pudieron cargar todos los datos del dashboard.");
       } finally {
         setLoading(false);
       }
     };
-    load();
+    void load();
     void fetchConfig();
   }, [fetchConfig]);
 
   useEffect(() => {
     if (!canAccessAllBodegas) {
-      if (userBodegaId) setBodegaFiltro(Number(userBodegaId));
-      if (usuario) setVendedorFiltro(usuario);
-    } else {
-      setBodegaFiltro("all");
-      setVendedorFiltro("all");
+      const parsed = Number(userBodegaId);
+      setBodegaFiltro(Number.isFinite(parsed) && parsed > 0 ? parsed : "all");
+      return;
     }
-  }, [canAccessAllBodegas, usuario, userBodegaId]);
+    setBodegaFiltro("all");
+  }, [canAccessAllBodegas, userBodegaId]);
 
   const stats = useMemo(() => {
-    const hoy = new Date();
-    const inventarioFiltrado =
-      bodegaFiltro === "all" ? inventario : inventario.filter((r) => Number(r.bodegaId) === Number(bodegaFiltro));
-    const desde =
-      rango === "all"
-        ? new Date(0)
-        : (() => {
-            const d = new Date();
-            d.setDate(d.getDate() - Number(rango) + 1);
-            return d;
-          })();
-    const previoDesde = new Date(desde);
-    previoDesde.setDate(previoDesde.getDate() - Number(rango || 0));
-    const previoHasta = new Date(desde);
-    previoHasta.setDate(previoHasta.getDate() - 1);
+    const hoy = toDateOnly(new Date());
+    const desde = new Date();
+    desde.setDate(desde.getDate() - Number(rango) + 1);
+    desde.setHours(0, 0, 0, 0);
 
-    const ventasFiltradasBase = ventas.filter((v) => {
-      const pasaBodega =
-        bodegaFiltro === "all" ? true : Number(v.bodegaId) === Number(bodegaFiltro);
-      const pasaVendedor =
-        vendedorFiltro === "all"
-          ? true
-          : (v.vendedor || "").toLowerCase() === (vendedorFiltro as string).toLowerCase();
-      return pasaBodega && pasaVendedor;
-    });
+    const filtraBodega = (bodegaId?: number | null) =>
+      bodegaFiltro === "all" ? true : Number(bodegaId) === Number(bodegaFiltro);
 
-    const ventasActual = ventasFiltradasBase.filter((v) => new Date(v.fecha) >= desde);
-    const ventasPrevio = ventasFiltradasBase.filter(
-      (v) => new Date(v.fecha) >= previoDesde && new Date(v.fecha) <= previoHasta
+    const ventasFiltradas = ventas.filter((venta) => filtraBodega(venta.bodegaId));
+    const ventasRango = ventasFiltradas.filter((venta) => new Date(venta.fecha) >= desde);
+    const ventasHoy = ventasFiltradas.filter((venta) => toDateOnly(venta.fecha) === hoy);
+    const pedidosFiltrados = pedidos.filter((pedido) => filtraBodega(pedido.bodegaId));
+    const inventarioFiltrado = inventario.filter((row) => filtraBodega(row.bodegaId));
+
+    const totalVentasRango = ventasRango.reduce((sum, venta) => sum + Number(venta.total || 0), 0);
+    const totalVentasHoy = ventasHoy.reduce((sum, venta) => sum + Number(venta.total || 0), 0);
+
+    const estadosAbiertos = new Set(["nuevo", "en_produccion", "pendiente", "regresado_produccion"]);
+    const pedidosProduccion = pedidosFiltrados.filter((pedido) =>
+      estadosAbiertos.has(`${pedido.estado || ""}`.trim().toLowerCase())
     );
-    const ventasHoy = ventasFiltradasBase.filter((v) => toDateOnly(v.fecha) === toDateOnly(hoy));
+    const pedidosSaldo = pedidosFiltrados.filter((pedido) => Number(pedido.saldoPendiente || 0) > 0);
+    const saldoPendiente = pedidosSaldo.reduce((sum, pedido) => sum + Number(pedido.saldoPendiente || 0), 0);
+    const pedidosSinCobro = pedidosFiltrados.filter((pedido) => pedido.postventaCobro === "sin_cobro");
 
-    const totalVentas = ventasActual.reduce((sum, v) => sum + (v.total || 0), 0);
-    const totalPrevio = ventasPrevio.reduce((sum, v) => sum + (v.total || 0), 0);
-    const delta = totalPrevio ? ((totalVentas - totalPrevio) / totalPrevio) * 100 : 0;
+    const postventaAbierta = postventa.filter((row) =>
+      ["pendiente", "en_revision"].includes(`${row.estado || ""}`.trim().toLowerCase())
+    );
 
-    const totalVentasHoy = ventasHoy.reduce((sum, v) => sum + (v.total || 0), 0);
-    const ticketsHoy = ventasHoy.length;
-
-    const totalStock = inventarioFiltrado.reduce((sum, r) => sum + (r.stock || 0), 0);
-    const totalProductos = productos.length;
+    const reportesRecientes = documentos
+      .filter((doc) => ["reporteDiario", "reporteQuincenal"].includes(doc.tipo))
+      .slice()
+      .sort((a, b) => new Date(b.creadoEn).getTime() - new Date(a.creadoEn).getTime())
+      .slice(0, 5);
 
     const bajosStock = inventarioFiltrado
-      .filter((r) => r.stock < r.stockMax)
-      .sort((a, b) => a.stock - b.stock)
-      .slice(0, 5);
+      .filter((row) => Number(row.stockMax || 0) > 0 && Number(row.stock || 0) < Number(row.stockMax || 0))
+      .sort((a, b) => Number(a.stock || 0) - Number(b.stock || 0))
+      .slice(0, 6);
 
-    const topVentas = ventas
+    const ventasPorDia = new Map<string, number>();
+    for (let index = Number(rango) - 1; index >= 0; index -= 1) {
+      const day = new Date();
+      day.setDate(day.getDate() - index);
+      ventasPorDia.set(toDateOnly(day), 0);
+    }
+    ventasRango.forEach((venta) => {
+      const key = toDateOnly(venta.fecha);
+      ventasPorDia.set(key, (ventasPorDia.get(key) || 0) + Number(venta.total || 0));
+    });
+
+    const topVentas = ventasRango
       .slice()
-      .sort((a, b) => b.total - a.total)
+      .sort((a, b) => Number(b.total || 0) - Number(a.total || 0))
       .slice(0, 5);
 
-    const ventasPorDia = (() => {
-      const mapa = new Map<string, number>();
-      ventasActual.forEach((v) => {
-        const key = toDateOnly(v.fecha);
-        mapa.set(key, (mapa.get(key) || 0) + (v.total || 0));
-      });
-      const labels = Array.from(mapa.keys()).sort();
-      return labels.map((l) => ({
-        label: l.slice(5).replace("-", "/"),
-        value: mapa.get(l) || 0,
-      }));
-    })();
-
-    const actividadReciente = (() => {
-      const mapa = new Map<string, number>();
-      ventasActual.forEach((v) => {
-        const key = toDateOnly(v.fecha);
-        mapa.set(key, (mapa.get(key) || 0) + (v.total || 0));
-      });
-      return Array.from(mapa.entries())
-        .sort(([a], [b]) => (a > b ? 1 : -1))
-        .slice(-14)
-        .map(([label, value]) => ({ label: label.slice(5).replace("-", "/"), value }));
-    })();
-
-    const stockPorBodega = Object.values(
-      inventarioFiltrado.reduce<Record<string, { nombre: string; stock: number }>>((acc, r) => {
-        const key = r.bodega;
-        if (!acc[key]) acc[key] = { nombre: key, stock: 0 };
-        acc[key].stock += r.stock || 0;
-        return acc;
-      }, {})
-    ).sort((a, b) => b.stock - a.stock);
+    const actividad = [
+      ...pedidosProduccion.slice(0, 4).map((pedido) => ({
+        key: `pedido-${pedido.id}`,
+        title: `${getPedidoFolio(pedido)} - ${getPedidoCliente(pedido)}`,
+        detail: `Produccion: ${estadoLabel(pedido.estado)}`,
+        action: "Abrir",
+        path: `/produccion/${pedido.id}`,
+      })),
+      ...postventaAbierta.slice(0, 3).map((row) => ({
+        key: `postventa-${row.id}`,
+        title: `${row.folio} - ${row.clienteNombre}`,
+        detail: `${row.tipo === "devolucion" ? "Devolucion" : "Cambio"}: ${row.motivo}`,
+        action: "Ver",
+        path: row.tipo === "devolucion" ? "/devoluciones" : "/cambios",
+      })),
+    ].slice(0, 6);
 
     return {
-      totalVentas,
-      totalPrevio,
-      delta,
+      totalVentasRango,
       totalVentasHoy,
-      ticketsHoy,
-      totalStock,
-      totalProductos,
+      ticketsHoy: ventasHoy.length,
+      pedidosProduccion,
+      pedidosSaldo,
+      saldoPendiente,
+      pedidosSinCobro,
+      postventaAbierta,
+      reportesRecientes,
       bajosStock,
+      ventasPorDia: Array.from(ventasPorDia.entries()).map(([date, value]) => ({
+        label: date.slice(5).replace("-", "/"),
+        value,
+      })),
       topVentas,
-      ventasPorDia,
-      actividadReciente,
-      stockPorBodega,
+      actividad,
+      productosActivos: productos.length,
+      stockTotal: inventarioFiltrado.reduce((sum, row) => sum + Number(row.stock || 0), 0),
     };
-  }, [ventas, inventario, productos, rango, bodegaFiltro, vendedorFiltro]);
+  }, [ventas, pedidos, postventa, documentos, inventario, productos, rango, bodegaFiltro]);
 
   return (
-    <Paper sx={{ p: 3, minHeight: "100%", background: "#f7f9fb" }}>
-      <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" alignItems="flex-start" sx={{ mb: 2, gap: 1 }}>
+    <Box sx={{ p: 3, minHeight: "100%", bgcolor: "#f6f8fb" }}>
+      <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" alignItems={{ xs: "stretch", md: "center" }} spacing={2} sx={{ mb: 2 }}>
         <Stack spacing={0.5}>
-          <Typography variant="h5" sx={{ fontWeight: 700 }}>
-            Overview
-          </Typography>
+          <Typography variant="h4" sx={{ fontWeight: 700 }}>Dashboard operativo</Typography>
           <Typography variant="body2" color="text.secondary">
-            Resumen de ventas, actividad e inventario
+            Ventas, produccion, postventa, saldos y stock en una sola vista.
           </Typography>
         </Stack>
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" justifyContent="flex-end">
-          <FormControl size="small" sx={{ minWidth: 150 }} disabled={!canAccessAllBodegas}>
-            <InputLabel>Filtrar por bodega</InputLabel>
+          <FormControl size="small" sx={{ minWidth: 190 }} disabled={!canAccessAllBodegas}>
+            <InputLabel>Tienda</InputLabel>
             <Select
-              label="Filtrar por bodega"
+              label="Tienda"
               value={bodegaFiltro === "all" ? "all" : String(bodegaFiltro)}
-              onChange={(e) => setBodegaFiltro(e.target.value === "all" ? "all" : Number(e.target.value))}
+              onChange={(event) => setBodegaFiltro(event.target.value === "all" ? "all" : Number(event.target.value))}
             >
               <MenuItem value="all">Todas</MenuItem>
-              {bodegas.map((b) => (
-                <MenuItem key={b.id} value={b.id}>
-                  {b.nombre}
-                </MenuItem>
+              {bodegas.map((bodega) => (
+                <MenuItem key={bodega.id} value={bodega.id}>{bodega.nombre}</MenuItem>
               ))}
             </Select>
           </FormControl>
-          <FormControl size="small" sx={{ minWidth: 150 }} disabled={!canAccessAllBodegas}>
-            <InputLabel>Filtrar por vendedor</InputLabel>
-            <Select
-              label="Filtrar por vendedor"
-              value={vendedorFiltro === "all" ? "all" : vendedorFiltro}
-              onChange={(e) => setVendedorFiltro(e.target.value === "all" ? "all" : e.target.value)}
-            >
-              <MenuItem value="all">Todos</MenuItem>
-              {Array.from(
-                new Set(
-                  ventas
-                    .map((v) => (v.vendedor || "").trim())
-                    .filter((v) => v && v.length > 0)
-                )
-              ).map((v) => (
-                <MenuItem key={v} value={v}>
-                  {v}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          <ToggleButtonGroup
-            value={rango}
-            exclusive
-            size="small"
-            onChange={(_, val) => val && setRango(val)}
-          >
+          <ToggleButtonGroup value={rango} exclusive size="small" onChange={(_, value) => value && setRango(value)}>
             <ToggleButton value="7">7d</ToggleButton>
             <ToggleButton value="30">30d</ToggleButton>
             <ToggleButton value="90">90d</ToggleButton>
-            <ToggleButton value="all">Todo</ToggleButton>
           </ToggleButtonGroup>
-          {loading && <Chip label="Cargando" size="small" />}
         </Stack>
       </Stack>
 
-      <Grid container spacing={2} sx={{ mb: 6 }}>
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Paper variant="outlined" sx={{ p: 2, height: "100%" }}>
-            <Typography variant="caption" color="text.secondary">
-              Ventas (rango)
-            </Typography>
-            <Typography variant="h5">Q {stats.totalVentas.toFixed(2)}</Typography>
-            <Stack direction="row" alignItems="center" spacing={0.5}>
-              <ArrowDropUpIcon color={stats.delta >= 0 ? "success" : "error"} />
-              <Typography variant="caption" color={stats.delta >= 0 ? "success.main" : "error.main"}>
-                {stats.delta >= 0 ? "+" : ""}
-                {stats.delta.toFixed(1)}% vs previo
-              </Typography>
-            </Stack>
-          </Paper>
+      {loading && <LinearProgress sx={{ mb: 2 }} />}
+      {loadError && <Alert severity="warning" sx={{ mb: 2 }}>{loadError}</Alert>}
+
+      <Grid container spacing={2} sx={{ mb: 2 }}>
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
+          <MetricCard
+            title={`Ventas ultimos ${rango} dias`}
+            value={formatCurrency(stats.totalVentasRango)}
+            helper={`Hoy: ${formatCurrency(stats.totalVentasHoy)} | Tickets: ${stats.ticketsHoy}`}
+            icon={<TrendingUpIcon />}
+            tone="success"
+          />
         </Grid>
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Paper variant="outlined" sx={{ p: 2, height: "100%" }}>
-            <Typography variant="caption" color="text.secondary">
-              Ventas hoy
-            </Typography>
-            <Typography variant="h5">Q {stats.totalVentasHoy.toFixed(2)}</Typography>
-            <Typography variant="caption" color="text.secondary">
-              Tickets: {stats.ticketsHoy}
-            </Typography>
-          </Paper>
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
+          <MetricCard
+            title="Pedidos en produccion"
+            value={stats.pedidosProduccion.length}
+            helper={`${stats.pedidosSinCobro.length} ligados a cambio/devolucion sin cobro`}
+            icon={<PlaylistAddCheckOutlined />}
+            tone="primary"
+          />
         </Grid>
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Paper variant="outlined" sx={{ p: 2, height: "100%" }}>
-            <Typography variant="caption" color="text.secondary">
-              Stock total
-            </Typography>
-            <Stack direction="row" spacing={1} alignItems="center">
-              <InventoryIcon color="primary" />
-              <Typography variant="h5">{stats.totalStock}</Typography>
-            </Stack>
-            <Typography variant="caption" color="text.secondary">
-              Items en todas las bodegas
-            </Typography>
-          </Paper>
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
+          <MetricCard
+            title="Saldo pendiente"
+            value={formatCurrency(stats.saldoPendiente)}
+            helper={`${stats.pedidosSaldo.length} pedidos con saldo`}
+            icon={<PaymentsOutlined />}
+            tone="warning"
+          />
         </Grid>
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Paper variant="outlined" sx={{ p: 2, height: "100%" }}>
-            <Typography variant="caption" color="text.secondary">
-              Productos
-            </Typography>
-            <Stack direction="row" spacing={1} alignItems="center">
-              <TrendingUpIcon color="info" />
-              <Typography variant="h5">{stats.totalProductos}</Typography>
-            </Stack>
-            <Typography variant="caption" color="text.secondary">
-              Catálogo activo
-            </Typography>
-          </Paper>
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
+          <MetricCard
+            title="Postventa abierta"
+            value={stats.postventaAbierta.length}
+            helper="Cambios/devoluciones pendientes o en revision"
+            icon={<ChangeCircleOutlined />}
+            tone="info"
+          />
         </Grid>
       </Grid>
 
-      <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
-        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
-          <Typography variant="h6">Ventas</Typography>
-          <Typography variant="caption" color="text.secondary">
-            Últimos {rango === "all" ? "datos" : `${rango} días`} (filtrado)
-          </Typography>
-        </Stack>
-        <Divider sx={{ mb: 1 }} />
-        <LineChart data={stats.ventasPorDia} />
-      </Paper>
+      <Grid container spacing={2}>
+        <Grid size={{ xs: 12, lg: 8 }}>
+          <Paper variant="outlined" sx={{ p: 2, height: "100%", borderRadius: 1 }}>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+              <Typography variant="h6">Ventas por dia</Typography>
+              <Chip size="small" label={`${rango} dias`} />
+            </Stack>
+            <Divider sx={{ mb: 2 }} />
+            <MiniBars data={stats.ventasPorDia} />
+          </Paper>
+        </Grid>
 
-      <Grid container spacing={3} alignItems="stretch">
-        <Grid size={{ xs: 12, md: 6 }}>
-          <Paper variant="outlined" sx={{ p: 2, height: "100%", minHeight: 320 }}>
+        <Grid size={{ xs: 12, lg: 4 }}>
+          <Paper variant="outlined" sx={{ p: 2, height: "100%", borderRadius: 1 }}>
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+              <AssignmentOutlined color="primary" />
+              <Typography variant="h6">Pendientes para atender</Typography>
+            </Stack>
+            <Divider sx={{ mb: 1 }} />
+            {stats.actividad.length === 0 ? (
+              <Typography variant="body2" color="text.secondary">No hay pendientes urgentes.</Typography>
+            ) : (
+              <List dense disablePadding>
+                {stats.actividad.map((item) => (
+                  <ListItem
+                    key={item.key}
+                    disableGutters
+                    secondaryAction={
+                      <Button size="small" endIcon={<OpenInNewOutlined />} onClick={() => navigate(item.path)}>
+                        {item.action}
+                      </Button>
+                    }
+                  >
+                    <ListItemText primary={item.title} secondary={item.detail} sx={{ pr: 9 }} />
+                  </ListItem>
+                ))}
+              </List>
+            )}
+          </Paper>
+        </Grid>
+
+        <Grid size={{ xs: 12, md: 6, lg: 4 }}>
+          <Paper variant="outlined" sx={{ p: 2, height: "100%", minHeight: 300, borderRadius: 1 }}>
             <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
               <WarningAmberIcon color="warning" />
-              <Typography variant="h6">Productos bajos en stock</Typography>
+              <Typography variant="h6">Stock bajo</Typography>
             </Stack>
             <Divider sx={{ mb: 1 }} />
             {stats.bajosStock.length === 0 ? (
-              <Typography variant="body2">Todo en orden, no hay faltantes.</Typography>
+              <Typography variant="body2" color="text.secondary">No hay productos por debajo del stock maximo.</Typography>
             ) : (
-              <List dense>
-                {stats.bajosStock.map((r) => (
-                  <ListItem key={`${r.productoId}-${r.bodegaId}`} disableGutters>
-                    <ListItemText
-                      primary={`${r.codigo} - ${r.producto}`}
-                      secondary={`Bodega: ${r.bodega} | Stock: ${r.stock}/${r.stockMax}`}
-                    />
-                    <Box sx={{ minWidth: 120 }}>
-                      <Divider
-                        variant="middle"
-                        sx={{
-                          height: 8,
-                          borderRadius: 999,
-                          borderColor: "transparent",
-                          background: `linear-gradient(90deg, #1e88e5 ${(r.stock / (r.stockMax || 1)) * 100}%, #e5e7eb ${(r.stock / (r.stockMax || 1)) * 100}%)`,
-                        }}
+              <List dense disablePadding>
+                {stats.bajosStock.map((row) => {
+                  const percent = Math.max(0, Math.min((Number(row.stock || 0) / Number(row.stockMax || 1)) * 100, 100));
+                  return (
+                    <ListItem key={`${row.productoId}-${row.bodegaId}`} disableGutters>
+                      <ListItemText
+                        primary={`${row.codigo} - ${row.producto}`}
+                        secondary={`${row.bodega} | ${row.stock}/${row.stockMax}`}
                       />
-                    </Box>
+                      <Box sx={{ width: 90, ml: 1 }}>
+                        <LinearProgress variant="determinate" value={percent} color={percent < 35 ? "error" : "warning"} />
+                      </Box>
+                    </ListItem>
+                  );
+                })}
+              </List>
+            )}
+          </Paper>
+        </Grid>
+
+        <Grid size={{ xs: 12, md: 6, lg: 4 }}>
+          <Paper variant="outlined" sx={{ p: 2, height: "100%", minHeight: 300, borderRadius: 1 }}>
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+              <ReceiptLongOutlined color="secondary" />
+              <Typography variant="h6">Reportes recientes</Typography>
+            </Stack>
+            <Divider sx={{ mb: 1 }} />
+            {stats.reportesRecientes.length === 0 ? (
+              <Typography variant="body2" color="text.secondary">Aun no hay reportes generados.</Typography>
+            ) : (
+              <List dense disablePadding>
+                {stats.reportesRecientes.map((doc) => (
+                  <ListItem key={doc.id} disableGutters>
+                    <ListItemText
+                      primary={doc.correlativo}
+                      secondary={`${doc.tipo === "reporteQuincenal" ? "Reporte quincenal" : "Reporte diario"} | ${new Date(doc.creadoEn).toLocaleString()}`}
+                    />
                   </ListItem>
                 ))}
               </List>
@@ -435,79 +496,60 @@ export default function Dashboard() {
           </Paper>
         </Grid>
 
-        <Grid size={{ xs: 12, md: 6 }}>
-          <Paper variant="outlined" sx={{ p: 2, height: "100%", minHeight: 320 }}>
-            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
-              <Typography variant="h6">Actividad reciente</Typography>
-              <Typography variant="caption" color="text.secondary">
-                Últimos 14 registros
-              </Typography>
+        <Grid size={{ xs: 12, lg: 4 }}>
+          <Paper variant="outlined" sx={{ p: 2, height: "100%", minHeight: 300, borderRadius: 1 }}>
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+              <InventoryIcon color="primary" />
+              <Typography variant="h6">Resumen inventario</Typography>
             </Stack>
             <Divider sx={{ mb: 1 }} />
-            <MiniBarChart data={stats.actividadReciente} />
+            <Stack spacing={1.5}>
+              <Stack direction="row" justifyContent="space-between">
+                <Typography color="text.secondary">Stock total</Typography>
+                <Typography sx={{ fontWeight: 700 }}>{stats.stockTotal}</Typography>
+              </Stack>
+              <Stack direction="row" justifyContent="space-between">
+                <Typography color="text.secondary">Productos catalogo</Typography>
+                <Typography sx={{ fontWeight: 700 }}>{stats.productosActivos}</Typography>
+              </Stack>
+              <Stack direction="row" justifyContent="space-between">
+                <Typography color="text.secondary">Productos bajos</Typography>
+                <Typography sx={{ fontWeight: 700 }}>{stats.bajosStock.length}</Typography>
+              </Stack>
+              <Button variant="outlined" endIcon={<OpenInNewOutlined />} onClick={() => navigate("/inventario/resumen")}>
+                Ver inventario
+              </Button>
+            </Stack>
           </Paper>
         </Grid>
 
-        <Grid size={{ xs: 12, md: 6}}>
-          <Paper variant="outlined" sx={{ p: 2, height: "100%", minHeight: 320, mt: 3 }}>
-            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-              <TrendingUpIcon color="primary" />
-              <Typography variant="h6">Top ventas</Typography>
+        <Grid size={{ xs: 12 }}>
+          <Paper variant="outlined" sx={{ p: 2, borderRadius: 1 }}>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+              <Typography variant="h6">Ventas mas altas del rango</Typography>
+              <Button size="small" endIcon={<OpenInNewOutlined />} onClick={() => navigate("/ventas")}>Ver ventas</Button>
             </Stack>
             <Divider sx={{ mb: 1 }} />
             {stats.topVentas.length === 0 ? (
-              <Typography variant="body2">Aún no hay ventas registradas.</Typography>
+              <Typography variant="body2" color="text.secondary">No hay ventas en el rango seleccionado.</Typography>
             ) : (
-              <List dense>
-                {stats.topVentas.map((v, idx) => (
-                  <ListItem key={v.id} disableGutters>
-                    <ListItemText
-                      primary={`V-${v.id}`}
-                      secondary={new Date(v.fecha).toLocaleDateString()}
-                    />
-                    <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 140 }}>
+              <Grid container spacing={1}>
+                {stats.topVentas.map((venta) => (
+                  <Grid key={venta.id} size={{ xs: 12, md: 6, lg: 2.4 }}>
+                    <Box sx={{ p: 1.5, border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
+                      <Typography variant="subtitle2">V-{venta.id}</Typography>
+                      <Typography variant="h6">{formatCurrency(venta.total)}</Typography>
                       <Typography variant="caption" color="text.secondary">
-                        Q {v.total.toFixed(2)}
+                        {new Date(venta.fecha).toLocaleDateString()}
                       </Typography>
-                      <Box sx={{ flex: 1, height: 8, borderRadius: 999, backgroundColor: "#e5e7eb" }}>
-                        <Box
-                          sx={{
-                            width: `${Math.min((v.total / stats.topVentas[0].total) * 100, 100)}%`,
-                            height: "100%",
-                            borderRadius: 999,
-                            backgroundColor: "#1e88e5",
-                          }}
-                        />
-                      </Box>
-                    </Stack>
-                  </ListItem>
+                    </Box>
+                  </Grid>
                 ))}
-              </List>
-            )}
-          </Paper>
-        </Grid>
-
-        <Grid size={{ xs: 12, md: 6 }}>
-          <Paper variant="outlined" sx={{ p: 2, height: "100%", minHeight: 320, mt: 3 }}>
-            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-              <InventoryIcon color="secondary" />
-              <Typography variant="h6">Inventario por bodega</Typography>
-            </Stack>
-            <Divider sx={{ mb: 1 }} />
-            {stats.stockPorBodega.length === 0 ? (
-              <Typography variant="body2">Sin datos de inventario.</Typography>
-            ) : (
-              <List dense>
-                {stats.stockPorBodega.slice(0, 5).map((b) => (
-                  <ListItem key={b.nombre} disableGutters>
-                    <ListItemText primary={b.nombre} secondary={`${b.stock} unidades`} />
-                  </ListItem>
-                ))}
-              </List>
+              </Grid>
             )}
           </Paper>
         </Grid>
       </Grid>
-    </Paper>
+    </Box>
   );
 }

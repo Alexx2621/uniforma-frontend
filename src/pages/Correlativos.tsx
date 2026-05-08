@@ -51,6 +51,65 @@ interface UsuarioOperacionRow {
   siguienteCorrelativo: string;
 }
 
+const usuarioOperacionDefaults = [
+  { operacion: "venta", nombreOperacion: "Venta", formato: "V-USUARIO-0001", prefijo: "V" },
+  { operacion: "pedido", nombreOperacion: "Pedido", formato: "PE-USUARIO-0001", prefijo: "PE" },
+  { operacion: "cotizacion", nombreOperacion: "Cotizacion", formato: "CO-USUARIO-0001", prefijo: "CO" },
+  { operacion: "reporteDiario", nombreOperacion: "Reporte diario", formato: "RD-USUARIO-0001", prefijo: "RD" },
+  { operacion: "reporteQuincenal", nombreOperacion: "Reporte quincenal", formato: "RQ-USUARIO-0001", prefijo: "RQ" },
+  { operacion: "cambio", nombreOperacion: "Cambio", formato: "CAM-USUARIO-0001", prefijo: "CAM" },
+  { operacion: "devolucion", nombreOperacion: "Devolucion", formato: "DEV-USUARIO-0001", prefijo: "DEV" },
+];
+
+const sanitizeCodigoUsuario = (value?: string | null) => {
+  const cleaned = `${value || ""}`
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, 6);
+  return cleaned || "US";
+};
+
+const completarOperacionesUsuario = (rows: UsuarioOperacionRow[]) => {
+  const byUser = new Map<number, UsuarioOperacionRow[]>();
+  rows.forEach((row) => {
+    const current = byUser.get(row.usuarioId) || [];
+    current.push(row);
+    byUser.set(row.usuarioId, current);
+  });
+
+  const completed: UsuarioOperacionRow[] = [];
+  byUser.forEach((userRows, usuarioId) => {
+    const sample = userRows[0];
+    usuarioOperacionDefaults.forEach((operation) => {
+      const existing = userRows.find((row) => row.operacion === operation.operacion);
+      if (existing) {
+        completed.push(existing);
+        return;
+      }
+      const codigoUsuario = sanitizeCodigoUsuario(sample.usuarioCorrelativo || sample.usuario);
+      completed.push({
+        id: `virtual-${usuarioId}-${operation.operacion}`,
+        usuarioId,
+        usuario: sample.usuario,
+        nombreUsuario: sample.nombreUsuario,
+        usuarioCorrelativo: sample.usuarioCorrelativo,
+        codigoUsuario,
+        operacion: operation.operacion,
+        nombreOperacion: operation.nombreOperacion,
+        formato: operation.formato,
+        prefijo: operation.prefijo,
+        siguienteNumero: 1,
+        siguienteCorrelativo: `${operation.prefijo}-${codigoUsuario}-0001`,
+      });
+    });
+  });
+
+  return completed;
+};
+
 export default function Correlativos() {
   const [rows, setRows] = useState<CorrelativoRow[]>([]);
   const [usuarioRows, setUsuarioRows] = useState<UsuarioOperacionRow[]>([]);
@@ -69,7 +128,7 @@ export default function Correlativos() {
         api.get("/correlativos/usuario-operaciones"),
       ]);
       setRows(respProduccion.data || []);
-      setUsuarioRows(respUsuarios.data || []);
+      setUsuarioRows(completarOperacionesUsuario(respUsuarios.data || []));
     } catch {
       Swal.fire("Error", "No se pudieron cargar los correlativos", "error");
     } finally {

@@ -343,9 +343,12 @@ export default function PedidoNuevo() {
   const [clienteTelefono, setClienteTelefono] = useState("");
   const [clienteNombre, setClienteNombre] = useState("Mostrador");
   const [bodegaId, setBodegaId] = useState<number | "">("");
+  const [ubicacion, setUbicacion] = useState<string>("TIENDA");
   const [metodoPago, setMetodoPago] = useState<string>("efectivo");
+  const [pedidoParaStock, setPedidoParaStock] = useState(false);
   const [porcentajeRecargo, setPorcentajeRecargo] = useState<number>(0);
   const [referenciaPago, setReferenciaPago] = useState("");
+  const [bancoPago, setBancoPago] = useState("");
   const [anticipo, setAnticipo] = useState<number>(0);
   const [envio, setEnvio] = useState<number>(0);
   const [postventaId, setPostventaId] = useState<number | "">("");
@@ -383,10 +386,12 @@ export default function PedidoNuevo() {
   const canAccessAllBodegas = rol === "ADMIN" || crossStoreRoleIds.includes(Number(rolId));
   const metodoUsaRecargo = metodoPago === "tarjeta" || metodoPago === "visalink";
   const metodoRequiereReferencia = metodoPago !== "efectivo";
+  const metodoRequiereBanco = metodoPago === "deposito_bancario";
   const metodoPermiteSinAnticipo = metodoPago === "orden_compra";
   const clienteSeleccionado = clientes.find((c) => c.id === clienteId) || null;
   const postventaSeleccionada = postventaDocs.find((doc) => doc.id === Number(postventaId)) || null;
   const pedidoSinCobro = Boolean(postventaSeleccionada && postventaCobro === "sin_cobro");
+  const pedidoSinValor = pedidoSinCobro || pedidoParaStock;
 
   const cargarCatalogos = async () => {
     try {
@@ -494,7 +499,7 @@ export default function PedidoNuevo() {
     return { subtotal, recargo, envio: envioMonto, total, saldoPendiente };
   }, [detalle, anticipo, metodoUsaRecargo, porcentajeRecargo, envio]);
 
-  const totalsPedido = pedidoSinCobro
+  const totalsPedido = pedidoSinValor
     ? { subtotal: 0, recargo: 0, envio: 0, total: 0, saldoPendiente: 0 }
     : totals;
 
@@ -520,13 +525,47 @@ export default function PedidoNuevo() {
   );
 
   useEffect(() => {
-    if (pedidoSinCobro || metodoPermiteSinAnticipo) {
+    if (pedidoSinValor || metodoPermiteSinAnticipo) {
       setAnticipo(0);
       return;
     }
     const anticipoCalculado = detalle.length ? Number((totals.total * 0.5).toFixed(2)) : 0;
     setAnticipo(anticipoCalculado);
-  }, [detalle, totals.total, metodoPermiteSinAnticipo, pedidoSinCobro]);
+  }, [detalle, totals.total, metodoPermiteSinAnticipo, pedidoSinValor]);
+
+  useEffect(() => {
+    if (!pedidoParaStock) return;
+    setClienteId("");
+    setClienteTelefono("");
+    setClienteNombre("Pedido para stock");
+    setPostventaId("");
+    setPostventaCobro("normal");
+    setPostventaSectionOpen(false);
+    setMetodoPago("sin_cobro_stock");
+    setPorcentajeRecargo(0);
+    setReferenciaPago("");
+    setBancoPago("");
+    setAnticipo(0);
+    setEnvio(0);
+    setArticuloActual((prev) => ({
+      ...prev,
+      precioUnit: 0,
+      bordado: 0,
+      estiloEspecial: false,
+      estiloEspecialMonto: 0,
+      descuento: 0,
+    }));
+    setDetalle((prev) =>
+      prev.map((row) => ({
+        ...row,
+        precioUnit: 0,
+        bordado: 0,
+        estiloEspecial: false,
+        estiloEspecialMonto: 0,
+        descuento: 0,
+      })),
+    );
+  }, [pedidoParaStock]);
 
   const obtenerTela = (prod?: Producto) => {
     return resolveTelaNombre(prod, telas);
@@ -736,10 +775,10 @@ export default function PedidoNuevo() {
       return {
         ...prev,
         productoId: productoDetectado.id,
-        precioUnit: productoDetectado.precio ?? 0,
+        precioUnit: pedidoParaStock ? 0 : productoDetectado.precio ?? 0,
       };
     });
-  }, [productoDetectado]);
+  }, [productoDetectado, pedidoParaStock]);
 
   const limpiarArticulo = () => {
     setArticuloActual(detalleInicial);
@@ -787,11 +826,11 @@ export default function PedidoNuevo() {
       key: editingDetalleKey ?? Date.now(),
       productoId,
       cantidad,
-      precioUnit: Number(articuloActual.precioUnit) || 0,
-      bordado: Number(articuloActual.bordado) || 0,
-      estiloEspecial: Boolean(articuloActual.estiloEspecial),
-      estiloEspecialMonto: articuloActual.estiloEspecial ? Number(articuloActual.estiloEspecialMonto) || 0 : 0,
-      descuento: Number(articuloActual.descuento) || 0,
+      precioUnit: pedidoParaStock ? 0 : Number(articuloActual.precioUnit) || 0,
+      bordado: pedidoParaStock ? 0 : Number(articuloActual.bordado) || 0,
+      estiloEspecial: pedidoParaStock ? false : Boolean(articuloActual.estiloEspecial),
+      estiloEspecialMonto: pedidoParaStock || !articuloActual.estiloEspecial ? 0 : Number(articuloActual.estiloEspecialMonto) || 0,
+      descuento: pedidoParaStock ? 0 : Number(articuloActual.descuento) || 0,
       descripcion: articuloActual.descripcion || "",
     };
 
@@ -831,6 +870,16 @@ export default function PedidoNuevo() {
     if (editingDetalleKey === key) {
       limpiarArticulo();
     }
+  };
+
+  const togglePedidoParaStock = () => {
+    setPedidoParaStock((current) => {
+      if (current) {
+        setMetodoPago("efectivo");
+        setClienteNombre("Mostrador");
+      }
+      return !current;
+    });
   };
 
   const handleCantidadBlur = () => {
@@ -965,11 +1014,15 @@ export default function PedidoNuevo() {
       Swal.fire("Validacion", "Selecciona una bodega", "warning");
       return;
     }
-    if (postventaCobro === "sin_cobro" && !postventaSeleccionada) {
+    if (!pedidoParaStock && !ubicacion) {
+      Swal.fire("Validacion", "Selecciona ubicacion del pedido", "warning");
+      return;
+    }
+    if (!pedidoParaStock && postventaCobro === "sin_cobro" && !postventaSeleccionada) {
       Swal.fire("Validacion", "Selecciona el documento de cambio/devolucion para crear un pedido sin valor monetario", "warning");
       return;
     }
-    if (!pedidoSinCobro && !metodoPermiteSinAnticipo && (Number(anticipo) || 0) <= 0) {
+    if (!pedidoSinValor && !metodoPermiteSinAnticipo && (Number(anticipo) || 0) <= 0) {
       Swal.fire("Validacion", "Ingresa un anticipo mayor a 0", "warning");
       return;
     }
@@ -981,12 +1034,18 @@ export default function PedidoNuevo() {
       Swal.fire("Validacion", "El anticipo no puede ser mayor al total del pedido", "warning");
       return;
     }
-    if (!pedidoSinCobro && metodoRequiereReferencia && !referenciaPago.trim()) {
+    if (!pedidoSinValor && metodoRequiereReferencia && !referenciaPago.trim()) {
       Swal.fire("Validacion", "Ingresa la referencia o numero de transaccion del pago", "warning");
       return;
     }
+    if (!pedidoSinValor && metodoRequiereBanco && !bancoPago.trim()) {
+      Swal.fire("Validacion", "Ingresa el banco del deposito", "warning");
+      return;
+    }
 
-    const clienteParaPedido = await resolverClientePedido();
+    const clienteParaPedido = pedidoParaStock
+      ? { id: null, nombre: "Pedido para stock", telefono: null }
+      : await resolverClientePedido();
     if (clienteParaPedido === false) return;
 
     const solicitadoPor = usuarioSolicitante;
@@ -996,26 +1055,30 @@ export default function PedidoNuevo() {
       clienteNombre: clienteParaPedido.nombre,
       clienteTelefono: clienteParaPedido.telefono || null,
       bodegaId: Number(bodegaId),
+      ubicacion: pedidoParaStock ? "TIENDA" : ubicacion,
       observaciones: postventaSeleccionada
         ? `Vinculado a ${postventaSeleccionada.folio} (${postventaSeleccionada.tipo}). ${pedidoSinCobro ? "Pedido sin valor monetario por cambio/devolucion." : "Pedido con cobro normal."}`
+        : pedidoParaStock
+          ? "Pedido para stock sin valores monetarios."
         : null,
       solicitadoPor,
       totalEstimado: totalsPedido.total,
-      anticipo: pedidoSinCobro ? 0 : Number(anticipo) || 0,
+      anticipo: pedidoSinValor ? 0 : Number(anticipo) || 0,
       envio: totalsPedido.envio,
-      metodoPago: pedidoSinCobro ? "sin_cobro" : metodoPago,
-      porcentajeRecargo: pedidoSinCobro ? 0 : metodoUsaRecargo ? porcentajeRecargo : 0,
-      referenciaPago: !pedidoSinCobro && metodoRequiereReferencia ? referenciaPago.trim() : null,
-      postventaId: postventaSeleccionada?.id || null,
-      postventaCobro,
+      metodoPago: pedidoParaStock ? "sin_cobro_stock" : pedidoSinCobro ? "sin_cobro" : metodoPago,
+      porcentajeRecargo: pedidoSinValor ? 0 : metodoUsaRecargo ? porcentajeRecargo : 0,
+      referenciaPago: !pedidoSinValor && metodoRequiereReferencia ? referenciaPago.trim() : null,
+      bancoPago: !pedidoSinValor && metodoRequiereBanco ? bancoPago.trim() : null,
+      postventaId: pedidoParaStock ? null : postventaSeleccionada?.id || null,
+      postventaCobro: pedidoParaStock ? "normal" : postventaCobro,
       detalle: detalle.map((d) => ({
         productoId: d.productoId,
         cantidad: d.cantidad,
-        precioUnit: d.precioUnit,
-        bordado: d.bordado,
-        estiloEspecial: d.estiloEspecial,
-        estiloEspecialMonto: d.estiloEspecialMonto,
-        descuento: d.descuento,
+        precioUnit: pedidoParaStock ? 0 : d.precioUnit,
+        bordado: pedidoParaStock ? 0 : d.bordado,
+        estiloEspecial: pedidoParaStock ? false : d.estiloEspecial,
+        estiloEspecialMonto: pedidoParaStock ? 0 : d.estiloEspecialMonto,
+        descuento: pedidoParaStock ? 0 : d.descuento,
         descripcion: d.descripcion,
       })),
     };
@@ -1026,6 +1089,12 @@ export default function PedidoNuevo() {
       const folioPedido = resp.data?.folio || (resp.data?.id ? `P-${resp.data.id}` : "PEND");
       const fechaPedido = resp.data?.fecha ? new Date(resp.data.fecha) : new Date();
       generarPdfPedidoProduccion(folioPedido, clienteParaPedido, fechaPedido);
+      if (pedidoParaStock) {
+        setTimeout(() => {
+          navigate("/produccion");
+        }, 300);
+        return;
+      }
       // Pequeño retraso para que el navegador no bloquee la segunda ventana
       setTimeout(() => {
         generarPdfReciboPedido(folioPedido, clienteParaPedido, fechaPedido);
@@ -1294,14 +1363,23 @@ export default function PedidoNuevo() {
 
   return (
     <Paper sx={{ p: 3 }}>
-      <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2 }}>
-        <PlaylistAddCheckOutlined color="primary" />
-        <Typography variant="h4">NUEVO PEDIDO</Typography>
+      <Stack direction={{ xs: "column", sm: "row" }} alignItems={{ xs: "flex-start", sm: "center" }} justifyContent="space-between" spacing={1.5} sx={{ mb: 2 }}>
+        <Stack direction="row" alignItems="center" spacing={1}>
+          <PlaylistAddCheckOutlined color="primary" />
+          <Typography variant="h4">NUEVO PEDIDO</Typography>
+        </Stack>
+        <Button
+          variant={pedidoParaStock ? "contained" : "outlined"}
+          color={pedidoParaStock ? "success" : "primary"}
+          onClick={togglePedidoParaStock}
+        >
+          Pedido para stock
+        </Button>
       </Stack>
       <Divider sx={{ mb: 2 }} />
 
       <Grid container spacing={2}>
-        <Grid size={{ xs: 12, sm: 4 }}>
+        <Grid size={{ xs: 12, sm: 3 }}>
           <FormControl fullWidth>
             <InputLabel>Bodega</InputLabel>
             <Select
@@ -1318,8 +1396,21 @@ export default function PedidoNuevo() {
             </Select>
           </FormControl>
         </Grid>
-        <Grid size={{ xs: 12, sm: 4 }}>
-          <Autocomplete<Cliente, false, false, true>
+        {!pedidoParaStock && (
+          <Grid size={{ xs: 12, sm: 3 }}>
+            <FormControl fullWidth>
+              <InputLabel>Ubicacion</InputLabel>
+              <Select label="Ubicacion" value={ubicacion} onChange={(e) => setUbicacion(e.target.value)}>
+                <MenuItem value="TIENDA">TIENDA</MenuItem>
+                <MenuItem value="CAPITAL">CAPITAL</MenuItem>
+                <MenuItem value="DEPARTAMENTO">DEPARTAMENTO</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+        )}
+        {!pedidoParaStock && (
+          <Grid size={{ xs: 12, sm: 3 }}>
+            <Autocomplete<Cliente, false, false, true>
             freeSolo
             options={clientes.filter((cliente) => `${cliente.telefono || ""}`.trim())}
             getOptionLabel={(option) =>
@@ -1355,27 +1446,31 @@ export default function PedidoNuevo() {
                 helperText="Busca por telefono o escribe uno nuevo"
               />
             )}
-          />
-        </Grid>
-        <Grid size={{ xs: 12, sm: 4 }}>
-          <TextField
-            label="Nombre del cliente"
-            fullWidth
-            value={clienteNombre}
-            onChange={(e) => {
-              const value = e.target.value;
-              setClienteNombre(value);
-              if (clienteSeleccionado && value.trim() !== `${clienteSeleccionado.nombre || ""}`.trim()) {
-                setClienteId("");
-              }
-            }}
-            helperText="Se guardara con el pedido"
-          />
-        </Grid>
+            />
+          </Grid>
+        )}
+        {!pedidoParaStock && (
+          <Grid size={{ xs: 12, sm: 3 }}>
+            <TextField
+              label="Nombre del cliente"
+              fullWidth
+              value={clienteNombre}
+              onChange={(e) => {
+                const value = e.target.value;
+                setClienteNombre(value);
+                if (clienteSeleccionado && value.trim() !== `${clienteSeleccionado.nombre || ""}`.trim()) {
+                  setClienteId("");
+                }
+              }}
+              helperText="Se guardara con el pedido"
+            />
+          </Grid>
+        )}
       </Grid>
 
       <Divider sx={{ my: 2 }} />
 
+      {!pedidoParaStock && (
       <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
         <Stack
           direction="row"
@@ -1456,6 +1551,7 @@ export default function PedidoNuevo() {
           </Grid>
         </Collapse>
       </Paper>
+      )}
 
       <Divider sx={{ my: 2 }} />
 
@@ -1572,86 +1668,90 @@ export default function PedidoNuevo() {
               onBlur={handleCantidadBlur}
             />
           </Grid>
-          <Grid size={{ xs: 12, sm: 4, md: 2 }}>
-            <TextField
-              label="Precio"
-              type="number"
-              fullWidth
-              value={articuloActual.precioUnit}
-              InputProps={{ readOnly: true }}
-            />
-          </Grid>
-          <Grid size={{ xs: 12, sm: 4, md: 2 }}>
-            <TextField
-              label="Bordado"
-              type="number"
-              fullWidth
-              value={articuloActual.bordado}
-              onChange={(e) =>
-                setArticuloActual((prev) => ({ ...prev, bordado: Number(e.target.value) || 0 }))
-              }
-            />
-          </Grid>
-          <Grid size={{ xs: 12, sm: 4, md: 2 }}>
-            <TextField
-              label="Monto estilo"
-              type="number"
-              fullWidth
-              value={articuloActual.estiloEspecialMonto}
-              onChange={(e) =>
-                setArticuloActual((prev) => ({
-                  ...prev,
-                  estiloEspecialMonto: Number(e.target.value) || 0,
-                }))
-              }
-              InputProps={{
-                readOnly: !articuloActual.estiloEspecial,
-                startAdornment: (
-                  <InputAdornment position="start" sx={{ mr: 0.5 }}>
-                    <Stack direction="row" alignItems="center" spacing={0.5}>
-                      <Checkbox
-                        checked={articuloActual.estiloEspecial}
-                        onChange={(e) =>
-                          setArticuloActual((prev) => ({
-                            ...prev,
-                            estiloEspecial: e.target.checked,
-                            estiloEspecialMonto: e.target.checked
-                              ? prev.estiloEspecialMonto > 0
-                                ? prev.estiloEspecialMonto
-                                : 25
-                              : 0,
-                          }))
-                        }
-                        sx={{ p: 0.5 }}
-                      />
-                      {!articuloActual.estiloEspecial && (
-                        <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: "nowrap" }}>
-                          Estilo especial
-                        </Typography>
-                      )}
-                    </Stack>
-                  </InputAdornment>
-                ),
-              }}
-              sx={{
-                "& .MuiInputBase-root": {
-                  backgroundColor: articuloActual.estiloEspecial ? "transparent" : "action.disabledBackground",
-                },
-              }}
-              helperText={articuloActual.estiloEspecial ? "Monto editable por producto" : "Activa estilo especial para habilitar el monto"}
-            />
-          </Grid>
-          <Grid size={{ xs: 12, sm: 4, md: 2 }}>
-            <TextField
-              label="Descuento %"
-              type="number"
-              fullWidth
-              value={articuloActual.descuento}
-              onChange={(e) =>
-                setArticuloActual((prev) => ({ ...prev, descuento: Number(e.target.value) || 0 }))
-              }
-            />
-          </Grid>
+          {!pedidoParaStock && (
+            <>
+              <Grid size={{ xs: 12, sm: 4, md: 2 }}>
+                <TextField
+                  label="Precio"
+                  type="number"
+                  fullWidth
+                  value={articuloActual.precioUnit}
+                  InputProps={{ readOnly: true }}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 4, md: 2 }}>
+                <TextField
+                  label="Bordado"
+                  type="number"
+                  fullWidth
+                  value={articuloActual.bordado}
+                  onChange={(e) =>
+                    setArticuloActual((prev) => ({ ...prev, bordado: Number(e.target.value) || 0 }))
+                  }
+                />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 4, md: 2 }}>
+                <TextField
+                  label="Monto estilo"
+                  type="number"
+                  fullWidth
+                  value={articuloActual.estiloEspecialMonto}
+                  onChange={(e) =>
+                    setArticuloActual((prev) => ({
+                      ...prev,
+                      estiloEspecialMonto: Number(e.target.value) || 0,
+                    }))
+                  }
+                  InputProps={{
+                    readOnly: !articuloActual.estiloEspecial,
+                    startAdornment: (
+                      <InputAdornment position="start" sx={{ mr: 0.5 }}>
+                        <Stack direction="row" alignItems="center" spacing={0.5}>
+                          <Checkbox
+                            checked={articuloActual.estiloEspecial}
+                            onChange={(e) =>
+                              setArticuloActual((prev) => ({
+                                ...prev,
+                                estiloEspecial: e.target.checked,
+                                estiloEspecialMonto: e.target.checked
+                                  ? prev.estiloEspecialMonto > 0
+                                    ? prev.estiloEspecialMonto
+                                    : 25
+                                  : 0,
+                              }))
+                            }
+                            sx={{ p: 0.5 }}
+                          />
+                          {!articuloActual.estiloEspecial && (
+                            <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: "nowrap" }}>
+                              Estilo especial
+                            </Typography>
+                          )}
+                        </Stack>
+                      </InputAdornment>
+                    ),
+                  }}
+                  sx={{
+                    "& .MuiInputBase-root": {
+                      backgroundColor: articuloActual.estiloEspecial ? "transparent" : "action.disabledBackground",
+                    },
+                  }}
+                  helperText={articuloActual.estiloEspecial ? "Monto editable por producto" : "Activa estilo especial para habilitar el monto"}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 4, md: 2 }}>
+                <TextField
+                  label="Descuento %"
+                  type="number"
+                  fullWidth
+                  value={articuloActual.descuento}
+                  onChange={(e) =>
+                    setArticuloActual((prev) => ({ ...prev, descuento: Number(e.target.value) || 0 }))
+                  }
+                />
+              </Grid>
+            </>
+          )}
           <Grid size={{ xs: 12, sm: 8, md: 6 }}>
             <TextField
               label="Observaciones"
@@ -1702,10 +1802,14 @@ export default function PedidoNuevo() {
               <TableCell align="center" sx={{ fontWeight: 700 }}>Talla</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Color</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Cantidad</TableCell>
-              <TableCell align="center" sx={{ fontWeight: 700 }}>Precio</TableCell>
-              <TableCell align="center" sx={{ fontWeight: 700 }}>Bordado</TableCell>
-              <TableCell align="center" sx={{ fontWeight: 700 }}>Estilo especial</TableCell>
-              <TableCell align="center" sx={{ fontWeight: 700 }}>Descuento</TableCell>
+              {!pedidoParaStock && (
+                <>
+                  <TableCell align="center" sx={{ fontWeight: 700 }}>Precio</TableCell>
+                  <TableCell align="center" sx={{ fontWeight: 700 }}>Bordado</TableCell>
+                  <TableCell align="center" sx={{ fontWeight: 700 }}>Estilo especial</TableCell>
+                  <TableCell align="center" sx={{ fontWeight: 700 }}>Descuento</TableCell>
+                </>
+              )}
               <TableCell align="center" sx={{ fontWeight: 700 }}>Observacion</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Acciones</TableCell>
             </TableRow>
@@ -1722,12 +1826,16 @@ export default function PedidoNuevo() {
                   <TableCell align="center">{obtenerTalla(producto)}</TableCell>
                   <TableCell align="center">{obtenerColor(producto)}</TableCell>
                   <TableCell align="center">{row.cantidad}</TableCell>
-                  <TableCell align="center">{`Q ${Number(row.precioUnit || 0).toFixed(2)}`}</TableCell>
-                  <TableCell align="center">{`Q ${Number(row.bordado || 0).toFixed(2)}`}</TableCell>
-                  <TableCell align="center">
-                    {row.estiloEspecial ? `Q ${Number(row.estiloEspecialMonto || 0).toFixed(2)}` : "No"}
-                  </TableCell>
-                  <TableCell align="center">{`${Number(row.descuento || 0).toFixed(2)}%`}</TableCell>
+                  {!pedidoParaStock && (
+                    <>
+                      <TableCell align="center">{`Q ${Number(row.precioUnit || 0).toFixed(2)}`}</TableCell>
+                      <TableCell align="center">{`Q ${Number(row.bordado || 0).toFixed(2)}`}</TableCell>
+                      <TableCell align="center">
+                        {row.estiloEspecial ? `Q ${Number(row.estiloEspecialMonto || 0).toFixed(2)}` : "No"}
+                      </TableCell>
+                      <TableCell align="center">{`${Number(row.descuento || 0).toFixed(2)}%`}</TableCell>
+                    </>
+                  )}
                   <TableCell align="center">{row.descripcion || "-"}</TableCell>
                   <TableCell align="center">
                     <Stack direction="row" spacing={1} justifyContent="center">
@@ -1761,23 +1869,27 @@ export default function PedidoNuevo() {
                 <TableCell align="center" sx={{ fontWeight: 700 }}>
                   {detalleTableTotals.cantidad}
                 </TableCell>
-                <TableCell align="center" sx={{ fontWeight: 700 }}>
-                  {`Q ${detalleTableTotals.precio.toFixed(2)}`}
-                </TableCell>
-                <TableCell align="center" sx={{ fontWeight: 700 }}>
-                  {`Q ${detalleTableTotals.bordado.toFixed(2)}`}
-                </TableCell>
-                <TableCell align="center" sx={{ fontWeight: 700 }}>
-                  {`Q ${detalleTableTotals.estiloEspecial.toFixed(2)}`}
-                </TableCell>
-                <TableCell align="center">-</TableCell>
+                {!pedidoParaStock && (
+                  <>
+                    <TableCell align="center" sx={{ fontWeight: 700 }}>
+                      {`Q ${detalleTableTotals.precio.toFixed(2)}`}
+                    </TableCell>
+                    <TableCell align="center" sx={{ fontWeight: 700 }}>
+                      {`Q ${detalleTableTotals.bordado.toFixed(2)}`}
+                    </TableCell>
+                    <TableCell align="center" sx={{ fontWeight: 700 }}>
+                      {`Q ${detalleTableTotals.estiloEspecial.toFixed(2)}`}
+                    </TableCell>
+                    <TableCell align="center">-</TableCell>
+                  </>
+                )}
                 <TableCell align="center">-</TableCell>
                 <TableCell align="center">-</TableCell>
               </TableRow>
             )}
             {!detalle.length && (
               <TableRow>
-                <TableCell colSpan={13} align="center">
+                <TableCell colSpan={pedidoParaStock ? 9 : 13} align="center">
                   Aun no has agregado articulos al pedido.
                 </TableCell>
               </TableRow>
@@ -1786,6 +1898,8 @@ export default function PedidoNuevo() {
         </Table>
       </TableContainer>
 
+      {!pedidoParaStock && (
+        <>
       <Divider sx={{ my: 2 }} />
 
       <Typography variant="h6" sx={{ mb: 2 }}>
@@ -1819,6 +1933,7 @@ export default function PedidoNuevo() {
                   setAnticipo(Number((totals.total * 0.5).toFixed(2)));
                 }
                 if (nextMetodo === "efectivo") setReferenciaPago("");
+                if (nextMetodo !== "deposito_bancario") setBancoPago("");
                 if (nextMetodo !== "tarjeta" && nextMetodo !== "visalink") setPorcentajeRecargo(0);
               }}
             >
@@ -1851,6 +1966,17 @@ export default function PedidoNuevo() {
               value={referenciaPago}
               onChange={(e) => setReferenciaPago(e.target.value)}
               helperText="Numero de transaccion del metodo de pago"
+            />
+          </Grid>
+        )}
+        {!pedidoSinCobro && metodoRequiereBanco && (
+          <Grid size={{ xs: 12, sm: 4 }}>
+            <TextField
+              label="Banco"
+              fullWidth
+              value={bancoPago}
+              onChange={(e) => setBancoPago(e.target.value)}
+              helperText="Banco donde se realizo el deposito"
             />
           </Grid>
         )}
@@ -1903,6 +2029,8 @@ export default function PedidoNuevo() {
           </Paper>
         </Grid>
       </Grid>
+        </>
+      )}
 
       <Stack direction="row" justifyContent="flex-end" spacing={2} sx={{ mt: 3 }}>
         <Button variant="outlined" onClick={() => navigate("/produccion")}>

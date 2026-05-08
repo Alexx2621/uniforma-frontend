@@ -37,6 +37,9 @@ interface NotifConfig {
   pedidoAlertRoleIds: number[];
   crossStoreRoleIds: number[];
   unifyOrderRoleIds: number[];
+  vendedorDropdownRoleIds: number[];
+  vendedorDropdownBodegaIds: number[];
+  salesInventoryEnabled: boolean;
   emailEnabled: boolean;
   whatsappEnabled: boolean;
   smtpHost: string;
@@ -66,6 +69,12 @@ interface UsuarioModulo {
 interface RolOption {
   id: number;
   nombre: string;
+}
+
+interface BodegaOption {
+  id: number;
+  nombre: string;
+  ubicacion?: string | null;
 }
 
 interface MassGeneroDraft {
@@ -286,6 +295,9 @@ export default function Admin() {
     pedidoAlertRoleIds: [],
     crossStoreRoleIds: [],
     unifyOrderRoleIds: [],
+    vendedorDropdownRoleIds: [],
+    vendedorDropdownBodegaIds: [],
+    salesInventoryEnabled: true,
     emailEnabled: false,
     whatsappEnabled: false,
     smtpHost: "smtp.gmail.com",
@@ -306,9 +318,12 @@ export default function Admin() {
   const [savedPedidoAlertRoleIds, setSavedPedidoAlertRoleIds] = useState<number[]>([]);
   const [savedCrossStoreRoleIds, setSavedCrossStoreRoleIds] = useState<number[]>([]);
   const [savedUnifyOrderRoleIds, setSavedUnifyOrderRoleIds] = useState<number[]>([]);
+  const [savedVendedorDropdownRoleIds, setSavedVendedorDropdownRoleIds] = useState<number[]>([]);
+  const [savedVendedorDropdownBodegaIds, setSavedVendedorDropdownBodegaIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
   const [usuarios, setUsuarios] = useState<UsuarioModulo[]>([]);
   const [roles, setRoles] = useState<RolOption[]>([]);
+  const [bodegas, setBodegas] = useState<BodegaOption[]>([]);
   const [disabledPathsDraft, setDisabledPathsDraft] = useState<string[]>([]);
   const [smtpPassDraft, setSmtpPassDraft] = useState('');
   const [resendApiKeyDraft, setResendApiKeyDraft] = useState('');
@@ -340,6 +355,13 @@ export default function Admin() {
         .join(", "),
     [roles]
   );
+  const getBodegaNames = useCallback(
+    (bodegaIds: number[]) =>
+      normalizeRoleIds(bodegaIds)
+        .map((id) => bodegas.find((bodega) => bodega.id === id)?.nombre || `Tienda #${id}`)
+        .join(", "),
+    [bodegas]
+  );
 
   const modulesBySection = useMemo(() => {
     const grouped = new Map<string, typeof menuPathItems>();
@@ -358,10 +380,11 @@ export default function Admin() {
   const cargar = useCallback(async () => {
     try {
       setLoading(true);
-      const [respConfig, respUsuarios, respRoles] = await Promise.all([
+      const [respConfig, respUsuarios, respRoles, respBodegas] = await Promise.all([
         api.get("/config/notificaciones"),
         canManageAdmin ? api.get("/usuarios").catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
         canManageAdmin ? api.get("/roles").catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
+        canManageAdmin ? api.get("/bodegas").catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
       ]);
       const data = respConfig.data || {};
       const reportesConfig = data.reportesConfig || {
@@ -397,6 +420,9 @@ export default function Admin() {
         pedidoAlertRoleIds: normalizeRoleIds(data.pedidoAlertRoleIds),
         crossStoreRoleIds: normalizeRoleIds(data.crossStoreRoleIds),
         unifyOrderRoleIds: normalizeRoleIds(data.unifyOrderRoleIds),
+        vendedorDropdownRoleIds: normalizeRoleIds(data.vendedorDropdownRoleIds),
+        vendedorDropdownBodegaIds: normalizeRoleIds(data.vendedorDropdownBodegaIds),
+        salesInventoryEnabled: data.salesInventoryEnabled !== false,
         emailEnabled: Boolean(data.emailTo),
         whatsappEnabled: Boolean(data.whatsappTo),
         smtpHost: data.smtpHost || 'smtp.gmail.com',
@@ -421,6 +447,8 @@ export default function Admin() {
       setSavedPedidoAlertRoleIds(normalizeRoleIds(data.pedidoAlertRoleIds));
       setSavedCrossStoreRoleIds(normalizeRoleIds(data.crossStoreRoleIds));
       setSavedUnifyOrderRoleIds(normalizeRoleIds(data.unifyOrderRoleIds));
+      setSavedVendedorDropdownRoleIds(normalizeRoleIds(data.vendedorDropdownRoleIds));
+      setSavedVendedorDropdownBodegaIds(normalizeRoleIds(data.vendedorDropdownBodegaIds));
       setProductMassConfigDraft(mapMassConfigToDraft(data.productMassConfig || {}));
       setDisabledPathsDraft(Array.isArray(data.disabledPaths) ? data.disabledPaths : []);
       setUserDisabledPathsDraft(
@@ -443,6 +471,16 @@ export default function Admin() {
           .map((item: any) => ({
             id: Number(item.id),
             nombre: item.nombre,
+          }))
+      );
+      const bodegasData = Array.isArray(respBodegas.data) ? respBodegas.data : [];
+      setBodegas(
+        bodegasData
+          .filter((item: any) => Number.isFinite(Number(item?.id)) && typeof item?.nombre === "string")
+          .map((item: any) => ({
+            id: Number(item.id),
+            nombre: item.nombre,
+            ubicacion: item.ubicacion || null,
           }))
       );
     } catch {
@@ -498,6 +536,7 @@ export default function Admin() {
         pedidoAlertRoleIds: config.pedidoAlertRoleIds,
         crossStoreRoleIds: config.crossStoreRoleIds,
         unifyOrderRoleIds: config.unifyOrderRoleIds,
+        salesInventoryEnabled: config.salesInventoryEnabled,
         smtpHost: config.smtpHost,
         smtpPort: config.smtpPort,
         smtpUser: config.smtpUser,
@@ -526,6 +565,7 @@ export default function Admin() {
           ],
         },
       });
+      await fetchConfig();
       Swal.fire("Guardado", "Preferencias de notificacion actualizadas", "success");
     } catch {
       Swal.fire("Error", "No se pudo guardar la configuracion", "error");
@@ -653,6 +693,33 @@ export default function Admin() {
       );
     } catch {
       Swal.fire("Error", "No se pudo guardar la configuracion por usuario", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const guardarAccesoDropdownVendedores = async () => {
+    try {
+      setLoading(true);
+      const payload = {
+        vendedorDropdownRoleIds: normalizeRoleIds(config.vendedorDropdownRoleIds),
+        vendedorDropdownBodegaIds: normalizeRoleIds(config.vendedorDropdownBodegaIds),
+      };
+      const { data } = await api.put("/config/notificaciones", payload);
+      const nextRoleIds = normalizeRoleIds(data?.vendedorDropdownRoleIds ?? payload.vendedorDropdownRoleIds);
+      const nextBodegaIds = normalizeRoleIds(data?.vendedorDropdownBodegaIds ?? payload.vendedorDropdownBodegaIds);
+      setConfig((prev) => ({
+        ...prev,
+        vendedorDropdownRoleIds: nextRoleIds,
+        vendedorDropdownBodegaIds: nextBodegaIds,
+      }));
+      setSavedVendedorDropdownRoleIds(nextRoleIds);
+      setSavedVendedorDropdownBodegaIds(nextBodegaIds);
+      await fetchConfig();
+      await cargar();
+      Swal.fire("Guardado", "El acceso al selector de vendedores fue actualizado", "success");
+    } catch {
+      Swal.fire("Error", "No se pudo guardar el acceso al selector de vendedores", "error");
     } finally {
       setLoading(false);
     }
@@ -1162,6 +1229,113 @@ export default function Admin() {
                 disabled={loading || !mensajeActualizacion.trim()}
               >
                 Enviar mensaje y cerrar sesiones
+              </Button>
+            </Stack>
+          </Stack>
+        </Paper>
+      )}
+
+      {canManageAdmin && (
+        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+          <Stack spacing={1.5}>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Inventory2Outlined color="primary" />
+              <Typography variant="h6">Inventario en ventas</Typography>
+            </Stack>
+            <Typography variant="body2" color="text.secondary">
+              Controla si una venta valida stock disponible y descuenta inventario al guardarse.
+            </Typography>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={config.salesInventoryEnabled}
+                  onChange={(e) => setConfig((prev) => ({ ...prev, salesInventoryEnabled: e.target.checked }))}
+                />
+              }
+              label={config.salesInventoryEnabled ? "Usar inventario en ventas" : "No usar inventario en ventas"}
+            />
+            <Stack direction="row" justifyContent="flex-end">
+              <Button variant="contained" onClick={guardar} disabled={loading}>
+                Guardar configuracion
+              </Button>
+            </Stack>
+          </Stack>
+        </Paper>
+      )}
+
+      {canManageAdmin && (
+        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+          <Stack spacing={1.5}>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <NotificationsActiveOutlined color="primary" />
+              <Typography variant="subtitle2">Selector de vendedores por rol</Typography>
+            </Stack>
+            <Typography variant="body2" color="text.secondary">
+              Los roles seleccionados podran ver el dropdown de vendedores. Las tiendas limitan que usuarios aparecen en ese selector.
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Roles guardados actualmente:{" "}
+              {savedVendedorDropdownRoleIds.length ? getRoleNames(savedVendedorDropdownRoleIds) : "ninguno"}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Tiendas visibles actualmente:{" "}
+              {savedVendedorDropdownBodegaIds.length ? getBodegaNames(savedVendedorDropdownBodegaIds) : "todas"}
+            </Typography>
+            <TextField
+              select
+              fullWidth
+              label="Roles con acceso al selector"
+              value={config.vendedorDropdownRoleIds}
+              onChange={(e) =>
+                setConfig((prev) => ({
+                  ...prev,
+                  vendedorDropdownRoleIds: normalizeRoleIds(e.target.value),
+                }))
+              }
+              SelectProps={{
+                multiple: true,
+                renderValue: (selected) => getRoleNames(normalizeRoleIds(selected)),
+              }}
+              helperText="ADMIN siempre conserva acceso completo."
+            >
+              {roles.map((role) => (
+                <MenuItem key={role.id} value={role.id}>
+                  <Checkbox checked={config.vendedorDropdownRoleIds.includes(role.id)} />
+                  {role.nombre}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              select
+              fullWidth
+              label="Tiendas visibles en el selector"
+              value={config.vendedorDropdownBodegaIds}
+              onChange={(e) =>
+                setConfig((prev) => ({
+                  ...prev,
+                  vendedorDropdownBodegaIds: normalizeRoleIds(e.target.value),
+                }))
+              }
+              SelectProps={{
+                multiple: true,
+                renderValue: (selected) => {
+                  const ids = normalizeRoleIds(selected);
+                  return ids.length ? getBodegaNames(ids) : "Todas";
+                },
+              }}
+              helperText="Si no seleccionas tiendas, el selector muestra usuarios de todas las tiendas."
+            >
+              {bodegas.map((bodega) => (
+                <MenuItem key={bodega.id} value={bodega.id}>
+                  <Checkbox checked={config.vendedorDropdownBodegaIds.includes(bodega.id)} />
+                  {bodega.nombre}
+                  {bodega.ubicacion ? ` - ${bodega.ubicacion}` : ""}
+                </MenuItem>
+              ))}
+            </TextField>
+            <Stack direction="row" justifyContent="flex-end">
+              <Button variant="contained" onClick={guardarAccesoDropdownVendedores} disabled={loading}>
+                Aplicar selector de vendedores
               </Button>
             </Stack>
           </Stack>

@@ -6,6 +6,9 @@ interface SystemConfigState {
   userDisabledPaths: Record<string, string[]>;
   crossStoreRoleIds: number[];
   unifyOrderRoleIds: number[];
+  vendedorDropdownRoleIds: number[];
+  vendedorDropdownBodegaIds: number[];
+  salesInventoryEnabled: boolean;
   loaded: boolean;
   loading: boolean;
   fetchConfig: () => Promise<void>;
@@ -17,6 +20,9 @@ export const useSystemConfigStore = create<SystemConfigState>((set) => ({
   userDisabledPaths: {},
   crossStoreRoleIds: [],
   unifyOrderRoleIds: [],
+  vendedorDropdownRoleIds: [],
+  vendedorDropdownBodegaIds: [],
+  salesInventoryEnabled: true,
   loaded: false,
   loading: false,
 
@@ -36,6 +42,13 @@ export const useSystemConfigStore = create<SystemConfigState>((set) => ({
         unifyOrderRoleIds: Array.isArray(resp.data?.unifyOrderRoleIds)
           ? resp.data.unifyOrderRoleIds.map(Number).filter((value: number) => Number.isFinite(value) && value > 0)
           : [],
+        vendedorDropdownRoleIds: Array.isArray(resp.data?.vendedorDropdownRoleIds)
+          ? resp.data.vendedorDropdownRoleIds.map(Number).filter((value: number) => Number.isFinite(value) && value > 0)
+          : [],
+        vendedorDropdownBodegaIds: Array.isArray(resp.data?.vendedorDropdownBodegaIds)
+          ? resp.data.vendedorDropdownBodegaIds.map(Number).filter((value: number) => Number.isFinite(value) && value > 0)
+          : [],
+        salesInventoryEnabled: resp.data?.salesInventoryEnabled !== false,
         loaded: true,
         loading: false,
       });
@@ -47,6 +60,9 @@ export const useSystemConfigStore = create<SystemConfigState>((set) => ({
         userDisabledPaths: {},
         crossStoreRoleIds: [],
         unifyOrderRoleIds: [],
+        vendedorDropdownRoleIds: [],
+        vendedorDropdownBodegaIds: [],
+        salesInventoryEnabled: true,
       });
     }
   },

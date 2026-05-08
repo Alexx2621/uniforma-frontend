@@ -14,6 +14,7 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  TablePagination,
   MenuItem,
   FormControl,
   InputLabel,
@@ -28,8 +29,10 @@ import PlaylistAddCheckOutlined from "@mui/icons-material/PlaylistAddCheckOutlin
 import Swal from "sweetalert2";
 import { api } from "../../api/axios";
 import { useAuthStore } from "../../auth/useAuthStore";
+import { useSystemConfigStore } from "../../config/useSystemConfigStore";
 import LOGO_URL from "../../assets/3-logos.png";
 import { PDF_FONT_BOLD_FAMILY, PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../../utils/fontFamily";
+import { canUseVendedorDropdown, filterUsuariosByBodega } from "../../utils/vendedorDropdownAccess";
 
 interface QuincenaRow {
   day: number;
@@ -45,13 +48,14 @@ interface DocumentoGenerado {
   data: any;
   creadoEn: string;
   actualizadoEn: string;
-  usuario?: { nombre?: string | null; usuario?: string | null };
+  usuario?: { nombre?: string | null; usuario?: string | null; bodegaId?: number | string | null };
 }
 
 interface Usuario {
   id: number;
   nombre: string;
   usuario: string;
+  bodegaId?: number | string | null;
 }
 
 const monthNames = [
@@ -353,15 +357,20 @@ const buildReporteQuincenalHtml = ({
 
 export default function ReporteQuincenal() {
   const currentDate = new Date();
-  const { bodegaNombre, usuario, nombre, primerNombre, primerApellido, rol, id: userId } = useAuthStore();
+  const today = toDateKey(currentDate.getFullYear(), currentDate.getMonth() + 1, currentDate.getDate());
+  const currentQuincena = currentDate.getDate() <= 15 ? "1" : "2";
+  const { bodegaNombre, usuario, nombre, primerNombre, primerApellido, rol, rolId, id: userId } = useAuthStore();
+  const { vendedorDropdownRoleIds, vendedorDropdownBodegaIds, loaded: configLoaded, fetchConfig } = useSystemConfigStore();
   const location = useLocation();
   const [documentos, setDocumentos] = useState<DocumentoGenerado[]>([]);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [filtroUsuarioId, setFiltroUsuarioId] = useState<number | null | "">("");
   const [documentoId, setDocumentoId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [filtroDesde, setFiltroDesde] = useState("");
-  const [filtroHasta, setFiltroHasta] = useState("");
+  const [filtroDesde, setFiltroDesde] = useState(today);
+  const [filtroHasta, setFiltroHasta] = useState(today);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
   const tienda = `${bodegaNombre || "TIENDA"}`.trim().toUpperCase();
   const vendedor = `${usuario || nombre || [primerNombre, primerApellido].filter(Boolean).join(" ") || "USUARIO"}`
     .trim()
@@ -370,13 +379,18 @@ export default function ReporteQuincenal() {
   const [year, setYear] = useState(currentDate.getFullYear());
   const [metaMes, setMetaMes] = useState(130000);
   const [promedioDiario, setPromedioDiario] = useState(9000);
-  const [quincena, setQuincena] = useState<"1" | "2">("2");
+  const [quincena, setQuincena] = useState<"1" | "2">(currentQuincena);
   const [reporteNo, setReporteNo] = useState("Pendiente");
   const [ventasPorDia, setVentasPorDia] = useState<Record<number, number>>({});
   const [rellenando, setRellenando] = useState(false);
   const [generandoPdf, setGenerandoPdf] = useState(false);
 
   const isAdmin = rol === "ADMIN";
+  const canUseDropdown = canUseVendedorDropdown(rol, rolId, vendedorDropdownRoleIds);
+  const usuariosDropdown = useMemo(
+    () => (isAdmin ? usuarios : filterUsuariosByBodega(usuarios, vendedorDropdownBodegaIds)),
+    [isAdmin, usuarios, vendedorDropdownBodegaIds]
+  );
 
   const cargarSiguienteReporte = async () => {
     try {
@@ -389,25 +403,34 @@ export default function ReporteQuincenal() {
 
   const cargarDocumentos = useCallback(async () => {
     try {
+      if (!configLoaded) return;
       const params: any = { tipo: "reporteQuincenal" };
-      if (!isAdmin && !userId) {
+      if (!canUseDropdown && !userId) {
         setDocumentos([]);
         return;
       }
-      if (typeof filtroUsuarioId === 'number') params.usuarioId = filtroUsuarioId;
+      if (!canUseDropdown) {
+        params.usuarioId = userId;
+      } else if (typeof filtroUsuarioId === 'number') {
+        params.usuarioId = filtroUsuarioId;
+      }
       const resp = await api.get("/documentos", { params });
       setDocumentos(resp.data || []);
     } catch {
       Swal.fire("Error", "No se pudieron cargar los reportes quincenales generados", "error");
     }
-  }, [filtroUsuarioId, isAdmin, userId]);
+  }, [filtroUsuarioId, canUseDropdown, userId, configLoaded]);
 
   useEffect(() => {
-    if (isAdmin) {
+    void fetchConfig();
+  }, [fetchConfig]);
+
+  useEffect(() => {
+    if (canUseDropdown) {
       api.get("/usuarios").then(resp => setUsuarios(resp.data || []));
     }
-    setFiltroUsuarioId(isAdmin ? "" : userId ?? "");
-  }, [isAdmin, userId]);
+    setFiltroUsuarioId(canUseDropdown ? "" : userId ?? "");
+  }, [canUseDropdown, userId]);
 
   useEffect(() => {
     void cargarDocumentos();
@@ -426,10 +449,23 @@ export default function ReporteQuincenal() {
         const docFecha = String(doc.creadoEn || "").slice(0, 10);
         if (filtroDesde && docFecha < filtroDesde) return false;
         if (filtroHasta && docFecha > filtroHasta) return false;
+        if (!isAdmin && canUseDropdown && vendedorDropdownBodegaIds.length && typeof filtroUsuarioId !== "number") {
+          const bodegaId = Number(doc.usuario?.bodegaId);
+          if (!Number.isFinite(bodegaId) || !vendedorDropdownBodegaIds.includes(bodegaId)) return false;
+        }
         return true;
       }),
-    [documentos, filtroDesde, filtroHasta]
+    [documentos, filtroDesde, filtroHasta, canUseDropdown, filtroUsuarioId, isAdmin, vendedorDropdownBodegaIds]
   );
+
+  const documentosPaginados = useMemo(
+    () => documentosFiltrados.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage),
+    [documentosFiltrados, page, rowsPerPage]
+  );
+
+  useEffect(() => {
+    setPage(0);
+  }, [filtroDesde, filtroHasta, filtroUsuarioId, documentosFiltrados.length]);
 
   const nuevoReporte = async () => {
     setDocumentoId(null);
@@ -438,7 +474,7 @@ export default function ReporteQuincenal() {
     setYear(currentDate.getFullYear());
     setMetaMes(130000);
     setPromedioDiario(9000);
-    setQuincena("2");
+    setQuincena(currentQuincena);
     setVentasPorDia({});
     setShowForm(true);
   };
@@ -592,7 +628,7 @@ export default function ReporteQuincenal() {
         <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 2 }}>
           <TextField label="Desde" type="date" size="small" value={filtroDesde} onChange={(e) => setFiltroDesde(e.target.value)} InputLabelProps={{ shrink: true }} />
           <TextField label="Hasta" type="date" size="small" value={filtroHasta} onChange={(e) => setFiltroHasta(e.target.value)} InputLabelProps={{ shrink: true }} />
-          {isAdmin && (
+          {canUseDropdown && (
             <FormControl size="small" sx={{ minWidth: 200 }}>
               <InputLabel>Usuario</InputLabel>
               <Select
@@ -601,7 +637,7 @@ export default function ReporteQuincenal() {
                 onChange={(e) => setFiltroUsuarioId(e.target.value as number | null | "")}
               >
                 <MenuItem value="">Todos</MenuItem>
-                {usuarios.map((u) => (
+                {usuariosDropdown.map((u) => (
                   <MenuItem key={u.id} value={u.id}>
                     {u.nombre || u.usuario}
                   </MenuItem>
@@ -622,7 +658,7 @@ export default function ReporteQuincenal() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {documentosFiltrados.map((doc) => (
+              {documentosPaginados.map((doc) => (
                 <TableRow key={doc.id}>
                   <TableCell>{doc.correlativo}</TableCell>
                   <TableCell>{doc.titulo || `${doc.data?.quincena || ""} quincena ${doc.data?.month || ""}/${doc.data?.year || ""}`}</TableCell>
@@ -654,6 +690,20 @@ export default function ReporteQuincenal() {
             </TableBody>
           </Table>
         </TableContainer>
+        <TablePagination
+          component="div"
+          count={documentosFiltrados.length}
+          page={page}
+          rowsPerPage={rowsPerPage}
+          onPageChange={(_, nextPage) => setPage(nextPage)}
+          onRowsPerPageChange={(event) => {
+            setRowsPerPage(Number(event.target.value));
+            setPage(0);
+          }}
+          rowsPerPageOptions={[5, 10, 25, 50]}
+          labelRowsPerPage="Filas por pagina"
+          labelDisplayedRows={({ from, to, count }) => `${from}-${to} de ${count}`}
+        />
       </Paper>
     );
   }

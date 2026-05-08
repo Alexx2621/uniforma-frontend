@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Box,
   Button,
   Dialog,
   DialogTitle,
@@ -28,6 +27,8 @@ import Swal from "sweetalert2";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
+import { useSystemConfigStore } from "../config/useSystemConfigStore";
+import { canUseVendedorDropdown } from "../utils/vendedorDropdownAccess";
 
 interface PagoRecibido {
   id: number;
@@ -41,6 +42,7 @@ interface PagoRecibido {
   pedidoFolio: string;
   clienteNombre: string;
   bodegaNombre: string;
+  bodegaId?: number | string | null;
   estado?: string | null;
   vendedor: string;
 }
@@ -49,8 +51,10 @@ const money = (value: number) =>
   `Q ${Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function PagosRecibidos() {
-  const { usuario, usuarioCorrelativo, rol } = useAuthStore();
+  const { usuario, usuarioCorrelativo, rol, rolId } = useAuthStore();
+  const { vendedorDropdownRoleIds, vendedorDropdownBodegaIds, fetchConfig } = useSystemConfigStore();
   const isAdmin = Boolean(rol?.toLowerCase().includes("admin"));
+  const canUseDropdown = canUseVendedorDropdown(rol, rolId, vendedorDropdownRoleIds);
   const currentUser = `${usuario || ""}`.trim().toLowerCase();
   const currentUserAlt = `${usuarioCorrelativo || ""}`.trim().toLowerCase();
   const [pagos, setPagos] = useState<PagoRecibido[]>([]);
@@ -85,6 +89,7 @@ export default function PagosRecibidos() {
               pedidoFolio,
               clienteNombre,
               bodegaNombre,
+              bodegaId: pedido?.bodegaId ?? null,
               estado: pedido?.estado || null,
               vendedor,
             });
@@ -100,31 +105,46 @@ export default function PagosRecibidos() {
   };
 
   useEffect(() => {
+    void fetchConfig();
+  }, [fetchConfig]);
+
+  useEffect(() => {
     void cargarPagos();
   }, []);
 
   const pedidoFiltro = Number(searchParams.get("pedido") || "0") || null;
 
-  const vendedores = useMemo(
-    () => Array.from(new Set(pagos.map((pago) => pago.vendedor).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
-    [pagos]
+  const pagosPermitidos = useMemo(
+    () =>
+      isAdmin || !canUseDropdown || !vendedorDropdownBodegaIds.length
+        ? pagos
+        : pagos.filter((pago) => {
+            const bodegaId = Number(pago.bodegaId);
+            return Number.isFinite(bodegaId) && vendedorDropdownBodegaIds.includes(bodegaId);
+          }),
+    [canUseDropdown, isAdmin, pagos, vendedorDropdownBodegaIds]
   );
 
-  const isMatchingCurrentUser = (vendedor?: string) => {
+  const vendedores = useMemo(
+    () => Array.from(new Set(pagosPermitidos.map((pago) => pago.vendedor).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
+    [pagosPermitidos]
+  );
+
+  const isMatchingCurrentUser = useCallback((vendedor?: string) => {
     const value = `${vendedor || ""}`.trim().toLowerCase();
     if (!value) return false;
     return [currentUser, currentUserAlt].some((key) => key && value.includes(key));
-  };
+  }, [currentUser, currentUserAlt]);
 
   const pagosFiltrados = useMemo(
     () =>
-      pagos
+      pagosPermitidos
         .filter((pago) => (pedidoFiltro ? pago.pedidoId === pedidoFiltro : true))
         .filter((pago) => {
-          if (!isAdmin && currentUser) {
+          if (!canUseDropdown && currentUser) {
             return isMatchingCurrentUser(pago.vendedor);
           }
-          if (isAdmin && selectedVendedor !== "all") {
+          if (canUseDropdown && selectedVendedor !== "all") {
             return pago.vendedor === selectedVendedor;
           }
           return true;
@@ -135,7 +155,7 @@ export default function PagosRecibidos() {
           if (filtroHasta && fecha > filtroHasta) return false;
           return true;
         }),
-    [pagos, pedidoFiltro, filtroDesde, filtroHasta, isAdmin, selectedVendedor, currentUser]
+    [pagosPermitidos, pedidoFiltro, filtroDesde, filtroHasta, canUseDropdown, selectedVendedor, currentUser, isMatchingCurrentUser]
   );
 
   return (
@@ -151,7 +171,7 @@ export default function PagosRecibidos() {
       </Stack>
 
       <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 2 }}>
-        {isAdmin ? (
+        {canUseDropdown ? (
           <FormControl size="small" sx={{ minWidth: 220 }}>
             <InputLabel>Vendedor</InputLabel>
             <Select

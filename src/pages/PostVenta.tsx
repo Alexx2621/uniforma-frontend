@@ -36,8 +36,10 @@ import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { hasPermission } from "../auth/permissions";
 import { useAuthStore } from "../auth/useAuthStore";
+import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import uniformaLogo from "../assets/3-logos.png";
 import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../utils/fontFamily";
+import { canUseVendedorDropdown, filterUsuariosByBodega } from "../utils/vendedorDropdownAccess";
 
 type PostventaTipo = "cambio" | "devolucion";
 type Vista = "lista" | "form";
@@ -76,6 +78,7 @@ interface Usuario {
   nombre?: string | null;
   usuario?: string | null;
   usuarioCorrelativo?: string | null;
+  bodegaId?: number | string | null;
 }
 
 interface DetallePostventa {
@@ -251,8 +254,10 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
   const titulo = isCambio ? "Cambios" : "Devoluciones";
   const singular = isCambio ? "Cambio" : "Devolucion";
   const icon = isCambio ? <SwapHorizOutlined color="primary" /> : <AssignmentReturnOutlined color="primary" />;
-  const { rol, permisos } = useAuthStore();
+  const { rol, rolId, permisos } = useAuthStore();
+  const { vendedorDropdownRoleIds, vendedorDropdownBodegaIds, fetchConfig } = useSystemConfigStore();
   const isAdmin = `${rol || ""}`.toUpperCase() === "ADMIN";
+  const canUseDropdown = canUseVendedorDropdown(rol, rolId, vendedorDropdownRoleIds);
   const canManage = hasPermission(rol, permisos, "postventa.manage");
 
   const [vista, setVista] = useState<Vista>("lista");
@@ -288,13 +293,17 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
   const [filtroTela, setFiltroTela] = useState("");
   const [filtroTalla, setFiltroTalla] = useState("");
   const [filtroColor, setFiltroColor] = useState("");
+  const usuariosDropdown = useMemo(
+    () => (isAdmin ? usuarios : filterUsuariosByBodega(usuarios, vendedorDropdownBodegaIds)),
+    [isAdmin, usuarios, vendedorDropdownBodegaIds]
+  );
 
   const cargar = useCallback(async () => {
     try {
       setLoading(true);
       const params: any = { tipo };
       if (estadoFiltro) params.estado = estadoFiltro;
-      if (isAdmin && vendedorFiltro) params.usuarioId = vendedorFiltro;
+      if (canUseDropdown && vendedorFiltro) params.usuarioId = vendedorFiltro;
       const resp = await api.get("/postventa", { params });
       setRows(resp.data || []);
     } catch {
@@ -302,7 +311,7 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
     } finally {
       setLoading(false);
     }
-  }, [estadoFiltro, isAdmin, tipo, titulo, vendedorFiltro]);
+  }, [estadoFiltro, canUseDropdown, tipo, titulo, vendedorFiltro]);
 
   const cargarCatalogos = useCallback(async () => {
     try {
@@ -318,7 +327,7 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
       setTelas(respTelas.data || []);
       setTallas(respTallas.data || []);
       setColores(respColores.data || []);
-      if (isAdmin) {
+      if (canUseDropdown) {
         const respUsuarios = await api.get("/usuarios").catch(() => ({ data: [] }));
         setUsuarios(respUsuarios.data || []);
       } else {
@@ -327,7 +336,11 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
     } catch {
       Swal.fire("Error", "No se pudieron cargar clientes o catalogos de productos", "error");
     }
-  }, [isAdmin]);
+  }, [canUseDropdown]);
+
+  useEffect(() => {
+    void fetchConfig();
+  }, [fetchConfig]);
 
   useEffect(() => {
     void cargar();
@@ -979,10 +992,10 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
       </Stack>
 
       <Grid container spacing={2} sx={{ mb: 2 }}>
-        <Grid size={{ xs: 12, sm: isAdmin ? 4 : 6 }}>
+        <Grid size={{ xs: 12, sm: canUseDropdown ? 4 : 6 }}>
           <TextField label="Buscar" fullWidth size="small" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
         </Grid>
-        <Grid size={{ xs: 12, sm: isAdmin ? 3 : 3 }}>
+        <Grid size={{ xs: 12, sm: canUseDropdown ? 3 : 3 }}>
           <FormControl fullWidth size="small">
             <InputLabel>Estado</InputLabel>
             <Select label="Estado" value={estadoFiltro} onChange={(e) => setEstadoFiltro(e.target.value)}>
@@ -993,13 +1006,13 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
             </Select>
           </FormControl>
         </Grid>
-        {isAdmin && (
+        {canUseDropdown && (
           <Grid size={{ xs: 12, sm: 3 }}>
             <FormControl fullWidth size="small">
               <InputLabel>Vendedor</InputLabel>
               <Select label="Vendedor" value={vendedorFiltro} onChange={(e) => setVendedorFiltro(e.target.value)}>
                 <MenuItem value="">Todos</MenuItem>
-                {usuarios.map((usuario) => (
+                {usuariosDropdown.map((usuario) => (
                   <MenuItem key={usuario.id} value={`${usuario.id}`}>
                     {usuario.nombre || usuario.usuario}
                   </MenuItem>
@@ -1008,7 +1021,7 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
             </FormControl>
           </Grid>
         )}
-        <Grid size={{ xs: 12, sm: isAdmin ? 2 : 3 }}>
+        <Grid size={{ xs: 12, sm: canUseDropdown ? 2 : 3 }}>
           <Stack direction="row" spacing={1} alignItems="center" sx={{ height: "100%" }}>
             <Chip label={`${filtrados.length} registros`} color="primary" variant="outlined" />
           </Stack>
@@ -1022,7 +1035,7 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
               <TableCell>Folio</TableCell>
               <TableCell>Fecha</TableCell>
               <TableCell>Cliente</TableCell>
-              {isAdmin && <TableCell>Vendedor</TableCell>}
+              {canUseDropdown && <TableCell>Vendedor</TableCell>}
               <TableCell>Referencia</TableCell>
               <TableCell>Motivo</TableCell>
               <TableCell>Estado</TableCell>
@@ -1036,7 +1049,7 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
                 <TableCell>{row.folio}</TableCell>
                 <TableCell>{new Date(row.fecha).toLocaleDateString("es-GT")}</TableCell>
                 <TableCell>{row.clienteNombre}</TableCell>
-                {isAdmin && <TableCell>{row.usuario?.nombre || row.usuario?.usuario || "N/D"}</TableCell>}
+                {canUseDropdown && <TableCell>{row.usuario?.nombre || row.usuario?.usuario || "N/D"}</TableCell>}
                 <TableCell>{row.documentoReferencia || "N/D"}</TableCell>
                 <TableCell>{row.motivo}</TableCell>
                 <TableCell>
@@ -1059,7 +1072,7 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
             ))}
             {!filtrados.length && (
               <TableRow>
-                <TableCell colSpan={isAdmin ? 9 : 8} align="center">No hay registros.</TableCell>
+                <TableCell colSpan={canUseDropdown ? 9 : 8} align="center">No hay registros.</TableCell>
               </TableRow>
             )}
           </TableBody>

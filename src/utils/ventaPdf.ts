@@ -6,6 +6,8 @@ export interface VentaPdfItem {
   cantidad: number;
   precio: number;
   bordado: number;
+  estiloEspecial?: boolean;
+  estiloEspecialMonto?: number;
   descuento: number;
   subtotal: number;
 }
@@ -21,6 +23,7 @@ interface VentaPdfOptions {
   vendedor: string;
   subtotal: number;
   recargo: number;
+  envio?: number;
   total: number;
   recargoEtiqueta?: string;
   logoUrl?: string;
@@ -62,6 +65,7 @@ export const buildVentaPdfHtml = ({
   vendedor,
   subtotal,
   recargo,
+  envio = 0,
   total,
   recargoEtiqueta,
   logoUrl,
@@ -89,12 +93,13 @@ export const buildVentaPdfHtml = ({
           <td class="cell-center">${escapeHtml(item.cantidad)}</td>
           <td class="cell-right">${formatMoney(item.precio)}</td>
           <td class="cell-right">${formatMoney(item.bordado)}</td>
+          <td class="cell-right">${item.estiloEspecial ? formatMoney(Number(item.estiloEspecialMonto || 0)) : "No"}</td>
           <td class="cell-center">${Number(item.descuento || 0).toFixed(2)}%</td>
           <td class="cell-right">${formatMoney(item.subtotal)}</td>
         </tr>`,
       )
       .join("") ||
-    `<tr><td colspan="8" class="empty-row">No hay articulos registrados en esta venta.</td></tr>`;
+    `<tr><td colspan="9" class="empty-row">No hay articulos registrados en esta venta.</td></tr>`;
 
   return `<!DOCTYPE html>
     <html>
@@ -401,6 +406,7 @@ export const buildVentaPdfHtml = ({
                 <th style="width: 62px;">Cant</th>
                 <th style="width: 96px;">Precio</th>
                 <th style="width: 96px;">Bordado</th>
+                <th style="width: 96px;">Estilo</th>
                 <th style="width: 84px;">Desc.</th>
                 <th style="width: 108px;">Subtotal</th>
               </tr>
@@ -421,6 +427,14 @@ export const buildVentaPdfHtml = ({
                   ? `<div class="totals-row">
                       <span>${escapeHtml(recargoEtiqueta || "Recargo")}</span>
                       <span class="amount">${formatMoney(recargo)}</span>
+                    </div>`
+                  : ""
+              }
+              ${
+                envio
+                  ? `<div class="totals-row">
+                      <span>Envio</span>
+                      <span class="amount">${formatMoney(envio)}</span>
                     </div>`
                   : ""
               }

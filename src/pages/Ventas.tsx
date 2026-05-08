@@ -337,7 +337,7 @@ export default function Ventas() {
             const metodo = v.metodoPago?.toUpperCase();
             return `<tr>
                 <td>${new Date(v.fecha).toLocaleDateString()}</td>
-                <td>V-${v.id}</td>
+                <td>${v.displayFolio || v.folio || `V-${v.id}`}</td>
                 <td>${metodo === "TRANSFERENCIA" ? formatter(v.total) : ""}</td>
                 <td>${metodoCuentaComoTarjeta(metodo) ? formatter(v.total) : ""}</td>
                 <td>${metodo === "EFECTIVO" ? formatter(v.total) : ""}</td>
@@ -465,7 +465,7 @@ export default function Ventas() {
             const metodo = v.metodoPago?.toUpperCase();
             return `<tr>
                 <td>${new Date(v.fecha).toLocaleDateString()}</td>
-                <td>V-${v.id}</td>
+                <td>${v.displayFolio || v.folio || `V-${v.id}`}</td>
                 <td>${metodo === "TRANSFERENCIA" ? formatter(v.total) : ""}</td>
                 <td>${metodoCuentaComoTarjeta(metodo) ? formatter(v.total) : ""}</td>
                 <td>${metodo === "EFECTIVO" ? formatter(v.total) : ""}</td>

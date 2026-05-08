@@ -8,6 +8,8 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  Checkbox,
+  InputAdornment,
   TextField,
   Button,
   Stack,
@@ -98,6 +100,8 @@ interface DetalleRow {
   cantidad: number;
   precio: number;
   bordado: number;
+  estiloEspecial: boolean;
+  estiloEspecialMonto: number;
   descuento: number;
   descripcion: string;
   stock: number | null;
@@ -108,6 +112,8 @@ interface CapturaArticulo {
   cantidad: number;
   precio: number;
   bordado: number;
+  estiloEspecial: boolean;
+  estiloEspecialMonto: number;
   descuento: number;
   descripcion: string;
   stock: number | null;
@@ -118,6 +124,8 @@ const detalleInicial: CapturaArticulo = {
   cantidad: 1,
   precio: 0,
   bordado: 0,
+  estiloEspecial: false,
+  estiloEspecialMonto: 25,
   descuento: 0,
   descripcion: "",
   stock: null,
@@ -177,6 +185,8 @@ export default function VentaNueva() {
   const [ubicacion, setUbicacion] = useState<string>("TIENDA");
   const [porcentajeRecargo, setPorcentajeRecargo] = useState<number>(0);
   const [referenciaPago, setReferenciaPago] = useState("");
+  const [bancoPago, setBancoPago] = useState("");
+  const [envio, setEnvio] = useState<number>(0);
   const [detalle, setDetalle] = useState<DetalleRow[]>([]);
   const [articuloActual, setArticuloActual] = useState<CapturaArticulo>(detalleInicial);
   const [cantidadInput, setCantidadInput] = useState("1");
@@ -188,13 +198,14 @@ export default function VentaNueva() {
   const [filtroColor, setFiltroColor] = useState("");
 
   const navigate = useNavigate();
-  const { usuario, rol, rolId, bodegaId: userBodegaId, bodegaNombre: authBodegaNombre } = useAuthStore();
-  const { crossStoreRoleIds, fetchConfig } = useSystemConfigStore();
+  const { usuario, rol, rolId, bodegaId: userBodegaId, bodegaNombre: authBodegaNombre, id: userId } = useAuthStore();
+  const { crossStoreRoleIds, salesInventoryEnabled, fetchConfig } = useSystemConfigStore();
   const canAccessAllBodegas = rol === "ADMIN" || crossStoreRoleIds.includes(Number(rolId));
   const metodoUsaRecargo = metodoPago === "tarjeta" || metodoPago === "visalink";
   const metodoRequiereReferencia = metodoPago !== "efectivo";
+  const metodoRequiereBanco = metodoPago === "deposito_bancario";
   const stockRestanteEstimado =
-    articuloActual.stock != null ? Math.max(articuloActual.stock - (Number(cantidadInput) || 0), 0) : null;
+    salesInventoryEnabled && articuloActual.stock != null ? Math.max(articuloActual.stock - (Number(cantidadInput) || 0), 0) : null;
   const clientesConCf = useMemo(() => {
     const hasCf = clientes.some((cliente) => `${cliente.nombre || ""}`.trim().toUpperCase() === "CF");
     return hasCf ? clientes : [CLIENTE_CF_OPTION, ...clientes];
@@ -459,7 +470,7 @@ export default function VentaNueva() {
         return;
       }
 
-      const stock = bodegaId ? await fetchStock(Number(bodegaId), productoDetectado.id) : null;
+      const stock = salesInventoryEnabled && bodegaId ? await fetchStock(Number(bodegaId), productoDetectado.id) : null;
       setArticuloActual((prev) => ({
         ...prev,
         productoId: productoDetectado.id,
@@ -469,7 +480,7 @@ export default function VentaNueva() {
     };
 
     void syncProducto();
-  }, [productoDetectado, bodegaId]);
+  }, [productoDetectado, bodegaId, salesInventoryEnabled]);
 
   const limpiarArticulo = () => {
     setArticuloActual(detalleInicial);
@@ -494,7 +505,7 @@ export default function VentaNueva() {
       return;
     }
 
-    if (articuloActual.stock != null && cantidad > articuloActual.stock) {
+    if (salesInventoryEnabled && articuloActual.stock != null && cantidad > articuloActual.stock) {
       Swal.fire("Validacion", `Solo hay ${articuloActual.stock} unidades disponibles en inventario`, "warning");
       return;
     }
@@ -505,6 +516,8 @@ export default function VentaNueva() {
       cantidad,
       precio: Number(articuloActual.precio) || 0,
       bordado: Number(articuloActual.bordado) || 0,
+      estiloEspecial: Boolean(articuloActual.estiloEspecial),
+      estiloEspecialMonto: articuloActual.estiloEspecial ? Number(articuloActual.estiloEspecialMonto) || 0 : 0,
       descuento: Number(articuloActual.descuento) || 0,
       descripcion: articuloActual.descripcion.trim(),
       stock: articuloActual.stock,
@@ -524,6 +537,8 @@ export default function VentaNueva() {
       cantidad: row.cantidad,
       precio: row.precio,
       bordado: row.bordado,
+      estiloEspecial: row.estiloEspecial,
+      estiloEspecialMonto: row.estiloEspecialMonto,
       descuento: row.descuento,
       descripcion: row.descripcion || "",
       stock: row.stock,
@@ -552,16 +567,18 @@ export default function VentaNueva() {
       setUbicacion(ubic);
     }
 
-    const updated = await Promise.all(
-      detalle.map(async (row) => {
-        const stock = await fetchStock(value, row.productoId);
-        return { ...row, stock };
-      }),
-    );
+    const updated = salesInventoryEnabled
+      ? await Promise.all(
+          detalle.map(async (row) => {
+            const stock = await fetchStock(value, row.productoId);
+            return { ...row, stock };
+          }),
+        )
+      : detalle.map((row) => ({ ...row, stock: null }));
     setDetalle(updated);
 
     if (articuloActual.productoId) {
-      const stock = await fetchStock(value, Number(articuloActual.productoId));
+      const stock = salesInventoryEnabled ? await fetchStock(value, Number(articuloActual.productoId)) : null;
       setArticuloActual((prev) => ({ ...prev, stock }));
     }
   };
@@ -571,23 +588,42 @@ export default function VentaNueva() {
       (sum, item) =>
         sum +
         (Number(item.cantidad) || 0) *
-          ((Number(item.precio) || 0) * (1 - (Number(item.descuento || 0) / 100)) + Number(item.bordado || 0)),
+          (((Number(item.precio) || 0) + (item.estiloEspecial ? Number(item.estiloEspecialMonto || 0) : 0)) *
+            (1 - (Number(item.descuento || 0) / 100)) +
+            Number(item.bordado || 0)),
       0,
     );
     const recargo = metodoUsaRecargo ? subtotal * ((porcentajeRecargo || 0) / 100) : 0;
-    const total = subtotal + recargo;
-    return { subtotal, recargo, total };
-  }, [detalle, metodoUsaRecargo, porcentajeRecargo]);
+    const envioMonto = Math.max(0, Number(envio) || 0);
+    const total = subtotal + recargo + envioMonto;
+    return { subtotal, recargo, envio: envioMonto, total };
+  }, [detalle, metodoUsaRecargo, porcentajeRecargo, envio]);
 
   const calcularSubtotal = (item: DetalleRow) => {
-    const precioConDescuento = (Number(item.precio) || 0) * (1 - (Number(item.descuento || 0) / 100));
+    const precioBase = (Number(item.precio) || 0) + (item.estiloEspecial ? Number(item.estiloEspecialMonto || 0) : 0);
+    const precioConDescuento = precioBase * (1 - (Number(item.descuento || 0) / 100));
     return (Number(item.cantidad) || 0) * (precioConDescuento + (Number(item.bordado) || 0));
   };
+
+  const detalleTableTotals = useMemo(
+    () =>
+      detalle.reduce(
+        (sum, row) => ({
+          cantidad: sum.cantidad + (Number(row.cantidad) || 0),
+          precio: sum.precio + (Number(row.precio) || 0),
+          bordado: sum.bordado + (Number(row.bordado) || 0),
+          estiloEspecial: sum.estiloEspecial + (row.estiloEspecial ? Number(row.estiloEspecialMonto) || 0 : 0),
+        }),
+        { cantidad: 0, precio: 0, bordado: 0, estiloEspecial: 0 },
+      ),
+    [detalle],
+  );
 
   const calcularTotalesDesdeDetalle = (detalleActual: DetalleRow[]) => {
     const subtotal = detalleActual.reduce((sum, item) => sum + calcularSubtotal(item), 0);
     const recargoCalculado = metodoUsaRecargo ? subtotal * ((porcentajeRecargo || 0) / 100) : 0;
-    return { subtotal, recargo: recargoCalculado, total: subtotal + recargoCalculado };
+    const envioCalculado = Math.max(0, Number(envio) || 0);
+    return { subtotal, recargo: recargoCalculado, envio: envioCalculado, total: subtotal + recargoCalculado + envioCalculado };
   };
 
   const abrirPdfVenta = (venta: any, detalleUsado: DetalleRow[]) => {
@@ -606,7 +642,7 @@ export default function VentaNueva() {
     const bodegaNombre = bodegas.find((b) => b.id === Number(bodegaId))?.nombre || authBodegaNombre || "N/D";
     const vendedor = usuario || "Vendedor";
     const fecha = venta?.fecha ? new Date(venta.fecha) : new Date();
-    const folio = venta?.id ? `V-${venta.id}` : "Pendiente";
+    const folio = venta?.folio || (venta?.id ? `V-${venta.id}` : "Pendiente");
     const totalesPdf = calcularTotalesDesdeDetalle(detalleUsado);
 
     const html = buildVentaPdfHtml({
@@ -620,6 +656,7 @@ export default function VentaNueva() {
       vendedor,
       subtotal: totalesPdf.subtotal,
       recargo: totalesPdf.recargo,
+      envio: totalesPdf.envio,
       total: totalesPdf.total,
       recargoEtiqueta: metodoUsaRecargo ? `Recargo (${porcentajeRecargo || 0}%)` : undefined,
       logoUrl: LOGO_URL,
@@ -631,6 +668,8 @@ export default function VentaNueva() {
           cantidad: Number(item.cantidad) || 0,
           precio: Number(item.precio) || 0,
           bordado: Number(item.bordado) || 0,
+          estiloEspecial: item.estiloEspecial,
+          estiloEspecialMonto: Number(item.estiloEspecialMonto) || 0,
           descuento: Number(item.descuento) || 0,
           subtotal: calcularSubtotal(item),
         };
@@ -767,6 +806,10 @@ export default function VentaNueva() {
       Swal.fire("Validacion", "Ingresa la referencia o numero de transaccion", "warning");
       return;
     }
+    if (metodoRequiereBanco && !bancoPago.trim()) {
+      Swal.fire("Validacion", "Ingresa el banco del deposito", "warning");
+      return;
+    }
 
     const clienteParaVenta = await resolverClienteVenta();
     if (clienteParaVenta === false) return;
@@ -780,12 +823,17 @@ export default function VentaNueva() {
       metodoPago,
       porcentajeRecargo,
       referenciaPago: metodoRequiereReferencia ? referenciaPago.trim() : null,
+      bancoPago: metodoRequiereBanco ? bancoPago.trim() : null,
+      envio: Math.max(0, Number(envio) || 0),
+      usuarioId: userId,
       vendedor: usuario,
         detalle: detalle.map((d) => ({
           productoId: d.productoId,
           cantidad: d.cantidad,
           precio: d.precio,
           bordado: d.bordado,
+          estiloEspecial: d.estiloEspecial,
+          estiloEspecialMonto: d.estiloEspecialMonto,
           descuento: d.descuento,
           descripcion: d.descripcion || "",
         })),
@@ -895,13 +943,33 @@ export default function VentaNueva() {
         <Grid size={{ xs: 12, sm: 4 }}>
           <FormControl fullWidth>
             <InputLabel>Metodo de pago</InputLabel>
-            <Select label="Metodo de pago" value={metodoPago} onChange={(e) => setMetodoPago(e.target.value)}>
+            <Select
+              label="Metodo de pago"
+              value={metodoPago}
+              onChange={(e) => {
+                const nextMetodo = e.target.value;
+                setMetodoPago(nextMetodo);
+                if (nextMetodo !== "deposito_bancario") setBancoPago("");
+              }}
+            >
               <MenuItem value="efectivo">Efectivo</MenuItem>
               <MenuItem value="tarjeta">Tarjeta</MenuItem>
               <MenuItem value="visalink">Visalink</MenuItem>
               <MenuItem value="transferencia">Transferencia</MenuItem>
+              <MenuItem value="deposito_bancario">Deposito bancario</MenuItem>
+              <MenuItem value="orden_compra">Orden de compra</MenuItem>
             </Select>
           </FormControl>
+        </Grid>
+        <Grid size={{ xs: 12, sm: 4 }}>
+          <TextField
+            label="Envio"
+            type="number"
+            fullWidth
+            value={envio}
+            onChange={(e) => setEnvio(Math.max(0, Number(e.target.value) || 0))}
+            helperText="Monto cobrado por envio en esta venta"
+          />
         </Grid>
         {metodoUsaRecargo && (
           <Grid size={{ xs: 12, sm: 4 }}>
@@ -925,6 +993,17 @@ export default function VentaNueva() {
             />
           </Grid>
         )}
+        {metodoRequiereBanco && (
+          <Grid size={{ xs: 12, sm: 4 }}>
+            <TextField
+              label="Banco"
+              fullWidth
+              value={bancoPago}
+              onChange={(e) => setBancoPago(e.target.value)}
+              helperText="Banco donde se realizo el deposito"
+            />
+          </Grid>
+        )}
       </Grid>
 
       <Divider sx={{ my: 2 }} />
@@ -938,7 +1017,9 @@ export default function VentaNueva() {
           <Typography variant="body2" color="text.secondary">
             Selecciona la combinacion del articulo y agregalo a la lista temporal antes de guardar la venta.
           </Typography>
-          {articuloActual.stock != null && articuloActual.productoId ? (
+          {!salesInventoryEnabled ? (
+            <Alert severity="warning">El uso de inventario en ventas esta deshabilitado. La venta no validara ni descontara stock.</Alert>
+          ) : articuloActual.stock != null && articuloActual.productoId ? (
             <Alert severity={stockRestanteEstimado !== null && stockRestanteEstimado <= 0 ? "warning" : "info"}>
               {`Stock actual: ${articuloActual.stock} unidades. `}
               {`Stock restante estimado con esta captura: ${stockRestanteEstimado ?? 0} unidades.`}
@@ -1065,6 +1146,55 @@ export default function VentaNueva() {
               onChange={(e) => setArticuloActual((prev) => ({ ...prev, bordado: Number(e.target.value) || 0 }))}
             />
           </Grid>
+          <Grid size={{ xs: 12, sm: 4, md: 2 }}>
+            <TextField
+              label="Monto estilo"
+              type="number"
+              fullWidth
+              value={articuloActual.estiloEspecialMonto}
+              onChange={(e) =>
+                setArticuloActual((prev) => ({
+                  ...prev,
+                  estiloEspecialMonto: Number(e.target.value) || 0,
+                }))
+              }
+              InputProps={{
+                readOnly: !articuloActual.estiloEspecial,
+                startAdornment: (
+                  <InputAdornment position="start" sx={{ mr: 0.5 }}>
+                    <Stack direction="row" alignItems="center" spacing={0.5}>
+                      <Checkbox
+                        checked={articuloActual.estiloEspecial}
+                        onChange={(e) =>
+                          setArticuloActual((prev) => ({
+                            ...prev,
+                            estiloEspecial: e.target.checked,
+                            estiloEspecialMonto: e.target.checked
+                              ? prev.estiloEspecialMonto > 0
+                                ? prev.estiloEspecialMonto
+                                : 25
+                              : 0,
+                          }))
+                        }
+                        sx={{ p: 0.5 }}
+                      />
+                      {!articuloActual.estiloEspecial && (
+                        <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: "nowrap" }}>
+                          Estilo especial
+                        </Typography>
+                      )}
+                    </Stack>
+                  </InputAdornment>
+                ),
+              }}
+              sx={{
+                "& .MuiInputBase-root": {
+                  backgroundColor: articuloActual.estiloEspecial ? "transparent" : "action.disabledBackground",
+                },
+              }}
+              helperText={articuloActual.estiloEspecial ? "Monto editable por producto" : "Activa estilo especial para habilitar el monto"}
+            />
+          </Grid>
           <Grid size={{ xs: 12, sm: 3, md: 2 }}>
             <TextField
               label="Descuento %"
@@ -1072,6 +1202,14 @@ export default function VentaNueva() {
               fullWidth
               value={articuloActual.descuento}
               onChange={(e) => setArticuloActual((prev) => ({ ...prev, descuento: Number(e.target.value) || 0 }))}
+            />
+          </Grid>
+          <Grid size={{ xs: 12, sm: 8, md: 6 }}>
+            <TextField
+              label="Observaciones"
+              fullWidth
+              value={articuloActual.descripcion}
+              onChange={(e) => setArticuloActual((prev) => ({ ...prev, descripcion: e.target.value }))}
             />
           </Grid>
         </Grid>
@@ -1111,14 +1249,17 @@ export default function VentaNueva() {
             <TableRow>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Codigo</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Tipo</TableCell>
+              <TableCell align="center" sx={{ fontWeight: 700 }}>Genero</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Tela</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Talla</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Color</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Cantidad</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Precio</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Bordado</TableCell>
+              <TableCell align="center" sx={{ fontWeight: 700 }}>Estilo especial</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Desc.</TableCell>
-              <TableCell align="center" sx={{ fontWeight: 700 }}>Stock</TableCell>
+              {salesInventoryEnabled && <TableCell align="center" sx={{ fontWeight: 700 }}>Stock</TableCell>}
+              <TableCell align="center" sx={{ fontWeight: 700 }}>Observacion</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Subtotal</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Acciones</TableCell>
             </TableRow>
@@ -1130,14 +1271,19 @@ export default function VentaNueva() {
                 <TableRow key={row.key}>
                   <TableCell align="center">{producto?.codigo || row.productoId}</TableCell>
                   <TableCell align="center">{producto?.tipo || producto?.nombre || "Producto"}</TableCell>
+                  <TableCell align="center">{producto?.genero || "N/D"}</TableCell>
                   <TableCell align="center">{obtenerTela(producto)}</TableCell>
                   <TableCell align="center">{obtenerTalla(producto)}</TableCell>
                   <TableCell align="center">{obtenerColor(producto)}</TableCell>
                   <TableCell align="center">{row.cantidad}</TableCell>
                   <TableCell align="center">{`Q ${row.precio.toFixed(2)}`}</TableCell>
                   <TableCell align="center">{`Q ${row.bordado.toFixed(2)}`}</TableCell>
+                  <TableCell align="center">
+                    {row.estiloEspecial ? `Q ${Number(row.estiloEspecialMonto || 0).toFixed(2)}` : "No"}
+                  </TableCell>
                   <TableCell align="center">{`${row.descuento.toFixed(2)}%`}</TableCell>
-                  <TableCell align="center">{row.stock ?? "N/D"}</TableCell>
+                  {salesInventoryEnabled && <TableCell align="center">{row.stock ?? "N/D"}</TableCell>}
+                  <TableCell align="center">{row.descripcion || "-"}</TableCell>
                   <TableCell align="center">{`Q ${calcularSubtotal(row).toFixed(2)}`}</TableCell>
                   <TableCell align="center">
                     <Stack direction="row" spacing={1} justifyContent="center">
@@ -1158,9 +1304,33 @@ export default function VentaNueva() {
                 </TableRow>
               );
             })}
+            {detalle.length > 0 && (
+              <TableRow sx={{ backgroundColor: "action.hover" }}>
+                <TableCell align="right" colSpan={6} sx={{ fontWeight: 700 }}>
+                  Totales
+                </TableCell>
+                <TableCell align="center" sx={{ fontWeight: 700 }}>
+                  {detalleTableTotals.cantidad}
+                </TableCell>
+                <TableCell align="center" sx={{ fontWeight: 700 }}>
+                  {`Q ${detalleTableTotals.precio.toFixed(2)}`}
+                </TableCell>
+                <TableCell align="center" sx={{ fontWeight: 700 }}>
+                  {`Q ${detalleTableTotals.bordado.toFixed(2)}`}
+                </TableCell>
+                <TableCell align="center" sx={{ fontWeight: 700 }}>
+                  {`Q ${detalleTableTotals.estiloEspecial.toFixed(2)}`}
+                </TableCell>
+                <TableCell align="center">-</TableCell>
+                {salesInventoryEnabled && <TableCell align="center">-</TableCell>}
+                <TableCell align="center">-</TableCell>
+                <TableCell align="center">-</TableCell>
+                <TableCell align="center">-</TableCell>
+              </TableRow>
+            )}
             {!detalle.length && (
               <TableRow>
-                <TableCell colSpan={12} align="center">
+                <TableCell colSpan={salesInventoryEnabled ? 15 : 14} align="center">
                   Aun no has agregado articulos a la venta.
                 </TableCell>
               </TableRow>
@@ -1185,6 +1355,10 @@ export default function VentaNueva() {
                   <Typography>{`Q ${totals.recargo.toFixed(2)}`}</Typography>
                 </Stack>
               )}
+              <Stack direction="row" justifyContent="space-between">
+                <Typography>Envio</Typography>
+                <Typography>{`Q ${totals.envio.toFixed(2)}`}</Typography>
+              </Stack>
               <Stack direction="row" justifyContent="space-between">
                 <Typography fontWeight={700}>Total</Typography>
                 <Typography fontWeight={700}>{`Q ${totals.total.toFixed(2)}`}</Typography>

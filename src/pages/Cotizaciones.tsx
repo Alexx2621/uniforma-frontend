@@ -28,8 +28,10 @@ import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
+import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import LOGO_URL from "../assets/cotizacion-logo.png";
 import { PDF_FONT_BOLD_FAMILY, PDF_FONT_FAMILY } from "../utils/fontFamily";
+import { canUseVendedorDropdown, filterUsuariosByBodega } from "../utils/vendedorDropdownAccess";
 
 interface CotizacionItem {
   key: number;
@@ -46,13 +48,14 @@ interface DocumentoGenerado {
   data: any;
   creadoEn: string;
   actualizadoEn: string;
-  usuario?: { nombre?: string | null; usuario?: string | null };
+  usuario?: { nombre?: string | null; usuario?: string | null; bodegaId?: number | string | null };
 }
 
 interface Usuario {
   id: number;
   nombre: string;
   usuario: string;
+  bodegaId?: number | string | null;
 }
 
 const createKey = () => Date.now() + Math.floor(Math.random() * 100000);
@@ -572,7 +575,8 @@ const buildCotizacionHtml = ({
 };
 
 export default function Cotizaciones() {
-  const { nombre, usuario, rol, id: userId } = useAuthStore();
+  const { nombre, usuario, rol, rolId, id: userId } = useAuthStore();
+  const { vendedorDropdownRoleIds, vendedorDropdownBodegaIds, fetchConfig } = useSystemConfigStore();
   const location = useLocation();
   const [documentos, setDocumentos] = useState<DocumentoGenerado[]>([]);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
@@ -605,6 +609,11 @@ export default function Cotizaciones() {
   const [validez, setValidez] = useState("COTIZACIÓN CON VALIDEZ DE 3 DÍAS.");
 
   const isAdmin = rol === "ADMIN";
+  const canUseDropdown = canUseVendedorDropdown(rol, rolId, vendedorDropdownRoleIds);
+  const usuariosDropdown = useMemo(
+    () => (isAdmin ? usuarios : filterUsuariosByBodega(usuarios, vendedorDropdownBodegaIds)),
+    [isAdmin, usuarios, vendedorDropdownBodegaIds]
+  );
 
   const total = useMemo(
     () => items.reduce((sum, item) => sum + Number(item.cantidad || 0) * Number(item.precioUnitario || 0), 0),
@@ -617,9 +626,13 @@ export default function Cotizaciones() {
         const docFecha = doc.data?.fecha || String(doc.creadoEn || "").slice(0, 10);
         if (filtroDesde && docFecha < filtroDesde) return false;
         if (filtroHasta && docFecha > filtroHasta) return false;
+        if (!isAdmin && canUseDropdown && vendedorDropdownBodegaIds.length && typeof filtroUsuarioId !== "number") {
+          const bodegaId = Number(doc.usuario?.bodegaId);
+          if (!Number.isFinite(bodegaId) || !vendedorDropdownBodegaIds.includes(bodegaId)) return false;
+        }
         return true;
       }),
-    [documentos, filtroDesde, filtroHasta]
+    [documentos, filtroDesde, filtroHasta, canUseDropdown, filtroUsuarioId, isAdmin, vendedorDropdownBodegaIds]
   );
 
   const cargarSiguienteCotizacion = async () => {
@@ -634,7 +647,7 @@ export default function Cotizaciones() {
   const cargarDocumentos = useCallback(async () => {
     try {
       const params: any = { tipo: "cotizacion" };
-      if (!isAdmin && !userId) {
+      if (!canUseDropdown && !userId) {
         setDocumentos([]);
         return;
       }
@@ -644,14 +657,18 @@ export default function Cotizaciones() {
     } catch {
       Swal.fire("Error", "No se pudieron cargar las cotizaciones generadas", "error");
     }
-  }, [filtroUsuarioId, isAdmin, userId]);
+  }, [filtroUsuarioId, canUseDropdown, userId]);
 
   useEffect(() => {
-    if (isAdmin) {
+    void fetchConfig();
+  }, [fetchConfig]);
+
+  useEffect(() => {
+    if (canUseDropdown) {
       api.get("/usuarios").then(resp => setUsuarios(resp.data || []));
     }
-    setFiltroUsuarioId(isAdmin ? "" : userId ?? "");
-  }, [isAdmin, userId]);
+    setFiltroUsuarioId(canUseDropdown ? "" : userId ?? "");
+  }, [canUseDropdown, userId]);
 
   useEffect(() => {
     void cargarDocumentos();
@@ -820,7 +837,7 @@ export default function Cotizaciones() {
         <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 2 }}>
           <TextField label="Desde" type="date" size="small" value={filtroDesde} onChange={(e) => setFiltroDesde(e.target.value)} InputLabelProps={{ shrink: true }} />
           <TextField label="Hasta" type="date" size="small" value={filtroHasta} onChange={(e) => setFiltroHasta(e.target.value)} InputLabelProps={{ shrink: true }} />
-          {isAdmin && (
+          {canUseDropdown && (
             <FormControl size="small" sx={{ minWidth: 200 }}>
               <InputLabel>Usuario</InputLabel>
               <Select
@@ -829,7 +846,7 @@ export default function Cotizaciones() {
                 onChange={(e) => setFiltroUsuarioId(e.target.value as number | null | "")}
               >
                 <MenuItem value="">Todos</MenuItem>
-                {usuarios.map((u) => (
+                {usuariosDropdown.map((u) => (
                   <MenuItem key={u.id} value={u.id}>
                     {u.nombre || u.usuario}
                   </MenuItem>

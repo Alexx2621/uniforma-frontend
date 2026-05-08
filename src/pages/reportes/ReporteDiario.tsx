@@ -14,6 +14,7 @@ import {
   TableRow,
   TableCell,
   TableBody,
+  TablePagination,
   IconButton,
   Chip,
   FormControl,
@@ -24,17 +25,22 @@ import {
 } from "@mui/material";
 import AddCircleOutlineOutlined from "@mui/icons-material/AddCircleOutlineOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
+import EditOutlined from "@mui/icons-material/EditOutlined";
 import PictureAsPdfOutlined from "@mui/icons-material/PictureAsPdfOutlined";
 import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
+import SaveOutlined from "@mui/icons-material/SaveOutlined";
 import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import Swal from "sweetalert2";
 import { api } from "../../api/axios";
 import { useAuthStore } from "../../auth/useAuthStore";
+import { useSystemConfigStore } from "../../config/useSystemConfigStore";
+import { canUseVendedorDropdown, filterUsuariosByBodega } from "../../utils/vendedorDropdownAccess";
 
 interface PagoVenta {
   referencia?: string | null;
+  banco?: string | null;
 }
 
 interface DocumentoGenerado {
@@ -45,21 +51,39 @@ interface DocumentoGenerado {
   data: any;
   creadoEn: string;
   actualizadoEn: string;
-  usuario?: { nombre?: string | null; usuario?: string | null };
+  usuario?: { nombre?: string | null; usuario?: string | null; bodegaId?: number | string | null };
 }
 
 interface Usuario {
   id: number;
   nombre: string;
   usuario: string;
+  bodegaId?: number | string | null;
 }
 
 interface Venta {
   id: number;
+  folio?: string | null;
   fecha: string;
   total: number;
+  envio?: number | null;
+  ubicacion?: string | null;
   metodoPago?: string | null;
   clienteNombre?: string | null;
+  pagos?: PagoVenta[];
+}
+
+interface PedidoReporte {
+  id: number;
+  folio?: string | null;
+  fecha: string;
+  anticipo?: number | null;
+  envio?: number | null;
+  ubicacion?: string | null;
+  metodoPago?: string | null;
+  clienteNombre?: string | null;
+  cliente?: { nombre?: string | null } | null;
+  bodega?: { nombre?: string | null; ubicacion?: string | null } | null;
   pagos?: PagoVenta[];
 }
 
@@ -94,6 +118,9 @@ interface TiendaRow {
   recibo: string;
   transferencia: number;
   autorizacionTransferencia: string;
+  deposito: number;
+  boleta: string;
+  banco: string;
   tarjeta: number;
   autorizacionTarjeta: string;
   efectivo: number;
@@ -119,6 +146,138 @@ const formatDisplayDate = (value: string) => {
 const metodoCuentaComoTarjeta = (metodo?: string | null) => {
   const normalized = `${metodo || ""}`.trim().toLowerCase();
   return normalized === "tarjeta" || normalized === "visalink";
+};
+
+const normalizeUbicacionVenta = (venta: Venta) => {
+  const normalized = `${venta.ubicacion || "TIENDA"}`.trim().toUpperCase();
+  if (normalized.includes("CAPITAL")) return "CAPITAL";
+  if (normalized.includes("DEPART")) return "DEPARTAMENTO";
+  return "TIENDA";
+};
+
+const normalizeUbicacionPedido = (pedido: PedidoReporte) => {
+  const raw = `${pedido.ubicacion || ""}`.trim();
+  const fallbackFromBodega = `${pedido.bodega?.ubicacion || pedido.bodega?.nombre || ""}`.trim();
+  const normalized = (raw || fallbackFromBodega || "TIENDA").toUpperCase();
+  if (normalized.includes("CAPITAL")) return "CAPITAL";
+  if (normalized.includes("DEPART")) return "DEPARTAMENTO";
+  if (normalized.includes("ANTIGUA")) return "DEPARTAMENTO";
+  return "TIENDA";
+};
+
+const getVentaMetodo = (venta: Venta) => `${venta.metodoPago || ""}`.trim().toLowerCase();
+
+const getVentaReferencia = (venta: Venta) => `${venta.pagos?.[0]?.referencia || ""}`.trim();
+
+const getVentaBanco = (venta: Venta) => `${venta.pagos?.[0]?.banco || ""}`.trim();
+
+const getVentaRecibo = (venta: Venta) => venta.folio || `V-${venta.id}`;
+
+const getPedidoMetodo = (pedido: PedidoReporte) => `${pedido.metodoPago || ""}`.trim().toLowerCase();
+
+const getPedidoReferencia = (pedido: PedidoReporte) => `${pedido.pagos?.[0]?.referencia || ""}`.trim();
+
+const getPedidoBanco = (pedido: PedidoReporte) => `${pedido.pagos?.[0]?.banco || ""}`.trim();
+
+const getPedidoRecibo = (pedido: PedidoReporte) => pedido.folio || `PE-${pedido.id}`;
+
+const getPedidoMontoReporte = (pedido: PedidoReporte) =>
+  Number(pedido.anticipo || 0) + Number(pedido.envio || 0);
+
+const createCapitalRowFromVenta = (venta: Venta, fecha: string): CapitalRow => {
+  const metodo = getVentaMetodo(venta);
+  const referencia = getVentaReferencia(venta);
+  const banco = getVentaBanco(venta);
+  const total = Number(venta.total || 0);
+  return {
+    id: venta.id,
+    fecha,
+    envio: "",
+    transferencia: metodo === "transferencia" ? total : 0,
+    autorizacion: metodo === "transferencia" ? referencia : "",
+    deposito: metodo === "deposito_bancario" ? total : 0,
+    boleta: metodo === "deposito_bancario" ? referencia : "",
+    banco: metodo === "deposito_bancario" ? banco : "",
+    efectivo: metodo === "efectivo" ? total : 0,
+    observaciones: "",
+  };
+};
+
+const createDepartamentoRowFromVenta = (venta: Venta, fecha: string): DepartamentoRow => {
+  const metodo = getVentaMetodo(venta);
+  const referencia = getVentaReferencia(venta);
+  const banco = getVentaBanco(venta);
+  const total = Number(venta.total || 0);
+  return {
+    id: venta.id,
+    fecha,
+    envio: "",
+    transferencia: metodo === "transferencia" ? total : 0,
+    autorizacion: metodo === "transferencia" ? referencia : "",
+    deposito: metodo === "deposito_bancario" ? total : 0,
+    boleta: metodo === "deposito_bancario" ? referencia : "",
+    banco: metodo === "deposito_bancario" ? banco : "",
+    observaciones: "",
+  };
+};
+
+const createCapitalRowFromPedido = (pedido: PedidoReporte, fecha: string): CapitalRow => {
+  const metodo = getPedidoMetodo(pedido);
+  const referencia = getPedidoReferencia(pedido);
+  const banco = getPedidoBanco(pedido);
+  const total = getPedidoMontoReporte(pedido);
+  return {
+    id: -pedido.id,
+    fecha,
+    envio: "",
+    transferencia: metodo === "transferencia" ? total : 0,
+    autorizacion: metodo === "transferencia" ? referencia : "",
+    deposito: metodo === "deposito_bancario" ? total : 0,
+    boleta: metodo === "deposito_bancario" ? referencia : "",
+    banco: metodo === "deposito_bancario" ? banco : "",
+    efectivo: metodo === "efectivo" ? total : 0,
+    observaciones: "",
+  };
+};
+
+const createDepartamentoRowFromPedido = (pedido: PedidoReporte, fecha: string): DepartamentoRow => {
+  const metodo = getPedidoMetodo(pedido);
+  const referencia = getPedidoReferencia(pedido);
+  const banco = getPedidoBanco(pedido);
+  const total = getPedidoMontoReporte(pedido);
+  return {
+    id: -pedido.id,
+    fecha,
+    envio: "",
+    transferencia: metodo === "transferencia" ? total : 0,
+    autorizacion: metodo === "transferencia" ? referencia : "",
+    deposito: metodo === "deposito_bancario" ? total : 0,
+    boleta: metodo === "deposito_bancario" ? referencia : "",
+    banco: metodo === "deposito_bancario" ? banco : "",
+    observaciones: "",
+  };
+};
+
+const createTiendaRowFromPedido = (pedido: PedidoReporte, fecha: string): TiendaRow => {
+  const metodo = getPedidoMetodo(pedido);
+  const referencia = getPedidoReferencia(pedido);
+  const banco = getPedidoBanco(pedido);
+  const total = getPedidoMontoReporte(pedido);
+  return {
+    id: -pedido.id,
+    fecha,
+    recibo: getPedidoRecibo(pedido),
+    transferencia: metodo === "transferencia" ? total : 0,
+    autorizacionTransferencia: metodo === "transferencia" ? referencia : "",
+    deposito: metodo === "deposito_bancario" ? total : 0,
+    boleta: metodo === "deposito_bancario" ? referencia : "",
+    banco: metodo === "deposito_bancario" ? banco : "",
+    tarjeta: metodoCuentaComoTarjeta(metodo) ? total : 0,
+    autorizacionTarjeta: metodoCuentaComoTarjeta(metodo) ? referencia : "",
+    efectivo: metodo === "efectivo" ? total : 0,
+    total,
+    observaciones: "",
+  };
 };
 
 const createCapitalRow = (fecha: string): CapitalRow => ({
@@ -152,6 +311,9 @@ const createTiendaRow = (fecha: string): TiendaRow => ({
   recibo: "",
   transferencia: 0,
   autorizacionTransferencia: "",
+  deposito: 0,
+  boleta: "",
+  banco: "",
   tarjeta: 0,
   autorizacionTarjeta: "",
   efectivo: 0,
@@ -160,41 +322,85 @@ const createTiendaRow = (fecha: string): TiendaRow => ({
 });
 
 const getTiendaRowTotal = (row: TiendaRow) =>
-  Number(row.total || 0) || Number(row.transferencia || 0) + Number(row.tarjeta || 0) + Number(row.efectivo || 0);
+  Number(row.total || 0) ||
+  Number(row.transferencia || 0) + Number(row.deposito || 0) + Number(row.tarjeta || 0) + Number(row.efectivo || 0);
 
 const hasTiendaRowData = (row: TiendaRow) =>
   Boolean(
-    `${row.recibo || ""}`.trim() ||
+      `${row.recibo || ""}`.trim() ||
       `${row.autorizacionTransferencia || ""}`.trim() ||
+      `${row.boleta || ""}`.trim() ||
+      `${row.banco || ""}`.trim() ||
       `${row.autorizacionTarjeta || ""}`.trim() ||
       `${row.observaciones || ""}`.trim() ||
       Number(row.transferencia || 0) > 0 ||
+      Number(row.deposito || 0) > 0 ||
       Number(row.tarjeta || 0) > 0 ||
       Number(row.efectivo || 0) > 0 ||
       Number(row.total || 0) > 0
   );
 
+const hasCapitalRowData = (row: CapitalRow) =>
+  Boolean(
+    `${row.envio || ""}`.trim() ||
+      `${row.autorizacion || ""}`.trim() ||
+      `${row.boleta || ""}`.trim() ||
+      `${row.banco || ""}`.trim() ||
+      `${row.observaciones || ""}`.trim() ||
+      Number(row.transferencia || 0) > 0 ||
+      Number(row.deposito || 0) > 0 ||
+      Number(row.efectivo || 0) > 0
+  );
+
+const hasDepartamentoRowData = (row: DepartamentoRow) =>
+  Boolean(
+    `${row.envio || ""}`.trim() ||
+      `${row.autorizacion || ""}`.trim() ||
+      `${row.boleta || ""}`.trim() ||
+      `${row.banco || ""}`.trim() ||
+      `${row.observaciones || ""}`.trim() ||
+      Number(row.transferencia || 0) > 0 ||
+      Number(row.deposito || 0) > 0
+  );
+
 export default function ReporteDiario() {
   const today = toDateOnly(new Date());
-  const { nombre, primerNombre, primerApellido, usuario, rol, id: userId } = useAuthStore();
+  const { nombre, primerNombre, primerApellido, usuario, rol, rolId, id: userId } = useAuthStore();
+  const { vendedorDropdownRoleIds, vendedorDropdownBodegaIds, loaded: configLoaded, fetchConfig } = useSystemConfigStore();
   const location = useLocation();
   const [documentos, setDocumentos] = useState<DocumentoGenerado[]>([]);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [filtroUsuarioId, setFiltroUsuarioId] = useState<number | null | "">("");
   const [documentoId, setDocumentoId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [filtroDesde, setFiltroDesde] = useState("");
-  const [filtroHasta, setFiltroHasta] = useState("");
+  const [filtroDesde, setFiltroDesde] = useState(today);
+  const [filtroHasta, setFiltroHasta] = useState(today);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
   const [ventas, setVentas] = useState<Venta[]>([]);
+  const [pedidos, setPedidos] = useState<PedidoReporte[]>([]);
   const [fecha, setFecha] = useState(today);
   const [liquidacionNo, setLiquidacionNo] = useState("Pendiente");
   const [capitalRows, setCapitalRows] = useState<CapitalRow[]>(() => [createCapitalRow(today)]);
   const [departamentoRows, setDepartamentoRows] = useState<DepartamentoRow[]>(() => [createDepartamentoRow(today)]);
   const [tiendaManualRows, setTiendaManualRows] = useState<TiendaRow[]>(() => [createTiendaRow(today)]);
-  const [loading, setLoading] = useState(false);
+  const [capitalAutoEnvios, setCapitalAutoEnvios] = useState<Record<number, string>>({});
+  const [departamentoAutoEnvios, setDepartamentoAutoEnvios] = useState<Record<number, string>>({});
+  const [capitalAutoObservaciones, setCapitalAutoObservaciones] = useState<Record<number, string>>({});
+  const [departamentoAutoObservaciones, setDepartamentoAutoObservaciones] = useState<Record<number, string>>({});
+  const [tiendaAutoObservaciones, setTiendaAutoObservaciones] = useState<Record<number, string>>({});
+  const [capitalAutoEditId, setCapitalAutoEditId] = useState<number | null>(null);
+  const [departamentoAutoEditId, setDepartamentoAutoEditId] = useState<number | null>(null);
+  const [tiendaAutoEditId, setTiendaAutoEditId] = useState<number | null>(null);
+  const [rellenando, setRellenando] = useState(false);
   const [generandoPdf, setGenerandoPdf] = useState(false);
 
   const isAdmin = rol === "ADMIN";
+  const canUseDropdown = canUseVendedorDropdown(rol, rolId, vendedorDropdownRoleIds);
+  const usuariosDropdown = useMemo(
+    () => (isAdmin ? usuarios : filterUsuariosByBodega(usuarios, vendedorDropdownBodegaIds)),
+    [isAdmin, usuarios, vendedorDropdownBodegaIds]
+  );
 
   const cargarSiguienteLiquidacion = async () => {
     try {
@@ -207,37 +413,64 @@ export default function ReporteDiario() {
 
   const cargarDocumentos = useCallback(async () => {
     try {
+      if (!configLoaded) return;
       const params: any = { tipo: "reporteDiario" };
-      if (!isAdmin && !userId) {
+      if (!canUseDropdown && !userId) {
         setDocumentos([]);
         return;
       }
-      if (typeof filtroUsuarioId === 'number') params.usuarioId = filtroUsuarioId;
+      if (!canUseDropdown) {
+        params.usuarioId = userId;
+      } else if (typeof filtroUsuarioId === 'number') {
+        params.usuarioId = filtroUsuarioId;
+      }
       const resp = await api.get("/documentos", { params });
       setDocumentos(resp.data || []);
     } catch {
       Swal.fire("Error", "No se pudieron cargar los reportes diarios generados", "error");
     }
-  }, [filtroUsuarioId, isAdmin, userId]);
+  }, [filtroUsuarioId, canUseDropdown, userId, configLoaded]);
 
-  const cargar = async () => {
+  const rellenarDesdeVentas = async () => {
+    if (rellenando || generandoPdf) return;
     try {
-      setLoading(true);
-      const resp = await api.get("/ventas");
-      setVentas(resp.data || []);
+      setRellenando(true);
+      const [respVentas, respPedidos] = await Promise.all([
+        api.get("/ventas"),
+        api.get("/produccion"),
+      ]);
+      setVentas(respVentas.data || []);
+      setPedidos(respPedidos.data || []);
+      setCapitalAutoEnvios({});
+      setDepartamentoAutoEnvios({});
+      setCapitalAutoObservaciones({});
+      setDepartamentoAutoObservaciones({});
+      setTiendaAutoObservaciones({});
+      setCapitalAutoEditId(null);
+      setDepartamentoAutoEditId(null);
+      setTiendaAutoEditId(null);
+      Swal.fire(
+        "Listo",
+        `Se rellenaron las ventas y pedidos registrados para ${fecha}. Revisa cada seccion antes de imprimir.`,
+        "success"
+      );
     } catch {
-      Swal.fire("Error", "No se pudieron cargar las ventas para el reporte diario", "error");
+      Swal.fire("Error", "No se pudieron rellenar las ventas y pedidos del reporte diario", "error");
     } finally {
-      setLoading(false);
+      setRellenando(false);
     }
   };
 
   useEffect(() => {
-    if (isAdmin) {
+    void fetchConfig();
+  }, [fetchConfig]);
+
+  useEffect(() => {
+    if (canUseDropdown) {
       api.get("/usuarios").then(resp => setUsuarios(resp.data || []));
     }
-    setFiltroUsuarioId(isAdmin ? "" : userId ?? "");
-  }, [isAdmin, userId]);
+    setFiltroUsuarioId(canUseDropdown ? "" : userId ?? "");
+  }, [canUseDropdown, userId]);
 
   useEffect(() => {
     void cargarDocumentos();
@@ -256,19 +489,41 @@ export default function ReporteDiario() {
         const docFecha = doc.data?.fecha || String(doc.creadoEn || "").slice(0, 10);
         if (filtroDesde && docFecha < filtroDesde) return false;
         if (filtroHasta && docFecha > filtroHasta) return false;
+        if (!isAdmin && canUseDropdown && vendedorDropdownBodegaIds.length && typeof filtroUsuarioId !== "number") {
+          const bodegaId = Number(doc.usuario?.bodegaId);
+          if (!Number.isFinite(bodegaId) || !vendedorDropdownBodegaIds.includes(bodegaId)) return false;
+        }
         return true;
       }),
-    [documentos, filtroDesde, filtroHasta]
+    [documentos, filtroDesde, filtroHasta, canUseDropdown, filtroUsuarioId, isAdmin, vendedorDropdownBodegaIds]
   );
+
+  const documentosPaginados = useMemo(
+    () => documentosFiltrados.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage),
+    [documentosFiltrados, page, rowsPerPage]
+  );
+
+  useEffect(() => {
+    setPage(0);
+  }, [filtroDesde, filtroHasta, filtroUsuarioId, documentosFiltrados.length]);
 
   const nuevoReporte = async () => {
     setDocumentoId(null);
     await cargarSiguienteLiquidacion();
-    await cargar();
+    setVentas([]);
+    setPedidos([]);
     setFecha(today);
     setCapitalRows([createCapitalRow(today)]);
     setDepartamentoRows([createDepartamentoRow(today)]);
     setTiendaManualRows([createTiendaRow(today)]);
+    setCapitalAutoEnvios({});
+    setDepartamentoAutoEnvios({});
+    setCapitalAutoObservaciones({});
+    setDepartamentoAutoObservaciones({});
+    setTiendaAutoObservaciones({});
+    setCapitalAutoEditId(null);
+    setDepartamentoAutoEditId(null);
+    setTiendaAutoEditId(null);
     setShowForm(true);
   };
 
@@ -277,24 +532,74 @@ export default function ReporteDiario() {
     [ventas, fecha]
   );
 
+  const pedidosDelDia = useMemo(
+    () => pedidos.filter((pedido) => toDateOnly(pedido.fecha) === fecha),
+    [pedidos, fecha]
+  );
+
+  const capitalAutoRows = useMemo<CapitalRow[]>(
+    () =>
+      [
+        ...ventasDelDia
+          .filter((venta) => normalizeUbicacionVenta(venta) === "CAPITAL")
+          .map((venta) => createCapitalRowFromVenta(venta, fecha)),
+        ...pedidosDelDia
+          .filter((pedido) => normalizeUbicacionPedido(pedido) === "CAPITAL")
+          .map((pedido) => createCapitalRowFromPedido(pedido, fecha)),
+      ].map((row) => ({
+        ...row,
+        envio: capitalAutoEnvios[row.id] || "",
+        observaciones: capitalAutoObservaciones[row.id] || "",
+      })),
+    [ventasDelDia, pedidosDelDia, fecha, capitalAutoEnvios, capitalAutoObservaciones]
+  );
+
+  const departamentoAutoRows = useMemo<DepartamentoRow[]>(
+    () =>
+      [
+        ...ventasDelDia
+          .filter((venta) => normalizeUbicacionVenta(venta) === "DEPARTAMENTO")
+          .map((venta) => createDepartamentoRowFromVenta(venta, fecha)),
+        ...pedidosDelDia
+          .filter((pedido) => normalizeUbicacionPedido(pedido) === "DEPARTAMENTO")
+          .map((pedido) => createDepartamentoRowFromPedido(pedido, fecha)),
+      ].map((row) => ({
+        ...row,
+        envio: departamentoAutoEnvios[row.id] || "",
+        observaciones: departamentoAutoObservaciones[row.id] || "",
+      })),
+    [ventasDelDia, pedidosDelDia, fecha, departamentoAutoEnvios, departamentoAutoObservaciones]
+  );
+
   const tiendaAutoRows = useMemo<TiendaRow[]>(() => {
-    return ventasDelDia.map((venta) => {
-      const metodo = `${venta.metodoPago || ""}`.trim().toLowerCase();
-      const referencia = `${venta.pagos?.[0]?.referencia || ""}`.trim();
+    const ventaRows = ventasDelDia.filter((venta) => normalizeUbicacionVenta(venta) === "TIENDA").map((venta) => {
+      const metodo = getVentaMetodo(venta);
+      const referencia = getVentaReferencia(venta);
+      const banco = getVentaBanco(venta);
       return {
         id: venta.id,
         fecha,
-        recibo: `V-${venta.id}`,
+        recibo: getVentaRecibo(venta),
         transferencia: metodo === "transferencia" ? Number(venta.total || 0) : 0,
         autorizacionTransferencia: metodo === "transferencia" ? referencia : "",
+        deposito: metodo === "deposito_bancario" ? Number(venta.total || 0) : 0,
+        boleta: metodo === "deposito_bancario" ? referencia : "",
+        banco: metodo === "deposito_bancario" ? banco : "",
         tarjeta: metodoCuentaComoTarjeta(metodo) ? Number(venta.total || 0) : 0,
         autorizacionTarjeta: metodoCuentaComoTarjeta(metodo) ? referencia : "",
         efectivo: metodo === "efectivo" ? Number(venta.total || 0) : 0,
         total: Number(venta.total || 0),
-        observaciones: `${venta.clienteNombre || ""}`.trim(),
+        observaciones: "",
       };
     });
-  }, [ventasDelDia, fecha]);
+    const pedidoRows = pedidosDelDia
+      .filter((pedido) => normalizeUbicacionPedido(pedido) === "TIENDA")
+      .map((pedido) => createTiendaRowFromPedido(pedido, fecha));
+    return [...ventaRows, ...pedidoRows].map((row) => ({
+      ...row,
+      observaciones: tiendaAutoObservaciones[row.id] || "",
+    }));
+  }, [ventasDelDia, pedidosDelDia, fecha, tiendaAutoObservaciones]);
 
   const tiendaRows = useMemo<TiendaRow[]>(
     () => [...tiendaAutoRows, ...tiendaManualRows.filter(hasTiendaRowData)],
@@ -303,20 +608,20 @@ export default function ReporteDiario() {
 
   const subtotalCapital = useMemo(
     () =>
-      capitalRows.reduce(
+      [...capitalAutoRows, ...capitalRows].reduce(
         (sum, row) => sum + Number(row.transferencia || 0) + Number(row.deposito || 0) + Number(row.efectivo || 0),
         0
       ),
-    [capitalRows]
+    [capitalAutoRows, capitalRows]
   );
 
   const subtotalDepartamento = useMemo(
     () =>
-      departamentoRows.reduce(
+      [...departamentoAutoRows, ...departamentoRows].reduce(
         (sum, row) => sum + Number(row.transferencia || 0) + Number(row.deposito || 0),
         0
       ),
-    [departamentoRows]
+    [departamentoAutoRows, departamentoRows]
   );
 
   const subtotalTienda = useMemo(
@@ -341,10 +646,40 @@ export default function ReporteDiario() {
     setTiendaManualRows((prev) => prev.map((row) => (row.id === id ? { ...row, [field]: value } : row)));
   };
 
+  const updateCapitalAutoEnvio = (id: number, value: string) => {
+    setCapitalAutoEnvios((prev) => ({ ...prev, [id]: value }));
+  };
+
+  const updateDepartamentoAutoEnvio = (id: number, value: string) => {
+    setDepartamentoAutoEnvios((prev) => ({ ...prev, [id]: value }));
+  };
+
+  const updateCapitalAutoObservacion = (id: number, value: string) => {
+    setCapitalAutoObservaciones((prev) => ({ ...prev, [id]: value }));
+  };
+
+  const updateDepartamentoAutoObservacion = (id: number, value: string) => {
+    setDepartamentoAutoObservaciones((prev) => ({ ...prev, [id]: value }));
+  };
+
+  const updateTiendaAutoObservacion = (id: number, value: string) => {
+    setTiendaAutoObservaciones((prev) => ({ ...prev, [id]: value }));
+  };
+
   const limpiarCapturas = () => {
     setCapitalRows([createCapitalRow(fecha)]);
     setDepartamentoRows([createDepartamentoRow(fecha)]);
     setTiendaManualRows([createTiendaRow(fecha)]);
+    setVentas([]);
+    setPedidos([]);
+    setCapitalAutoEnvios({});
+    setDepartamentoAutoEnvios({});
+    setCapitalAutoObservaciones({});
+    setDepartamentoAutoObservaciones({});
+    setTiendaAutoObservaciones({});
+    setCapitalAutoEditId(null);
+    setDepartamentoAutoEditId(null);
+    setTiendaAutoEditId(null);
   };
 
   const getGeneradoPor = () =>
@@ -356,10 +691,12 @@ export default function ReporteDiario() {
   const getPayload = () => ({
     fecha,
     generadoPor: getGeneradoPor(),
-    capitalRows,
-    departamentoRows,
+    capitalRows: [...capitalAutoRows, ...capitalRows.filter(hasCapitalRowData)],
+    departamentoRows: [...departamentoAutoRows, ...departamentoRows.filter(hasDepartamentoRowData)],
+    tiendaAutoRows,
     tiendaManualRows,
     ventasSnapshot: ventasDelDia,
+    pedidosSnapshot: pedidosDelDia,
   });
 
   const guardarDocumento = async () => {
@@ -437,7 +774,7 @@ export default function ReporteDiario() {
         <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 2 }}>
           <TextField label="Desde" type="date" size="small" value={filtroDesde} onChange={(e) => setFiltroDesde(e.target.value)} InputLabelProps={{ shrink: true }} />
           <TextField label="Hasta" type="date" size="small" value={filtroHasta} onChange={(e) => setFiltroHasta(e.target.value)} InputLabelProps={{ shrink: true }} />
-          {isAdmin && (
+          {canUseDropdown && (
             <FormControl size="small" sx={{ minWidth: 200 }}>
               <InputLabel>Usuario</InputLabel>
               <Select
@@ -446,7 +783,7 @@ export default function ReporteDiario() {
                 onChange={(e) => setFiltroUsuarioId(e.target.value as number | null | "")}
               >
                 <MenuItem value="">Todos</MenuItem>
-                {usuarios.map((u) => (
+                {usuariosDropdown.map((u) => (
                   <MenuItem key={u.id} value={u.id}>
                     {u.nombre || u.usuario}
                   </MenuItem>
@@ -467,7 +804,7 @@ export default function ReporteDiario() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {documentosFiltrados.map((doc) => {
+              {documentosPaginados.map((doc) => {
                 const total =
                   (doc.data?.capitalRows || []).reduce(
                     (sum: number, row: any) => sum + Number(row.transferencia || 0) + Number(row.deposito || 0) + Number(row.efectivo || 0),
@@ -477,7 +814,12 @@ export default function ReporteDiario() {
                     (sum: number, row: any) => sum + Number(row.transferencia || 0) + Number(row.deposito || 0),
                     0
                   ) +
-                  (doc.data?.ventasSnapshot || []).reduce((sum: number, venta: any) => sum + Number(venta.total || 0), 0) +
+                  (doc.data?.ventasSnapshot || [])
+                    .filter((venta: Venta) => normalizeUbicacionVenta(venta) === "TIENDA")
+                    .reduce((sum: number, venta: any) => sum + Number(venta.total || 0), 0) +
+                  (doc.data?.pedidosSnapshot || [])
+                    .filter((pedido: PedidoReporte) => normalizeUbicacionPedido(pedido) === "TIENDA")
+                    .reduce((sum: number, pedido: PedidoReporte) => sum + getPedidoMontoReporte(pedido), 0) +
                   (doc.data?.tiendaManualRows || []).reduce((sum: number, row: any) => sum + getTiendaRowTotal(row), 0);
                 return (
                   <TableRow key={doc.id}>
@@ -512,6 +854,20 @@ export default function ReporteDiario() {
             </TableBody>
           </Table>
         </TableContainer>
+        <TablePagination
+          component="div"
+          count={documentosFiltrados.length}
+          page={page}
+          rowsPerPage={rowsPerPage}
+          onPageChange={(_, nextPage) => setPage(nextPage)}
+          onRowsPerPageChange={(event) => {
+            setRowsPerPage(Number(event.target.value));
+            setPage(0);
+          }}
+          rowsPerPageOptions={[5, 10, 25, 50]}
+          labelRowsPerPage="Filas por pagina"
+          labelDisplayedRows={({ from, to, count }) => `${from}-${to} de ${count}`}
+        />
       </Paper>
     );
   }
@@ -524,8 +880,8 @@ export default function ReporteDiario() {
           <Button startIcon={<ArrowBackOutlined />} variant="outlined" size="small" disabled={generandoPdf} onClick={() => { setShowForm(false); void cargarDocumentos(); }}>
             Volver
           </Button>
-          <Button startIcon={<RefreshOutlined />} variant="outlined" size="small" onClick={cargar} disabled={loading || generandoPdf}>
-            Recargar ventas
+          <Button startIcon={<RefreshOutlined />} variant="outlined" size="small" onClick={rellenarDesdeVentas} disabled={rellenando || generandoPdf}>
+            {rellenando ? "Rellenando..." : "Rellenar"}
           </Button>
           <Button
             startIcon={<CleaningServicesOutlined />}
@@ -573,7 +929,7 @@ export default function ReporteDiario() {
         </Grid>
         <Grid size={{ xs: 12, sm: 6 }}>
           <Stack direction="row" spacing={1} alignItems="center" sx={{ height: "100%", flexWrap: "wrap" }}>
-            <Chip label={`${tiendaRows.length} ventas del día`} />
+            <Chip label={`${ventasDelDia.length + pedidosDelDia.length} registros del dia`} />
             <Chip label={`Capital ${money(subtotalCapital)}`} color="primary" variant="outlined" />
             <Chip label={`Departamento ${money(subtotalDepartamento)}`} color="warning" variant="outlined" />
             <Chip label={`Tienda ${money(subtotalTienda)}`} color="success" />
@@ -582,7 +938,7 @@ export default function ReporteDiario() {
       </Grid>
 
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        Este reporte no se guarda. Puedes completar los bloques manuales, revisar las ventas del día y luego imprimirlo o guardarlo como PDF.
+        Este reporte no se guarda. Puedes completar los bloques manuales, revisar las ventas y pedidos del dia y luego imprimirlo o guardarlo como PDF.
       </Typography>
 
       <Divider sx={{ mb: 2 }} />
@@ -617,6 +973,54 @@ export default function ReporteDiario() {
                 </TableRow>
               </TableHead>
               <TableBody>
+                {capitalAutoRows.map((row) => {
+                  const total = Number(row.transferencia || 0) + Number(row.deposito || 0) + Number(row.efectivo || 0);
+                  return (
+                    <TableRow key={`capital-auto-${row.id}`}>
+                      <TableCell>{formatDisplayDate(row.fecha)}</TableCell>
+                      <TableCell sx={{ minWidth: 120 }}>
+                        {capitalAutoEditId === row.id ? (
+                          <TextField
+                            size="small"
+                            fullWidth
+                            value={row.envio}
+                            onChange={(e) => updateCapitalAutoEnvio(row.id, e.target.value)}
+                          />
+                        ) : (
+                          row.envio || "-"
+                        )}
+                      </TableCell>
+                      <TableCell>{money(row.transferencia)}</TableCell>
+                      <TableCell>{row.autorizacion || "-"}</TableCell>
+                      <TableCell>{money(row.deposito)}</TableCell>
+                      <TableCell>{row.boleta || "-"}</TableCell>
+                      <TableCell>{row.banco || "-"}</TableCell>
+                      <TableCell>{money(row.efectivo)}</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>{money(total)}</TableCell>
+                      <TableCell sx={{ minWidth: 180 }}>
+                        {capitalAutoEditId === row.id ? (
+                          <TextField
+                            size="small"
+                            fullWidth
+                            value={row.observaciones}
+                            onChange={(e) => updateCapitalAutoObservacion(row.id, e.target.value)}
+                          />
+                        ) : (
+                          row.observaciones || "-"
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <IconButton
+                          size="small"
+                          color="primary"
+                          onClick={() => setCapitalAutoEditId((current) => (current === row.id ? null : row.id))}
+                        >
+                          {capitalAutoEditId === row.id ? <SaveOutlined fontSize="small" /> : <EditOutlined fontSize="small" />}
+                        </IconButton>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
                 {capitalRows.map((row) => {
                   const total = Number(row.transferencia || 0) + Number(row.deposito || 0) + Number(row.efectivo || 0);
                   return (
@@ -725,6 +1129,53 @@ export default function ReporteDiario() {
                 </TableRow>
               </TableHead>
               <TableBody>
+                {departamentoAutoRows.map((row) => {
+                  const total = Number(row.transferencia || 0) + Number(row.deposito || 0);
+                  return (
+                    <TableRow key={`departamento-auto-${row.id}`}>
+                      <TableCell>{formatDisplayDate(row.fecha)}</TableCell>
+                      <TableCell sx={{ minWidth: 120 }}>
+                        {departamentoAutoEditId === row.id ? (
+                          <TextField
+                            size="small"
+                            fullWidth
+                            value={row.envio}
+                            onChange={(e) => updateDepartamentoAutoEnvio(row.id, e.target.value)}
+                          />
+                        ) : (
+                          row.envio || "-"
+                        )}
+                      </TableCell>
+                      <TableCell>{money(row.transferencia)}</TableCell>
+                      <TableCell>{row.autorizacion || "-"}</TableCell>
+                      <TableCell>{money(row.deposito)}</TableCell>
+                      <TableCell>{row.boleta || "-"}</TableCell>
+                      <TableCell>{row.banco || "-"}</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>{money(total)}</TableCell>
+                      <TableCell sx={{ minWidth: 180 }}>
+                        {departamentoAutoEditId === row.id ? (
+                          <TextField
+                            size="small"
+                            fullWidth
+                            value={row.observaciones}
+                            onChange={(e) => updateDepartamentoAutoObservacion(row.id, e.target.value)}
+                          />
+                        ) : (
+                          row.observaciones || "-"
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <IconButton
+                          size="small"
+                          color="primary"
+                          onClick={() => setDepartamentoAutoEditId((current) => (current === row.id ? null : row.id))}
+                        >
+                          {departamentoAutoEditId === row.id ? <SaveOutlined fontSize="small" /> : <EditOutlined fontSize="small" />}
+                        </IconButton>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
                 {departamentoRows.map((row) => {
                   const total = Number(row.transferencia || 0) + Number(row.deposito || 0);
                   return (
@@ -815,6 +1266,9 @@ export default function ReporteDiario() {
                   <TableCell>Recibo</TableCell>
                   <TableCell>Transferencia</TableCell>
                   <TableCell>Autorización</TableCell>
+                  <TableCell>Deposito</TableCell>
+                  <TableCell>Boleta</TableCell>
+                  <TableCell>Banco</TableCell>
                   <TableCell>Tarjeta</TableCell>
                   <TableCell>Autorización</TableCell>
                   <TableCell>Efectivo</TableCell>
@@ -831,12 +1285,34 @@ export default function ReporteDiario() {
                       <TableCell>{row.recibo}</TableCell>
                       <TableCell>{money(row.transferencia)}</TableCell>
                       <TableCell>{row.autorizacionTransferencia || "-"}</TableCell>
+                      <TableCell>{money(row.deposito)}</TableCell>
+                      <TableCell>{row.boleta || "-"}</TableCell>
+                      <TableCell>{row.banco || "-"}</TableCell>
                       <TableCell>{money(row.tarjeta)}</TableCell>
                       <TableCell>{row.autorizacionTarjeta || "-"}</TableCell>
                       <TableCell>{money(row.efectivo)}</TableCell>
                       <TableCell sx={{ fontWeight: 600 }}>{money(getTiendaRowTotal(row))}</TableCell>
-                      <TableCell>{row.observaciones || "-"}</TableCell>
-                      <TableCell>-</TableCell>
+                      <TableCell sx={{ minWidth: 180 }}>
+                        {tiendaAutoEditId === row.id ? (
+                          <TextField
+                            size="small"
+                            fullWidth
+                            value={row.observaciones}
+                            onChange={(e) => updateTiendaAutoObservacion(row.id, e.target.value)}
+                          />
+                        ) : (
+                          row.observaciones || "-"
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <IconButton
+                          size="small"
+                          color="primary"
+                          onClick={() => setTiendaAutoEditId((current) => (current === row.id ? null : row.id))}
+                        >
+                          {tiendaAutoEditId === row.id ? <SaveOutlined fontSize="small" /> : <EditOutlined fontSize="small" />}
+                        </IconButton>
+                      </TableCell>
                     </TableRow>
                   ))
                 ) : null}
@@ -865,13 +1341,28 @@ export default function ReporteDiario() {
                         onChange={(e) => updateTiendaManualRow(row.id, "transferencia", Number(e.target.value) || 0)}
                       />
                     </TableCell>
-                    <TableCell sx={{ minWidth: 150 }}>
+                    <TableCell sx={{ minWidth: 120 }}>
                       <TextField
                         size="small"
                         fullWidth
                         value={row.autorizacionTransferencia}
                         onChange={(e) => updateTiendaManualRow(row.id, "autorizacionTransferencia", e.target.value)}
                       />
+                    </TableCell>
+                    <TableCell sx={{ minWidth: 120 }}>
+                      <TextField
+                        type="number"
+                        size="small"
+                        fullWidth
+                        value={row.deposito}
+                        onChange={(e) => updateTiendaManualRow(row.id, "deposito", Number(e.target.value) || 0)}
+                      />
+                    </TableCell>
+                    <TableCell sx={{ minWidth: 120 }}>
+                      <TextField size="small" fullWidth value={row.boleta} onChange={(e) => updateTiendaManualRow(row.id, "boleta", e.target.value)} />
+                    </TableCell>
+                    <TableCell sx={{ minWidth: 120 }}>
+                      <TextField size="small" fullWidth value={row.banco} onChange={(e) => updateTiendaManualRow(row.id, "banco", e.target.value)} />
                     </TableCell>
                     <TableCell sx={{ minWidth: 120 }}>
                       <TextField
@@ -923,8 +1414,8 @@ export default function ReporteDiario() {
 
                 {!tiendaAutoRows.length && !tiendaManualRows.length ? (
                   <TableRow>
-                    <TableCell colSpan={10} align="center">
-                      No hay ventas registradas para esta fecha.
+                    <TableCell colSpan={13} align="center">
+                      No hay ventas o pedidos registrados para esta fecha.
                     </TableCell>
                   </TableRow>
                 ) : null}

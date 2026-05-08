@@ -22,6 +22,8 @@ import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../utils/fontFamily";
 import { useAuthStore } from "../auth/useAuthStore";
+import { useSystemConfigStore } from "../config/useSystemConfigStore";
+import { canUseVendedorDropdown } from "../utils/vendedorDropdownAccess";
 
 interface Pago {
   monto: number;
@@ -38,6 +40,7 @@ interface PedidoPago {
   cliente?: { nombre?: string | null } | null;
   clienteNombre?: string | null;
   bodega?: { nombre?: string | null } | null;
+  bodegaId?: number | string | null;
   pagos?: Pago[];
   vendedor: string;
 }
@@ -58,10 +61,12 @@ const metodoRequiereReferencia = (metodo: string) => metodo !== "efectivo";
 const getPagoAplicado = (pago: Pago) => Number(pago.monto || 0) + Number(pago.recargo || 0);
 
 export default function PagosPedidos() {
-  const { usuario, usuarioCorrelativo, rol } = useAuthStore();
+  const { usuario, usuarioCorrelativo, rol, rolId } = useAuthStore();
+  const { vendedorDropdownRoleIds, vendedorDropdownBodegaIds, fetchConfig } = useSystemConfigStore();
   const currentUser = `${usuario || ""}`.trim().toLowerCase();
   const currentUserAlt = `${usuarioCorrelativo || ""}`.trim().toLowerCase();
   const isAdmin = Boolean(rol?.toLowerCase().includes("admin"));
+  const canUseDropdown = canUseVendedorDropdown(rol, rolId, vendedorDropdownRoleIds);
   const [pedidos, setPedidos] = useState<PedidoPago[]>([]);
   const [forms, setForms] = useState<Record<number, PagoForm>>({});
   const [filtroDesde, setFiltroDesde] = useState("");
@@ -109,12 +114,27 @@ export default function PagosPedidos() {
   };
 
   useEffect(() => {
+    void fetchConfig();
+  }, [fetchConfig]);
+
+  useEffect(() => {
     void cargar();
   }, []);
 
+  const pedidosPermitidos = useMemo(
+    () =>
+      isAdmin || !canUseDropdown || !vendedorDropdownBodegaIds.length
+        ? pedidos
+        : pedidos.filter((pedido) => {
+            const bodegaId = Number(pedido.bodegaId);
+            return Number.isFinite(bodegaId) && vendedorDropdownBodegaIds.includes(bodegaId);
+          }),
+    [canUseDropdown, isAdmin, pedidos, vendedorDropdownBodegaIds]
+  );
+
   const vendedores = useMemo(
-    () => Array.from(new Set(pedidos.map((pedido) => pedido.vendedor).filter((value) => value))).sort((a, b) => a.localeCompare(b)),
-    [pedidos]
+    () => Array.from(new Set(pedidosPermitidos.map((pedido) => pedido.vendedor).filter((value) => value))).sort((a, b) => a.localeCompare(b)),
+    [pedidosPermitidos]
   );
 
   const matchesCurrentUser = useCallback(
@@ -128,7 +148,7 @@ export default function PagosPedidos() {
 
   const pendientes = useMemo(
     () =>
-      pedidos.filter((pedido) => {
+      pedidosPermitidos.filter((pedido) => {
         const estado = `${pedido.estado || ""}`.trim().toLowerCase();
         const fecha = `${pedido.fecha || ""}`.slice(0, 10);
         const estadoCerrado = ["anulado", "recibido", "completado", "regresado_produccion"].includes(estado);
@@ -136,13 +156,13 @@ export default function PagosPedidos() {
         if (Number(pedido.saldoPendiente || 0) <= 0) return false;
         if (filtroDesde && fecha < filtroDesde) return false;
         if (filtroHasta && fecha > filtroHasta) return false;
-        if (!isAdmin) {
+        if (!canUseDropdown) {
           return matchesCurrentUser(pedido.vendedor);
         }
         if (selectedVendedor !== "all" && pedido.vendedor !== selectedVendedor) return false;
         return true;
       }),
-    [pedidos, filtroDesde, filtroHasta, isAdmin, selectedVendedor, matchesCurrentUser]
+    [pedidosPermitidos, filtroDesde, filtroHasta, canUseDropdown, selectedVendedor, matchesCurrentUser]
   );
 
   const updateForm = (pedidoId: number, patch: Partial<PagoForm>) => {
@@ -253,7 +273,7 @@ export default function PagosPedidos() {
       </Stack>
 
       <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 2 }}>
-        {isAdmin ? (
+        {canUseDropdown ? (
           <FormControl size="small" sx={{ minWidth: 220 }}>
             <InputLabel>Vendedor</InputLabel>
             <Select
