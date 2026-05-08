@@ -122,11 +122,13 @@ interface ArticuloUnificado {
   color: string;
   descripcion: string;
   cantidad: number;
+  compactadoPor?: "talla" | "color" | "tela" | "genero" | "descripcion";
   fuentes: {
     pedidoId: number;
     folio: string;
     solicitadoPor: string;
     cantidad: number;
+    valorAgrupado?: string;
   }[];
 }
 
@@ -166,6 +168,93 @@ const compareArticuloUnificadoPorPedido = (a: ArticuloUnificado, b: ArticuloUnif
   const porSexo = compareText(a.genero, b.genero);
   if (porSexo !== 0) return porSexo;
   return compareText(a.descripcion, b.descripcion);
+};
+
+const COMPACTABLE_FIELDS = ["talla", "color", "tela", "genero", "descripcion"] as const;
+
+type CompactableField = (typeof COMPACTABLE_FIELDS)[number];
+
+const getArticuloField = (articulo: ArticuloUnificado, field: CompactableField) => `${articulo[field] || "N/D"}`;
+
+const buildArticuloKey = (articulo: Pick<ArticuloUnificado, "tipo" | "genero" | "tela" | "talla" | "color" | "descripcion">) =>
+  [articulo.tipo, articulo.genero, articulo.tela, articulo.talla, articulo.color, articulo.descripcion].join("|");
+
+const buildArticuloKeyWithoutField = (articulo: ArticuloUnificado, field: CompactableField) =>
+  [
+    articulo.tipo,
+    field === "genero" ? "*" : articulo.genero,
+    field === "tela" ? "*" : articulo.tela,
+    field === "talla" ? "*" : articulo.talla,
+    field === "color" ? "*" : articulo.color,
+    field === "descripcion" ? "*" : articulo.descripcion,
+  ].join("|");
+
+const formatCantidadValor = (cantidad: number, value: string) => `${Number(cantidad || 0)}. ${value}`;
+
+const mergeValueBreakdown = (items: ArticuloUnificado[], field: CompactableField) => {
+  const quantities = new Map<string, number>();
+
+  items.forEach((item) => {
+    const value = getArticuloField(item, field);
+    quantities.set(value, (quantities.get(value) || 0) + Number(item.cantidad || 0));
+  });
+
+  return Array.from(quantities.entries())
+    .sort(([a], [b]) => compareText(a, b))
+    .map(([value, quantity]) => formatCantidadValor(quantity, value))
+    .join(", ");
+};
+
+const compactArticulosUnificados = (articulos: ArticuloUnificado[]) => {
+  const pending = [...articulos];
+  const compactados: ArticuloUnificado[] = [];
+
+  for (const field of COMPACTABLE_FIELDS) {
+    const buckets = new Map<string, ArticuloUnificado[]>();
+
+    pending.forEach((item) => {
+      if (item.compactadoPor) return;
+      const key = buildArticuloKeyWithoutField(item, field);
+      const bucket = buckets.get(key) || [];
+      bucket.push(item);
+      buckets.set(key, bucket);
+    });
+
+    const used = new Set<string>();
+
+    buckets.forEach((bucket) => {
+      if (bucket.length < 2) return;
+      const distinctValues = new Set(bucket.map((item) => getArticuloField(item, field)));
+      if (distinctValues.size < 2) return;
+
+      const [base] = bucket;
+      const merged: ArticuloUnificado = {
+        ...base,
+        key: `${field}|${buildArticuloKeyWithoutField(base, field)}`,
+        cantidad: bucket.reduce((sum, item) => sum + Number(item.cantidad || 0), 0),
+        compactadoPor: field,
+        fuentes: bucket.flatMap((item) =>
+          item.fuentes.map((fuente) => ({
+            ...fuente,
+            valorAgrupado: getArticuloField(item, field),
+          })),
+        ),
+      };
+      merged[field] = mergeValueBreakdown(bucket, field) as never;
+      compactados.push(merged);
+      bucket.forEach((item) => used.add(item.key));
+    });
+
+    if (used.size) {
+      for (let index = pending.length - 1; index >= 0; index -= 1) {
+        if (used.has(pending[index].key)) {
+          pending.splice(index, 1);
+        }
+      }
+    }
+  }
+
+  return [...pending, ...compactados].sort(compareArticuloUnificadoPorPedido);
 };
 
 const loadImageAsDataUrl = async (src: string) =>
@@ -867,17 +956,14 @@ export default function Pedidos() {
           const talla = buscarNombreCatalogo(producto, "talla");
           const color = buscarNombreCatalogo(producto, "color");
           const descripcion = normalizarTexto(detalle.descripcion);
-          const key = [
-            Number(detalle.productoId) || 0,
-            codigo,
-            nombre,
+          const key = buildArticuloKey({
             tipo,
             genero,
             tela,
             talla,
             color,
             descripcion,
-          ].join("|");
+          });
 
           const fuente = {
             pedidoId: pedido.id,
@@ -909,7 +995,7 @@ export default function Pedidos() {
         });
       });
 
-      const articulos = Array.from(agrupados.values()).sort(compareArticuloUnificadoPorPedido);
+      const articulos = compactArticulosUnificados(Array.from(agrupados.values()));
 
       const bodegaCorrelativo = filterBodega === "all" ? null : Number(filterBodega);
       const filtroTienda =
