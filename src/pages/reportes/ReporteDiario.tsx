@@ -716,7 +716,7 @@ export default function ReporteDiario() {
   };
 
   const descargarDocumentoPdf = async (doc: DocumentoGenerado) => {
-    const resp = await api.get(`/documentos/${doc.id}/pdf`, {
+    const resp = await api.get(`/documentos/${doc.id}/pdf?t=${Date.now()}`, {
       responseType: "blob",
     });
     const url = window.URL.createObjectURL(new Blob([resp.data], { type: "application/pdf" }));
