@@ -9,6 +9,7 @@ interface SystemConfigState {
   vendedorDropdownRoleIds: number[];
   vendedorDropdownBodegaIds: number[];
   salesInventoryEnabled: boolean;
+  reportesConfig: unknown;
   loaded: boolean;
   loading: boolean;
   fetchConfig: () => Promise<void>;
@@ -23,6 +24,7 @@ export const useSystemConfigStore = create<SystemConfigState>((set) => ({
   vendedorDropdownRoleIds: [],
   vendedorDropdownBodegaIds: [],
   salesInventoryEnabled: true,
+  reportesConfig: undefined,
   loaded: false,
   loading: false,
 
@@ -49,6 +51,7 @@ export const useSystemConfigStore = create<SystemConfigState>((set) => ({
           ? resp.data.vendedorDropdownBodegaIds.map(Number).filter((value: number) => Number.isFinite(value) && value > 0)
           : [],
         salesInventoryEnabled: resp.data?.salesInventoryEnabled !== false,
+        reportesConfig: resp.data?.reportesConfig,
         loaded: true,
         loading: false,
       });
@@ -63,6 +66,7 @@ export const useSystemConfigStore = create<SystemConfigState>((set) => ({
         vendedorDropdownRoleIds: [],
         vendedorDropdownBodegaIds: [],
         salesInventoryEnabled: true,
+        reportesConfig: undefined,
       });
     }
   },

@@ -38,6 +38,7 @@ import { useAuthStore } from "../../auth/useAuthStore";
 import { useSystemConfigStore } from "../../config/useSystemConfigStore";
 import { UniformaLoader } from "../../components/UniformaLoader";
 import { canUseVendedorDropdown, filterUsuariosByBodega } from "../../utils/vendedorDropdownAccess";
+import { formatReportScheduleForDay, getReportSchedule, isReportScheduleOpen } from "../../utils/reportSchedule";
 
 interface PagoVenta {
   referencia?: string | null;
@@ -384,7 +385,7 @@ const hasDepartamentoRowData = (row: DepartamentoRow) =>
 export default function ReporteDiario() {
   const today = toDateOnly(new Date());
   const { nombre, primerNombre, primerApellido, usuario, rol, rolId, id: userId } = useAuthStore();
-  const { vendedorDropdownRoleIds, vendedorDropdownBodegaIds, loaded: configLoaded, fetchConfig } = useSystemConfigStore();
+  const { vendedorDropdownRoleIds, vendedorDropdownBodegaIds, reportesConfig, loaded: configLoaded, fetchConfig } = useSystemConfigStore();
   const location = useLocation();
   const [documentos, setDocumentos] = useState<DocumentoGenerado[]>([]);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
@@ -529,8 +530,20 @@ export default function ReporteDiario() {
     () => documentosGridRows.reduce((sum, doc) => sum + Number(doc.totalReporte || 0), 0),
     [documentosGridRows]
   );
+  const dailyReportSchedule = useMemo(
+    () => getReportSchedule(reportesConfig, "reporteDiario"),
+    [reportesConfig]
+  );
 
   const nuevoReporte = async () => {
+    if (!isReportScheduleOpen(dailyReportSchedule)) {
+      Swal.fire(
+        "Horario no habilitado",
+        `El boton se habilitara en este horario: ${formatReportScheduleForDay(dailyReportSchedule)}.`,
+        "info"
+      );
+      return;
+    }
     setDocumentoId(null);
     await cargarSiguienteLiquidacion();
     setVentas([]);

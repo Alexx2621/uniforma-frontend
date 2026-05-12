@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Paper,
   Box,
@@ -20,6 +20,9 @@ import {
   IconButton,
   MenuItem,
   Checkbox,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
 } from "@mui/material";
 import SaveOutlined from "@mui/icons-material/SaveOutlined";
 import NotificationsActiveOutlined from "@mui/icons-material/NotificationsActiveOutlined";
@@ -27,6 +30,8 @@ import TuneOutlined from "@mui/icons-material/TuneOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
+import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
+import ScheduleOutlined from "@mui/icons-material/ScheduleOutlined";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
@@ -34,6 +39,14 @@ import { menuPathItems } from "../layout/menuItems";
 import { useAuthStore } from "../auth/useAuthStore";
 import { hasPermission } from "../auth/permissions";
 import { UniformaLoader } from "../components/UniformaLoader";
+import {
+  DEFAULT_DAILY_REPORT_SCHEDULE_RULES,
+  DAY_LABELS,
+  ReportScheduleRule,
+  expandReportScheduleRulesByDay,
+  formatReportSchedule,
+  normalizeReportScheduleRules,
+} from "../utils/reportSchedule";
 
 interface NotifConfig {
   emailTo: string;
@@ -60,6 +73,8 @@ interface NotifConfig {
   dailyReportEnabled: boolean;
   dailyReportEmailTo: string;
   dailyReportSubject: string;
+  dailyReportScheduleEnabled: boolean;
+  dailyReportScheduleRules: ReportScheduleRule[];
   fortnightlyReportEnabled: boolean;
   fortnightlyReportEmailTo: string;
   fortnightlyReportSubject: string;
@@ -184,6 +199,53 @@ const createEmptyBulkCreateDraft = (): ProductBulkCreateDraft => ({
   stockMax: 10,
   mermaPorcentaje: 0,
 });
+
+const SettingsSection = ({
+  title,
+  description,
+  icon,
+  children,
+  defaultExpanded = false,
+}: {
+  title: string;
+  description?: string;
+  icon?: ReactNode;
+  children: ReactNode;
+  defaultExpanded?: boolean;
+}) => (
+  <Accordion
+    defaultExpanded={defaultExpanded}
+    disableGutters
+    sx={{
+      mb: 1.5,
+      border: "1px solid",
+      borderColor: "divider",
+      borderRadius: 1,
+      boxShadow: "none",
+      "&:before": { display: "none" },
+      "&.Mui-expanded": { my: 1.5 },
+    }}
+  >
+    <AccordionSummary expandIcon={<ExpandMoreOutlined />}>
+      <Stack direction="row" spacing={1.25} alignItems="center" sx={{ width: "100%" }}>
+        {icon}
+        <Box sx={{ minWidth: 0 }}>
+          <Typography variant="subtitle1" fontWeight={700}>
+            {title}
+          </Typography>
+          {description ? (
+            <Typography variant="body2" color="text.secondary">
+              {description}
+            </Typography>
+          ) : null}
+        </Box>
+      </Stack>
+    </AccordionSummary>
+    <AccordionDetails sx={{ pt: 0 }}>
+      {children}
+    </AccordionDetails>
+  </Accordion>
+);
 
 const normalizeRoleIds = (raw: unknown): number[] => {
   if (Array.isArray(raw)) {
@@ -317,6 +379,8 @@ export default function Admin() {
     dailyReportEnabled: false,
     dailyReportEmailTo: "",
     dailyReportSubject: "Reporte diario {fecha}",
+    dailyReportScheduleEnabled: true,
+    dailyReportScheduleRules: DEFAULT_DAILY_REPORT_SCHEDULE_RULES,
     fortnightlyReportEnabled: false,
     fortnightlyReportEmailTo: "",
     fortnightlyReportSubject: "Reporte quincenal {periodo}",
@@ -418,6 +482,7 @@ export default function Admin() {
       const reporteQuincenal = Array.isArray(reportesConfig.reportes)
         ? reportesConfig.reportes.find((item: any) => item?.tipo === 'reporteQuincenal')
         : undefined;
+      const dailyReportSchedule = reporteDiario?.schedule || {};
 
       setConfig({
         emailTo: data.emailTo || "",
@@ -444,6 +509,8 @@ export default function Admin() {
         dailyReportEnabled: Boolean(reporteDiario?.enabled),
         dailyReportEmailTo: reporteDiario?.emailTo || '',
         dailyReportSubject: reporteDiario?.subject || 'Reporte diario {fecha}',
+        dailyReportScheduleEnabled: Boolean(dailyReportSchedule?.enabled),
+        dailyReportScheduleRules: expandReportScheduleRulesByDay(dailyReportSchedule?.rules),
         fortnightlyReportEnabled: Boolean(reporteQuincenal?.enabled),
         fortnightlyReportEmailTo: reporteQuincenal?.emailTo || '',
         fortnightlyReportSubject: reporteQuincenal?.subject || 'Reporte quincenal {periodo}',
@@ -561,6 +628,10 @@ export default function Admin() {
               emailTo: config.dailyReportEmailTo,
               subject: config.dailyReportSubject,
               triggerOn: ['create'],
+              schedule: {
+                enabled: config.dailyReportScheduleEnabled,
+                rules: normalizeReportScheduleRules(config.dailyReportScheduleRules),
+              },
             },
             {
               tipo: 'reporteQuincenal',
@@ -1129,6 +1200,24 @@ export default function Admin() {
     }));
   };
 
+  const updateDailyScheduleRule = (index: number, field: "start" | "end", value: string) => {
+    setConfig((prev) => ({
+      ...prev,
+      dailyReportScheduleRules: expandReportScheduleRulesByDay(prev.dailyReportScheduleRules).map((rule, ruleIndex) =>
+        ruleIndex === index ? { ...rule, [field]: value } : rule
+      ),
+    }));
+  };
+
+  const toggleDailyScheduleRule = (index: number, enabled: boolean) => {
+    setConfig((prev) => ({
+      ...prev,
+      dailyReportScheduleRules: expandReportScheduleRulesByDay(prev.dailyReportScheduleRules).map((rule, ruleIndex) =>
+        ruleIndex === index ? { ...rule, enabled } : rule
+      ),
+    }));
+  };
+
   const generosDisponibles = productMassConfigDraft.generos.map((item) => item.nombre).filter(Boolean);
   const telasDisponibles = productMassConfigDraft.telas.map((item) => item.nombre).filter(Boolean);
   const coloresDisponibles = productMassConfigDraft.colorAbreviaciones.map((item) => item.nombre).filter(Boolean);
@@ -1150,9 +1239,13 @@ export default function Admin() {
 
       <Divider sx={{ mb: 2 }} />
 
-      <Stack spacing={1.5} sx={{ mb: 2 }}>
-        {canManageAdmin && (
-          <>
+      {canManageAdmin && (
+        <SettingsSection
+          title="Modulos del sistema"
+          description="Activa o desactiva modulos globales y submodulos del menu."
+          icon={<TuneOutlined color="primary" />}
+        >
+          <Stack spacing={1.5}>
             <Stack direction="row" spacing={1} alignItems="center">
               <TuneOutlined color="primary" />
               <Typography variant="h6">Modulos del sistema</Typography>
@@ -1210,12 +1303,16 @@ export default function Admin() {
                 </Grid>
               ))}
             </Grid>
-          </>
-        )}
-      </Stack>
+          </Stack>
+        </SettingsSection>
+      )}
 
       {canManageAdmin && (
-        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+        <SettingsSection
+          title="Comunicados del sistema"
+          description="Avisos globales para usuarios activos y cierre de sesiones cuando aplique."
+          icon={<NotificationsActiveOutlined color="primary" />}
+        >
           <Stack spacing={1.5}>
             <Stack direction="row" spacing={1} alignItems="center">
               <NotificationsActiveOutlined color="primary" />
@@ -1244,11 +1341,15 @@ export default function Admin() {
               </Button>
             </Stack>
           </Stack>
-        </Paper>
+        </SettingsSection>
       )}
 
       {canManageAdmin && (
-        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+        <SettingsSection
+          title="Inventario"
+          description="Reglas de inventario que aplican al guardar ventas."
+          icon={<Inventory2Outlined color="primary" />}
+        >
           <Stack spacing={1.5}>
             <Stack direction="row" spacing={1} alignItems="center">
               <Inventory2Outlined color="primary" />
@@ -1272,11 +1373,15 @@ export default function Admin() {
               </Button>
             </Stack>
           </Stack>
-        </Paper>
+        </SettingsSection>
       )}
 
       {canManageAdmin && (
-        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+        <SettingsSection
+          title="Acceso a vendedores"
+          description="Roles y tiendas visibles para el selector de vendedores."
+          icon={<NotificationsActiveOutlined color="primary" />}
+        >
           <Stack spacing={1.5}>
             <Stack direction="row" spacing={1} alignItems="center">
               <NotificationsActiveOutlined color="primary" />
@@ -1351,11 +1456,15 @@ export default function Admin() {
               </Button>
             </Stack>
           </Stack>
-        </Paper>
+        </SettingsSection>
       )}
 
       {canManageAdmin && (
-        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+        <SettingsSection
+          title="Reportes y horarios"
+          description="Correo y plantillas para reportes automaticos."
+          icon={<NotificationsActiveOutlined color="primary" />}
+        >
           <Stack spacing={1.5}>
             <Stack direction="row" spacing={1} alignItems="center">
               <NotificationsActiveOutlined color="primary" />
@@ -1519,11 +1628,105 @@ export default function Admin() {
               </Button>
             </Stack>
           </Stack>
-        </Paper>
+        </SettingsSection>
       )}
 
       {canManageAdmin && (
-        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+        <SettingsSection
+          title="Tareas por horario"
+          description="Define ventanas de tiempo para acciones especificas del sistema."
+          icon={<ScheduleOutlined color="primary" />}
+        >
+          <Stack spacing={1.5}>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <ScheduleOutlined color="primary" />
+              <Typography variant="subtitle2">Nuevo reporte diario</Typography>
+            </Stack>
+            <Typography variant="body2" color="text.secondary">
+              Cuando esta regla esta activa, el boton Nuevo reporte del modulo Reporte diario solo se habilita en los dias y horarios configurados.
+            </Typography>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={config.dailyReportScheduleEnabled}
+                  onChange={(e) =>
+                    setConfig((prev) => ({
+                      ...prev,
+                      dailyReportScheduleEnabled: e.target.checked,
+                    }))
+                  }
+                />
+              }
+              label={
+                config.dailyReportScheduleEnabled
+                  ? "Limitar Nuevo reporte por horario"
+                  : "Permitir Nuevo reporte en cualquier horario"
+              }
+            />
+            <Grid container spacing={2}>
+              {expandReportScheduleRulesByDay(config.dailyReportScheduleRules).map((rule, index) => {
+                const day = rule.days[0];
+                const enabled = rule.enabled !== false;
+                return (
+                  <Grid key={day} size={{ xs: 12, md: 6, lg: 4 }}>
+                    <Paper variant="outlined" sx={{ p: 1.5, height: "100%" }}>
+                      <Stack spacing={1.5}>
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={enabled}
+                              onChange={(e) => toggleDailyScheduleRule(index, e.target.checked)}
+                              disabled={!config.dailyReportScheduleEnabled}
+                            />
+                          }
+                          label={`${DAY_LABELS[day] || `dia ${day}`}`.toUpperCase()}
+                        />
+                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+                          <TextField
+                            label="Desde"
+                            type="time"
+                            fullWidth
+                            value={rule.start}
+                            onChange={(e) => updateDailyScheduleRule(index, "start", e.target.value)}
+                            InputLabelProps={{ shrink: true }}
+                            inputProps={{ step: 300 }}
+                            disabled={!config.dailyReportScheduleEnabled || !enabled}
+                          />
+                          <TextField
+                            label="Hasta"
+                            type="time"
+                            fullWidth
+                            value={rule.end}
+                            onChange={(e) => updateDailyScheduleRule(index, "end", e.target.value)}
+                            InputLabelProps={{ shrink: true }}
+                            inputProps={{ step: 300 }}
+                            disabled={!config.dailyReportScheduleEnabled || !enabled}
+                          />
+                        </Stack>
+                      </Stack>
+                    </Paper>
+                  </Grid>
+                );
+              })}
+            </Grid>
+            <Typography variant="caption" color="text.secondary">
+              Horario actual: {formatReportSchedule({ rules: config.dailyReportScheduleRules })}
+            </Typography>
+            <Stack direction="row" justifyContent="flex-end">
+              <Button variant="contained" onClick={guardar} disabled={loading}>
+                Guardar tareas por horario
+              </Button>
+            </Stack>
+          </Stack>
+        </SettingsSection>
+      )}
+
+      {canManageAdmin && (
+        <SettingsSection
+          title="Actualizacion masiva"
+          description="Filtros para actualizar productos existentes por combinaciones."
+          icon={<Inventory2Outlined color="primary" />}
+        >
           <Stack spacing={1.5}>
             <Stack direction="row" spacing={1} alignItems="center">
               <Inventory2Outlined color="primary" />
@@ -1667,11 +1870,15 @@ export default function Admin() {
               </Button>
             </Stack>
           </Stack>
-        </Paper>
+        </SettingsSection>
       )}
 
       {canManageAdmin && (
-        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+        <SettingsSection
+          title="Creacion masiva"
+          description="Crea codigos nuevos usando combinaciones de tipo, genero, tela, talla y color."
+          icon={<Inventory2Outlined color="primary" />}
+        >
           <Stack spacing={1.5}>
             <Stack direction="row" spacing={1} alignItems="center">
               <Inventory2Outlined color="primary" />
@@ -1798,11 +2005,15 @@ export default function Admin() {
               </Button>
             </Stack>
           </Stack>
-        </Paper>
+        </SettingsSection>
       )}
 
       {canManageAdmin && (
-        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+        <SettingsSection
+          title="Modulos por usuario"
+          description="Restricciones especificas de acceso para usuarios puntuales."
+          icon={<TuneOutlined color="primary" />}
+        >
           <Stack spacing={1.5}>
             <Typography variant="subtitle2">Modulos por usuario</Typography>
             <Typography variant="body2" color="text.secondary">
@@ -1884,11 +2095,15 @@ export default function Admin() {
               ))}
             </Grid>
           </Stack>
-        </Paper>
+        </SettingsSection>
       )}
 
       {canManageAdmin && (
-        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+        <SettingsSection
+          title="Acceso multi-tienda"
+          description="Roles que pueden operar con varias tiendas."
+          icon={<NotificationsActiveOutlined color="primary" />}
+        >
           <Stack spacing={1.5}>
             <Stack direction="row" spacing={1} alignItems="center">
               <NotificationsActiveOutlined color="primary" />
@@ -1934,11 +2149,15 @@ export default function Admin() {
               </Button>
             </Stack>
           </Stack>
-        </Paper>
+        </SettingsSection>
       )}
 
       {canManageAdmin && (
-        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+        <SettingsSection
+          title="Unificar pedidos"
+          description="Roles con permiso para generar pedidos unificados."
+          icon={<NotificationsActiveOutlined color="primary" />}
+        >
           <Stack spacing={1.5}>
             <Stack direction="row" spacing={1} alignItems="center">
               <NotificationsActiveOutlined color="primary" />
@@ -1984,11 +2203,15 @@ export default function Admin() {
               </Button>
             </Stack>
           </Stack>
-        </Paper>
+        </SettingsSection>
       )}
 
       {canManageAdmin && (
-        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+        <SettingsSection
+          title="Carga masiva de productos base"
+          description="Reglas para generar o actualizar combinaciones base."
+          icon={<Inventory2Outlined color="primary" />}
+        >
           <Stack spacing={1.5}>
             <Stack direction="row" spacing={1} alignItems="center">
               <Inventory2Outlined color="primary" />
@@ -2305,13 +2528,17 @@ export default function Admin() {
               </Button>
             </Stack>
           </Stack>
-        </Paper>
+        </SettingsSection>
       )}
 
       <Divider sx={{ my: 2 }} />
 
       {canManageAdmin && (
-        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+        <SettingsSection
+          title="Alertas internas de pedidos"
+          description="Roles que reciben notificaciones internas por pedidos de produccion."
+          icon={<NotificationsActiveOutlined color="primary" />}
+        >
           <Stack spacing={1.5}>
             <Stack direction="row" spacing={1} alignItems="center">
               <NotificationsActiveOutlined color="primary" />
@@ -2357,7 +2584,7 @@ export default function Admin() {
               </Button>
             </Stack>
           </Stack>
-        </Paper>
+        </SettingsSection>
       )}
 
       <Grid container spacing={2}>
