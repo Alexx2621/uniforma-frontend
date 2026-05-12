@@ -37,8 +37,11 @@ import IngresosInventarioReporte from "./pages/reportes/IngresosInventarioReport
 import TrasladosReporte from "./pages/reportes/TrasladosReporte";
 import StockBajo from "./pages/reportes/StockBajo";
 import ProduccionUnificados from "./pages/reportes/ProduccionUnificados";
+import { useTextInputStandards } from "./utils/useTextInputStandards";
 
 export default function App() {
+  useTextInputStandards();
+
   return (
     <BrowserRouter>
       <Routes>

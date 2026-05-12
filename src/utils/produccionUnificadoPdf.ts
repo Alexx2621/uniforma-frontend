@@ -12,6 +12,31 @@ export interface ProduccionArticuloUnificadoPdf {
   cantidad: number;
 }
 
+const normalizeDateKey = (value: unknown) => {
+  const raw = `${value || ""}`.trim();
+  const dateOnly = raw.match(/^(\d{4})-(\d{2})-(\d{2})/)?.[0];
+  if (dateOnly) return dateOnly;
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const formatDateKey = (value: string) => {
+  const [year, month, day] = value.split("-").map((part) => Number(part));
+  if (!year || !month || !day) return value;
+  return new Date(year, month - 1, day).toLocaleDateString("es-GT");
+};
+
+const formatPedidoDateRange = (values: unknown[] = []) => {
+  const dates = Array.from(new Set(values.map(normalizeDateKey).filter(Boolean))).sort();
+  if (!dates.length) return "-";
+  if (dates.length === 1) return formatDateKey(dates[0]);
+  return `${formatDateKey(dates[0])} - ${formatDateKey(dates[dates.length - 1])}`;
+};
+
 const loadImageAsDataUrl = async (src: string) =>
   new Promise<string>((resolve, reject) => {
     const image = new Image();
@@ -42,12 +67,14 @@ export const descargarProduccionUnificadoPdf = async ({
   pedidoNo,
   filtroTienda,
   totalPedidos,
+  fechasPedidos = [],
 }: {
   articulos: ProduccionArticuloUnificadoPdf[];
   fileName: string;
   pedidoNo: string;
   filtroTienda: string;
   totalPedidos: number;
+  fechasPedidos?: unknown[];
 }) => {
   const doc = new jsPDF({
     orientation: "landscape",
@@ -57,7 +84,8 @@ export const descargarProduccionUnificadoPdf = async ({
   const pageWidth = doc.internal.pageSize.getWidth();
 
   const fechaGeneracion = new Date();
-  const fechaDocumento = fechaGeneracion.toLocaleDateString("es-GT");
+  const fechaImpresion = fechaGeneracion.toLocaleDateString("es-GT");
+  const fechaPedidos = formatPedidoDateRange(fechasPedidos);
   const logoDataUrl = await loadImageAsDataUrl(uniformaLogo);
 
   doc.addImage(logoDataUrl, "PNG", 4, 4, 24, 24);
@@ -78,9 +106,11 @@ export const descargarProduccionUnificadoPdf = async ({
   doc.setTextColor(214, 0, 0);
   doc.text(` ${pedidoNo}`, titleStartX + titleWidth, titleY);
 
-  doc.setFontSize(13);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10.5);
   doc.setTextColor(0, 0, 0);
-  doc.text(fechaDocumento, pageWidth - 6, 12, { align: "right" });
+  doc.text(`Fecha pedidos: ${fechaPedidos}`, pageWidth - 6, 10, { align: "right" });
+  doc.text(`Fecha impresion: ${fechaImpresion}`, pageWidth - 6, 16, { align: "right" });
 
   doc.setFontSize(17);
   doc.setTextColor(214, 0, 0);

@@ -37,6 +37,7 @@ import { useAuthStore } from "../auth/useAuthStore";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import uniformaLogo from "../assets/3-logos.png";
 import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../utils/fontFamily";
+import { findPotentialMisspellings } from "../utils/spellcheck";
 
 interface Cliente {
   id: number;
@@ -680,6 +681,46 @@ export default function PedidoNuevo() {
     [filtrarProductos, filtroTipo, filtroGenero, filtroTela, filtroTalla, colores],
   );
 
+  const terminosOrtografiaPedido = useMemo(
+    () => [
+      filtroTipo,
+      filtroGenero,
+      filtroTela,
+      filtroTalla,
+      filtroColor,
+      ...tiposDisponibles,
+      ...generosDisponibles,
+      ...telasDisponibles,
+      ...tallasDisponibles,
+      ...coloresDisponibles,
+      ...productos.flatMap((producto) => [
+        producto.codigo,
+        producto.nombre,
+        producto.tipo,
+        producto.genero,
+        resolveTelaNombre(producto, telas),
+        resolveTallaNombre(producto, tallas),
+        resolveColorNombre(producto, colores),
+      ]),
+    ],
+    [
+      filtroTipo,
+      filtroGenero,
+      filtroTela,
+      filtroTalla,
+      filtroColor,
+      tiposDisponibles,
+      generosDisponibles,
+      telasDisponibles,
+      tallasDisponibles,
+      coloresDisponibles,
+      productos,
+      telas,
+      tallas,
+      colores,
+    ],
+  );
+
   const productosBaseFiltrados = useMemo(
     () =>
       filtrarProductos({
@@ -792,10 +833,22 @@ export default function PedidoNuevo() {
     setFiltroColor("");
   };
 
-  const agregarArticulo = () => {
+  const agregarArticulo = async () => {
     if (!articuloActual.productoId) {
       Swal.fire("Validacion", alertaArticulo.message, "warning");
       return;
+    }
+    const posiblesFaltas = findPotentialMisspellings(articuloActual.descripcion, terminosOrtografiaPedido);
+    if (posiblesFaltas.length) {
+      const result = await Swal.fire({
+        title: "Revisa la ortografia",
+        html: `Se detectaron posibles faltas en observaciones:<br/><strong>${posiblesFaltas.join(", ")}</strong>`,
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: "Agregar de todos modos",
+        cancelButtonText: "Corregir",
+      });
+      if (!result.isConfirmed) return;
     }
     const cantidad = Number(cantidadInput) || 0;
     const productoId = Number(articuloActual.productoId);

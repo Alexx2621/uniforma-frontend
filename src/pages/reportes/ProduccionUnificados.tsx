@@ -29,7 +29,7 @@ interface ProduccionUnificadoRow {
   bodegaNombre?: string | null;
   resumen?: {
     filtroTienda?: string;
-    pedidos?: unknown[];
+    pedidos?: Array<{ fecha?: string | null }>;
     articulos?: ProduccionArticuloUnificadoPdf[];
   } | null;
   totalPedidos: number;
@@ -115,6 +115,7 @@ export default function ProduccionUnificados() {
         pedidoNo: row.correlativo,
         filtroTienda: row.resumen?.filtroTienda || row.bodegaNombre || row.nombre || "Todas las tiendas",
         totalPedidos: Array.isArray(row.resumen?.pedidos) ? row.resumen!.pedidos!.length : Number(row.totalPedidos || 0),
+        fechasPedidos: Array.isArray(row.resumen?.pedidos) ? row.resumen!.pedidos!.map((pedido) => pedido?.fecha) : [],
       });
     } catch (error: any) {
       Swal.fire("Error", error?.message || "No se pudo reimprimir el PDF unificado", "error");

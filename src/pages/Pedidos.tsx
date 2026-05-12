@@ -900,6 +900,7 @@ export default function Pedidos() {
         pedidoNo,
         filtroTienda,
         totalPedidos: pedidosUnificables.length,
+        fechasPedidos: pedidosUnificables.map((pedido) => pedido.fecha),
       });
     } catch (error: any) {
       Swal.fire(

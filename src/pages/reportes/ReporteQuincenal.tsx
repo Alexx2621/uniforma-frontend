@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import {
+  Box,
   Paper,
   Typography,
   Stack,
@@ -14,13 +15,13 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  TablePagination,
   MenuItem,
   FormControl,
   InputLabel,
   Select,
   CircularProgress,
 } from "@mui/material";
+import { DataGrid, GridColDef } from "@mui/x-data-grid";
 import PictureAsPdfOutlined from "@mui/icons-material/PictureAsPdfOutlined";
 import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
@@ -151,6 +152,9 @@ const getReporteDiarioTotal = (data: any) => {
   const tienda = tiendaRows.reduce((sum, row) => sum + getTiendaRowTotal(row), 0);
   return capital + departamento + tienda;
 };
+
+const getReporteQuincenalDocumentoTotal = (doc: DocumentoGenerado) =>
+  Object.values(doc.data?.ventasPorDia || {}).reduce((sum: number, value: any) => sum + Number(value || 0), 0);
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const buildReporteQuincenalHtml = ({
@@ -369,8 +373,6 @@ export default function ReporteQuincenal() {
   const [showForm, setShowForm] = useState(false);
   const [filtroDesde, setFiltroDesde] = useState(today);
   const [filtroHasta, setFiltroHasta] = useState(today);
-  const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
   const tienda = `${bodegaNombre || "TIENDA"}`.trim().toUpperCase();
   const vendedor = `${usuario || nombre || [primerNombre, primerApellido].filter(Boolean).join(" ") || "USUARIO"}`
     .trim()
@@ -458,14 +460,21 @@ export default function ReporteQuincenal() {
     [documentos, filtroDesde, filtroHasta, canUseDropdown, filtroUsuarioId, isAdmin, vendedorDropdownBodegaIds]
   );
 
-  const documentosPaginados = useMemo(
-    () => documentosFiltrados.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage),
-    [documentosFiltrados, page, rowsPerPage]
+  const documentosGridRows = useMemo(
+    () =>
+      documentosFiltrados.map((doc) => ({
+        ...doc,
+        periodo: doc.titulo || `${doc.data?.quincena || ""} quincena ${doc.data?.month || ""}/${doc.data?.year || ""}`,
+        totalReporte: getReporteQuincenalDocumentoTotal(doc),
+        usuarioNombre: doc.usuario?.nombre || doc.usuario?.usuario || "N/D",
+      })),
+    [documentosFiltrados]
   );
 
-  useEffect(() => {
-    setPage(0);
-  }, [filtroDesde, filtroHasta, filtroUsuarioId, documentosFiltrados.length]);
+  const totalCierresFiltrados = useMemo(
+    () => documentosGridRows.reduce((sum, doc) => sum + Number(doc.totalReporte || 0), 0),
+    [documentosGridRows]
+  );
 
   const nuevoReporte = async () => {
     setDocumentoId(null);
@@ -616,6 +625,40 @@ export default function ReporteQuincenal() {
     void cargarDocumentos();
   };
 
+  const documentosColumns: GridColDef<(typeof documentosGridRows)[number]>[] = [
+    { field: "correlativo", headerName: "Correlativo", minWidth: 150, flex: 0.8 },
+    { field: "periodo", headerName: "Periodo", minWidth: 220, flex: 1.2 },
+    {
+      field: "totalReporte",
+      headerName: "Total",
+      minWidth: 140,
+      flex: 0.7,
+      valueFormatter: (value) => money(Number(value || 0)),
+    },
+    { field: "usuarioNombre", headerName: "Usuario", minWidth: 180, flex: 1 },
+    {
+      field: "acciones",
+      headerName: "Accion",
+      minWidth: 160,
+      sortable: false,
+      filterable: false,
+      align: "right",
+      headerAlign: "right",
+      renderCell: (params) => (
+        <Button
+          size="small"
+          variant="contained"
+          color="secondary"
+          disabled={generandoPdf}
+          startIcon={generandoPdf ? <CircularProgress size={14} color="inherit" /> : undefined}
+          onClick={() => reimprimirDocumento(params.row)}
+        >
+          {generandoPdf ? "Generando..." : "Reimprimir"}
+        </Button>
+      ),
+    },
+  ];
+
   if (!showForm) {
     return (
       <Paper sx={{ p: 3 }}>
@@ -646,64 +689,28 @@ export default function ReporteQuincenal() {
             </FormControl>
           )}
         </Stack>
-        <TableContainer>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>Correlativo</TableCell>
-                <TableCell>Periodo</TableCell>
-                <TableCell>Total</TableCell>
-                <TableCell>Usuario</TableCell>
-                <TableCell align="right">Acción</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {documentosPaginados.map((doc) => (
-                <TableRow key={doc.id}>
-                  <TableCell>{doc.correlativo}</TableCell>
-                  <TableCell>{doc.titulo || `${doc.data?.quincena || ""} quincena ${doc.data?.month || ""}/${doc.data?.year || ""}`}</TableCell>
-                  <TableCell>{money(Object.values(doc.data?.ventasPorDia || {}).reduce((sum: number, value: any) => sum + Number(value || 0), 0))}</TableCell>
-                  <TableCell>{doc.usuario?.nombre || doc.usuario?.usuario || "N/D"}</TableCell>
-                  <TableCell align="right">
-                    <Stack direction="row" spacing={1} justifyContent="flex-end">
-                      <Button
-                        size="small"
-                        variant="contained"
-                        color="secondary"
-                        disabled={generandoPdf}
-                        startIcon={generandoPdf ? <CircularProgress size={14} color="inherit" /> : undefined}
-                        onClick={() => reimprimirDocumento(doc)}
-                      >
-                        {generandoPdf ? "Generando..." : "Reimprimir"}
-                      </Button>
-                    </Stack>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {!documentosFiltrados.length && (
-                <TableRow>
-                  <TableCell colSpan={5} align="center">
-                    No hay reportes quincenales generados.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-        <TablePagination
-          component="div"
-          count={documentosFiltrados.length}
-          page={page}
-          rowsPerPage={rowsPerPage}
-          onPageChange={(_, nextPage) => setPage(nextPage)}
-          onRowsPerPageChange={(event) => {
-            setRowsPerPage(Number(event.target.value));
-            setPage(0);
-          }}
-          rowsPerPageOptions={[5, 10, 25, 50]}
-          labelRowsPerPage="Filas por pagina"
-          labelDisplayedRows={({ from, to, count }) => `${from}-${to} de ${count}`}
-        />
+        <Box sx={{ height: 460, width: "100%" }}>
+          <DataGrid
+            rows={documentosGridRows}
+            columns={documentosColumns}
+            getRowId={(row) => row.id}
+            pageSizeOptions={[5, 10, 25, 50]}
+            initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
+            disableRowSelectionOnClick
+            localeText={{ noRowsLabel: "No hay reportes quincenales generados." }}
+          />
+        </Box>
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          justifyContent="flex-end"
+          spacing={2}
+          sx={{ mt: 2, p: 2, borderRadius: 1, bgcolor: "grey.50" }}
+        >
+          <Typography color="text.secondary">
+            Cierres visibles: <strong>{documentosGridRows.length}</strong>
+          </Typography>
+          <Typography fontWeight={700}>Suma de todas las tiendas: {money(totalCierresFiltrados)}</Typography>
+        </Stack>
       </Paper>
     );
   }

@@ -15,7 +15,6 @@ import {
   TableRow,
   TableCell,
   TableBody,
-  TablePagination,
   IconButton,
   Chip,
   FormControl,
@@ -23,6 +22,7 @@ import {
   Select,
   MenuItem,
 } from "@mui/material";
+import { DataGrid, GridColDef } from "@mui/x-data-grid";
 import AddCircleOutlineOutlined from "@mui/icons-material/AddCircleOutlineOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
@@ -326,6 +326,23 @@ const getTiendaRowTotal = (row: TiendaRow) =>
   Number(row.total || 0) ||
   Number(row.transferencia || 0) + Number(row.deposito || 0) + Number(row.tarjeta || 0) + Number(row.efectivo || 0);
 
+const getReporteDiarioDocumentoTotal = (doc: DocumentoGenerado) =>
+  (doc.data?.capitalRows || []).reduce(
+    (sum: number, row: any) => sum + Number(row.transferencia || 0) + Number(row.deposito || 0) + Number(row.efectivo || 0),
+    0
+  ) +
+  (doc.data?.departamentoRows || []).reduce(
+    (sum: number, row: any) => sum + Number(row.transferencia || 0) + Number(row.deposito || 0),
+    0
+  ) +
+  (doc.data?.ventasSnapshot || [])
+    .filter((venta: Venta) => normalizeUbicacionVenta(venta) === "TIENDA")
+    .reduce((sum: number, venta: any) => sum + Number(venta.total || 0), 0) +
+  (doc.data?.pedidosSnapshot || [])
+    .filter((pedido: PedidoReporte) => normalizeUbicacionPedido(pedido) === "TIENDA")
+    .reduce((sum: number, pedido: PedidoReporte) => sum + getPedidoMontoReporte(pedido), 0) +
+  (doc.data?.tiendaManualRows || []).reduce((sum: number, row: any) => sum + getTiendaRowTotal(row), 0);
+
 const hasTiendaRowData = (row: TiendaRow) =>
   Boolean(
       `${row.recibo || ""}`.trim() ||
@@ -376,8 +393,6 @@ export default function ReporteDiario() {
   const [showForm, setShowForm] = useState(false);
   const [filtroDesde, setFiltroDesde] = useState(today);
   const [filtroHasta, setFiltroHasta] = useState(today);
-  const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
   const [ventas, setVentas] = useState<Venta[]>([]);
   const [pedidos, setPedidos] = useState<PedidoReporte[]>([]);
   const [fecha, setFecha] = useState(today);
@@ -499,14 +514,21 @@ export default function ReporteDiario() {
     [documentos, filtroDesde, filtroHasta, canUseDropdown, filtroUsuarioId, isAdmin, vendedorDropdownBodegaIds]
   );
 
-  const documentosPaginados = useMemo(
-    () => documentosFiltrados.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage),
-    [documentosFiltrados, page, rowsPerPage]
+  const documentosGridRows = useMemo(
+    () =>
+      documentosFiltrados.map((doc) => ({
+        ...doc,
+        fechaReporte: doc.data?.fecha || String(doc.creadoEn || "").slice(0, 10),
+        totalReporte: getReporteDiarioDocumentoTotal(doc),
+        usuarioNombre: doc.usuario?.nombre || doc.usuario?.usuario || "N/D",
+      })),
+    [documentosFiltrados]
   );
 
-  useEffect(() => {
-    setPage(0);
-  }, [filtroDesde, filtroHasta, filtroUsuarioId, documentosFiltrados.length]);
+  const totalCierresFiltrados = useMemo(
+    () => documentosGridRows.reduce((sum, doc) => sum + Number(doc.totalReporte || 0), 0),
+    [documentosGridRows]
+  );
 
   const nuevoReporte = async () => {
     setDocumentoId(null);
@@ -763,6 +785,45 @@ export default function ReporteDiario() {
     void cargarDocumentos();
   };
 
+  const documentosColumns: GridColDef<(typeof documentosGridRows)[number]>[] = [
+    { field: "correlativo", headerName: "Correlativo", minWidth: 150, flex: 0.8 },
+    {
+      field: "fechaReporte",
+      headerName: "Fecha",
+      minWidth: 130,
+      flex: 0.7,
+      valueFormatter: (value) => `${value || ""}`,
+    },
+    {
+      field: "totalReporte",
+      headerName: "Total",
+      minWidth: 140,
+      flex: 0.7,
+      valueFormatter: (value) => money(Number(value || 0)),
+    },
+    { field: "usuarioNombre", headerName: "Usuario", minWidth: 180, flex: 1 },
+    {
+      field: "acciones",
+      headerName: "Accion",
+      minWidth: 150,
+      sortable: false,
+      filterable: false,
+      align: "right",
+      headerAlign: "right",
+      renderCell: (params) => (
+        <Button
+          size="small"
+          variant="contained"
+          color="secondary"
+          disabled={generandoPdf}
+          onClick={() => reimprimirDocumento(params.row)}
+        >
+          Reimprimir
+        </Button>
+      ),
+    },
+  ];
+
   if (!showForm) {
     return (
       <Paper sx={{ p: 3 }}>
@@ -793,81 +854,28 @@ export default function ReporteDiario() {
             </FormControl>
           )}
         </Stack>
-        <TableContainer>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>Correlativo</TableCell>
-                <TableCell>Fecha</TableCell>
-                <TableCell>Total</TableCell>
-                <TableCell>Usuario</TableCell>
-                <TableCell align="right">Acción</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {documentosPaginados.map((doc) => {
-                const total =
-                  (doc.data?.capitalRows || []).reduce(
-                    (sum: number, row: any) => sum + Number(row.transferencia || 0) + Number(row.deposito || 0) + Number(row.efectivo || 0),
-                    0
-                  ) +
-                  (doc.data?.departamentoRows || []).reduce(
-                    (sum: number, row: any) => sum + Number(row.transferencia || 0) + Number(row.deposito || 0),
-                    0
-                  ) +
-                  (doc.data?.ventasSnapshot || [])
-                    .filter((venta: Venta) => normalizeUbicacionVenta(venta) === "TIENDA")
-                    .reduce((sum: number, venta: any) => sum + Number(venta.total || 0), 0) +
-                  (doc.data?.pedidosSnapshot || [])
-                    .filter((pedido: PedidoReporte) => normalizeUbicacionPedido(pedido) === "TIENDA")
-                    .reduce((sum: number, pedido: PedidoReporte) => sum + getPedidoMontoReporte(pedido), 0) +
-                  (doc.data?.tiendaManualRows || []).reduce((sum: number, row: any) => sum + getTiendaRowTotal(row), 0);
-                return (
-                  <TableRow key={doc.id}>
-                    <TableCell>{doc.correlativo}</TableCell>
-                    <TableCell>{doc.data?.fecha || new Date(doc.creadoEn).toLocaleDateString()}</TableCell>
-                    <TableCell>{money(total)}</TableCell>
-                    <TableCell>{doc.usuario?.nombre || doc.usuario?.usuario || "N/D"}</TableCell>
-                    <TableCell align="right">
-                      <Stack direction="row" spacing={1} justifyContent="flex-end">
-                        <Button
-                          size="small"
-                          variant="contained"
-                          color="secondary"
-                          disabled={generandoPdf}
-                          onClick={() => reimprimirDocumento(doc)}
-                        >
-                          Reimprimir
-                        </Button>
-                      </Stack>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-              {!documentosFiltrados.length && (
-                <TableRow>
-                  <TableCell colSpan={5} align="center">
-                    No hay reportes diarios generados.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-        <TablePagination
-          component="div"
-          count={documentosFiltrados.length}
-          page={page}
-          rowsPerPage={rowsPerPage}
-          onPageChange={(_, nextPage) => setPage(nextPage)}
-          onRowsPerPageChange={(event) => {
-            setRowsPerPage(Number(event.target.value));
-            setPage(0);
-          }}
-          rowsPerPageOptions={[5, 10, 25, 50]}
-          labelRowsPerPage="Filas por pagina"
-          labelDisplayedRows={({ from, to, count }) => `${from}-${to} de ${count}`}
-        />
+        <Box sx={{ height: 460, width: "100%" }}>
+          <DataGrid
+            rows={documentosGridRows}
+            columns={documentosColumns}
+            getRowId={(row) => row.id}
+            pageSizeOptions={[5, 10, 25, 50]}
+            initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
+            disableRowSelectionOnClick
+            localeText={{ noRowsLabel: "No hay reportes diarios generados." }}
+          />
+        </Box>
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          justifyContent="flex-end"
+          spacing={2}
+          sx={{ mt: 2, p: 2, borderRadius: 1, bgcolor: "grey.50" }}
+        >
+          <Typography color="text.secondary">
+            Cierres visibles: <strong>{documentosGridRows.length}</strong>
+          </Typography>
+          <Typography fontWeight={700}>Suma de todas las tiendas: {money(totalCierresFiltrados)}</Typography>
+        </Stack>
       </Paper>
     );
   }
