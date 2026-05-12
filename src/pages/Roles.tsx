@@ -28,8 +28,9 @@ import AdminPanelSettingsOutlined from "@mui/icons-material/AdminPanelSettingsOu
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
-import { hasPermission } from "../auth/permissions";
+import { getRequiredPermission, hasPermission } from "../auth/permissions";
 import UniformaTableLoadingRow from "../components/UniformaTableLoadingRow";
+import { menuPathItems } from "../layout/menuItems";
 
 interface Rol {
   id: number;
@@ -44,6 +45,34 @@ interface PermissionDefinition {
   description: string;
   category: string;
 }
+
+const titleCase = (value: string) =>
+  value
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+
+const getCatalogWithMenuModules = (catalog: PermissionDefinition[]) => {
+  const byKey = new Map(catalog.map((permission) => [permission.key, permission]));
+
+  menuPathItems.forEach((item) => {
+    const permissionKey = getRequiredPermission(item.path);
+    if (!permissionKey || byKey.has(permissionKey)) return;
+
+    const label = item.parentLabel ? `${item.parentLabel} / ${item.label}` : item.label;
+    const category = item.sectionTitle ? titleCase(item.sectionTitle) : "General";
+    byKey.set(permissionKey, {
+      key: permissionKey,
+      label,
+      description: `Ver modulo ${label.toLowerCase()}`,
+      category,
+    });
+  });
+
+  return Array.from(byKey.values());
+};
 
 export default function Roles() {
   const [roles, setRoles] = useState<Rol[]>([]);
@@ -67,7 +96,7 @@ export default function Roles() {
         api.get("/roles/permisos/catalogo"),
       ]);
       setRoles(rolesResp.data || []);
-      setCatalogo(catalogoResp.data || []);
+      setCatalogo(getCatalogWithMenuModules(catalogoResp.data || []));
     } catch {
       Swal.fire("Error", "No se pudieron cargar los roles", "error");
     } finally {

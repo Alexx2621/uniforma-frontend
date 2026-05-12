@@ -16,6 +16,9 @@ import {
   ListItemText,
   Divider,
   Button,
+  Tabs,
+  Tab,
+  CircularProgress,
 } from "@mui/material";
 import LogoutIcon from "@mui/icons-material/Logout";
 import SettingsIcon from "@mui/icons-material/Settings";
@@ -40,6 +43,16 @@ interface AlertaInterna {
   payload?: {
     pedidoId?: number;
   } | null;
+}
+
+interface LogAcceso {
+  id: number;
+  usuario?: string | null;
+  endpoint: string;
+  metodo: string;
+  ip?: string | null;
+  fecha: string;
+  resultado?: string | null;
 }
 
 export default function Navbar() {
@@ -67,6 +80,9 @@ export default function Navbar() {
   } | null>(null);
   const [alertAnchorEl, setAlertAnchorEl] = useState<null | HTMLElement>(null);
   const [alertas, setAlertas] = useState<AlertaInterna[]>([]);
+  const [alertPanelTab, setAlertPanelTab] = useState<"alertas" | "log">("alertas");
+  const [logs, setLogs] = useState<LogAcceso[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastUnreadCountRef = useRef<number | null>(null);
   const alertasSocketRef = useRef<Socket | null>(null);
@@ -175,6 +191,18 @@ export default function Navbar() {
     }
   };
 
+  const cargarLogs = async () => {
+    try {
+      setLogsLoading(true);
+      const { data } = await api.get("/logs/me");
+      setLogs(Array.isArray(data) ? data : []);
+    } catch {
+      setLogs([]);
+    } finally {
+      setLogsLoading(false);
+    }
+  };
+
   useEffect(() => {
     void cargarAlertas();
 
@@ -279,6 +307,7 @@ export default function Navbar() {
 
   const abrirAlertas = (event: React.MouseEvent<HTMLElement>) => {
     setAlertAnchorEl(event.currentTarget);
+    void cargarLogs();
   };
 
   const cerrarAlertas = () => {
@@ -320,6 +349,17 @@ export default function Navbar() {
     if (Number.isFinite(pedidoId) && pedidoId > 0) {
       navigate(`/produccion/${pedidoId}`);
     }
+  };
+
+  const getLogActionLabel = (log: LogAcceso) => {
+    const methodMap: Record<string, string> = {
+      GET: "Consulto",
+      POST: "Creo/ejecuto",
+      PUT: "Actualizo",
+      PATCH: "Actualizo",
+      DELETE: "Elimino",
+    };
+    return methodMap[log.metodo] || log.metodo;
   };
 
   return (
@@ -444,54 +484,107 @@ export default function Navbar() {
             <Box sx={{ px: 2, py: 1.5 }}>
               <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
                 <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                  Alertas
+                  {alertPanelTab === "alertas" ? "Alertas" : "Log de actividad"}
                 </Typography>
-                <Button size="small" onClick={() => void marcarTodasLeidas()} disabled={!alertasNoLeidas}>
-                  Marcar todas
-                </Button>
+                {alertPanelTab === "alertas" ? (
+                  <Button size="small" onClick={() => void marcarTodasLeidas()} disabled={!alertasNoLeidas}>
+                    Marcar todas
+                  </Button>
+                ) : (
+                  <Button size="small" onClick={() => void cargarLogs()} disabled={logsLoading}>
+                    Recargar
+                  </Button>
+                )}
               </Stack>
             </Box>
+            <Tabs
+              value={alertPanelTab}
+              onChange={(_, value) => {
+                setAlertPanelTab(value);
+                if (value === "log") void cargarLogs();
+              }}
+              variant="fullWidth"
+              sx={{ minHeight: 38, borderTop: 1, borderColor: "divider" }}
+            >
+              <Tab label="Alertas" value="alertas" sx={{ minHeight: 38 }} />
+              <Tab label="LOG" value="log" sx={{ minHeight: 38 }} />
+            </Tabs>
             <Divider />
-            <List sx={{ py: 0, maxHeight: 420, overflowY: "auto" }}>
-              {alertas.length ? (
-                alertas.map((alerta) => (
-                  <ListItemButton
-                    key={alerta.id}
-                    onClick={() => void abrirDetalleAlerta(alerta)}
-                    sx={{
-                      alignItems: "flex-start",
-                      backgroundColor: alerta.leida ? "background.paper" : "action.selected",
-                    }}
-                  >
-                    <ListItemText
-                      primary={alerta.titulo}
-                      secondary={
-                        <>
-                          <Typography
-                            component="span"
-                            variant="body2"
-                            color="text.primary"
-                            sx={{ display: "block", mb: 0.5 }}
-                          >
-                            {alerta.mensaje}
-                          </Typography>
-                          <Typography component="span" variant="caption" color="text.secondary">
-                            {new Date(alerta.creadaEn).toLocaleString("es-GT")}
-                          </Typography>
-                        </>
-                      }
-                      primaryTypographyProps={{ fontWeight: alerta.leida ? 500 : 700 }}
-                    />
-                  </ListItemButton>
-                ))
-              ) : (
-                <Box sx={{ px: 2, py: 3 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    No hay alertas pendientes.
-                  </Typography>
-                </Box>
-              )}
-            </List>
+            {alertPanelTab === "alertas" ? (
+              <List sx={{ py: 0, maxHeight: 420, overflowY: "auto" }}>
+                {alertas.length ? (
+                  alertas.map((alerta) => (
+                    <ListItemButton
+                      key={alerta.id}
+                      onClick={() => void abrirDetalleAlerta(alerta)}
+                      sx={{
+                        alignItems: "flex-start",
+                        backgroundColor: alerta.leida ? "background.paper" : "action.selected",
+                      }}
+                    >
+                      <ListItemText
+                        primary={alerta.titulo}
+                        secondary={
+                          <>
+                            <Typography
+                              component="span"
+                              variant="body2"
+                              color="text.primary"
+                              sx={{ display: "block", mb: 0.5 }}
+                            >
+                              {alerta.mensaje}
+                            </Typography>
+                            <Typography component="span" variant="caption" color="text.secondary">
+                              {new Date(alerta.creadaEn).toLocaleString("es-GT")}
+                            </Typography>
+                          </>
+                        }
+                        primaryTypographyProps={{ fontWeight: alerta.leida ? 500 : 700 }}
+                      />
+                    </ListItemButton>
+                  ))
+                ) : (
+                  <Box sx={{ px: 2, py: 3 }}>
+                    <Typography variant="body2" color="text.secondary">
+                      No hay alertas pendientes.
+                    </Typography>
+                  </Box>
+                )}
+              </List>
+            ) : (
+              <List sx={{ py: 0, maxHeight: 420, overflowY: "auto" }}>
+                {logsLoading ? (
+                  <Box sx={{ px: 2, py: 3, display: "flex", justifyContent: "center" }}>
+                    <CircularProgress size={24} />
+                  </Box>
+                ) : logs.length ? (
+                  logs.map((log) => (
+                    <ListItemButton key={log.id} sx={{ alignItems: "flex-start" }}>
+                      <ListItemText
+                        primary={`${getLogActionLabel(log)} ${log.endpoint}`}
+                        secondary={
+                          <>
+                            <Typography component="span" variant="body2" color="text.primary" sx={{ display: "block", mb: 0.5 }}>
+                              Usuario: {log.usuario || displayName} | Resultado: {log.resultado || "N/D"}
+                            </Typography>
+                            <Typography component="span" variant="caption" color="text.secondary">
+                              {new Date(log.fecha).toLocaleString("es-GT")}
+                              {log.ip ? ` | IP: ${log.ip}` : ""}
+                            </Typography>
+                          </>
+                        }
+                      />
+                    </ListItemButton>
+                  ))
+                ) : (
+                  <Box sx={{ px: 2, py: 3 }}>
+                    <Typography variant="body2" color="text.secondary">
+                      No hay actividad registrada para este usuario.
+                    </Typography>
+                  </Box>
+                )}
+              </List>
+            )}
           </Menu>
 
           <Tooltip title="Configuracion">

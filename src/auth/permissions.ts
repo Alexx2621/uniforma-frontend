@@ -33,8 +33,14 @@ export const routePermissionMap: Record<string, string> = {
   "/reportes/ingresos": "reportes.ingresos.view",
   "/reportes/traslados": "reportes.traslados.view",
   "/reportes/stock-bajo": "reportes.stock-bajo.view",
-  "/reportes/produccion-unificados": "produccion.view",
+  "/reportes/produccion-unificados": "reportes.produccion-unificados.view",
 };
+
+export function getAutoViewPermissionForPath(pathname: string) {
+  const normalized = pathname.replace(/^\/+|\/+$/g, "");
+  if (!normalized) return "dashboard.view";
+  return `${normalized.replace(/\//g, ".")}.view`;
+}
 
 const defaultRoutePriority = [
   "/",
@@ -79,7 +85,7 @@ export function hasPermission(
 export function getRequiredPermission(pathname: string) {
   const entries = Object.entries(routePermissionMap).sort((a, b) => b[0].length - a[0].length);
   const match = entries.find(([path]) => pathname === path || pathname.startsWith(`${path}/`));
-  return match?.[1] || null;
+  return match?.[1] || getAutoViewPermissionForPath(pathname);
 }
 
 export function canAccessPath(

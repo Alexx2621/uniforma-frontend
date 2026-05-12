@@ -72,7 +72,7 @@ export default function ProduccionUnificados() {
   const [loading, setLoading] = useState(false);
   const [printingId, setPrintingId] = useState<number | null>(null);
   const { rol, permisos } = useAuthStore();
-  const canView = hasPermission(rol, permisos, "produccion.view");
+  const canView = hasPermission(rol, permisos, "reportes.produccion-unificados.view");
 
   const cargar = async () => {
     try {
