@@ -29,6 +29,7 @@ import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
 import { hasPermission } from "../auth/permissions";
+import UniformaTableLoadingRow from "../components/UniformaTableLoadingRow";
 
 interface Rol {
   id: number;
@@ -193,7 +194,9 @@ export default function Roles() {
             </TableRow>
           </TableHead>
           <TableBody>
-            {roles.map((item) => (
+            {loading ? (
+              <UniformaTableLoadingRow colSpan={4} />
+            ) : roles.map((item) => (
               <TableRow key={item.id}>
                 <TableCell>{item.id}</TableCell>
                 <TableCell>{item.nombre}</TableCell>
@@ -223,7 +226,7 @@ export default function Roles() {
                 </TableCell>
               </TableRow>
             ))}
-            {!roles.length && (
+            {!loading && !roles.length && (
               <TableRow>
                 <TableCell colSpan={4} align="center">
                   No hay roles registrados.

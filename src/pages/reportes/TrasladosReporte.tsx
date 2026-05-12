@@ -26,6 +26,7 @@ import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
 import Swal from "sweetalert2";
 import { api } from "../../api/axios";
 import LOGO_URL from "../../assets/3-logos.png";
+import UniformaTableLoadingRow from "../../components/UniformaTableLoadingRow";
 import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../../utils/fontFamily";
 import { buildTrasladoPdfHtml } from "../../utils/trasladoPdf";
 
@@ -386,7 +387,9 @@ export default function TrasladosReporte() {
             </TableRow>
           </TableHead>
           <TableBody>
-            {filas.map((row) => (
+            {loading ? (
+              <UniformaTableLoadingRow colSpan={7} />
+            ) : filas.map((row) => (
               <TableRow key={row.folio}>
                 <TableCell>{row.folio}</TableCell>
                 <TableCell>{row.fecha}</TableCell>
@@ -401,7 +404,7 @@ export default function TrasladosReporte() {
                 </TableCell>
               </TableRow>
             ))}
-            <TableRow>
+            {!loading && <TableRow>
               <TableCell sx={{ fontWeight: 700 }}>Totales</TableCell>
               <TableCell />
               <TableCell />
@@ -409,7 +412,7 @@ export default function TrasladosReporte() {
               <TableCell sx={{ fontWeight: 700 }}>{totalItems}</TableCell>
               <TableCell />
               <TableCell />
-            </TableRow>
+            </TableRow>}
           </TableBody>
         </Table>
       </TableContainer>

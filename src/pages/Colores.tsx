@@ -27,6 +27,7 @@ interface ColorForm {
 
 export default function Colores() {
   const [rows, setRows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const [editar, setEditar] = useState(false);
   const [filter, setFilter] = useState("");
@@ -37,11 +38,14 @@ export default function Colores() {
   });
 
   const cargar = async () => {
+    setLoading(true);
     try {
       const resp = await api.get("/colores");
       setRows(resp.data);
     } catch (error) {
       Swal.fire("Error", "No se pudieron cargar colores", "error");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -164,6 +168,7 @@ export default function Colores() {
 
       <div style={{ height: 520, width: "100%" }}>
         <DataGrid
+          loading={loading}
           rows={filtrados}
           columns={columns}
           getRowId={(row) => row.id}

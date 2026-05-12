@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import {
+  Box,
   Paper,
   Typography,
   Stack,
@@ -21,7 +22,6 @@ import {
   InputLabel,
   Select,
   MenuItem,
-  CircularProgress,
 } from "@mui/material";
 import AddCircleOutlineOutlined from "@mui/icons-material/AddCircleOutlineOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
@@ -36,6 +36,7 @@ import Swal from "sweetalert2";
 import { api } from "../../api/axios";
 import { useAuthStore } from "../../auth/useAuthStore";
 import { useSystemConfigStore } from "../../config/useSystemConfigStore";
+import { UniformaLoader } from "../../components/UniformaLoader";
 import { canUseVendedorDropdown, filterUsuariosByBodega } from "../../utils/vendedorDropdownAccess";
 
 interface PagoVenta {
@@ -834,10 +835,9 @@ export default function ReporteDiario() {
                           variant="contained"
                           color="secondary"
                           disabled={generandoPdf}
-                          startIcon={generandoPdf ? <CircularProgress size={14} color="inherit" /> : undefined}
                           onClick={() => reimprimirDocumento(doc)}
                         >
-                          {generandoPdf ? "Generando..." : "Reimprimir"}
+                          Reimprimir
                         </Button>
                       </Stack>
                     </TableCell>
@@ -873,7 +873,24 @@ export default function ReporteDiario() {
   }
 
   return (
-    <Paper sx={{ p: 3 }}>
+    <Paper sx={{ p: 3, position: "relative", overflow: "hidden" }}>
+      {generandoPdf && (
+        <Box
+          sx={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 10,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            bgcolor: "rgba(255,255,255,0.68)",
+            backdropFilter: "blur(1px)",
+          }}
+        >
+          <UniformaLoader size={96} />
+        </Box>
+      )}
+      <Box sx={{ opacity: generandoPdf ? 0.42 : 1, pointerEvents: generandoPdf ? "none" : "auto" }}>
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
         <Typography variant="h4">Reporte diario</Typography>
         <Stack direction="row" spacing={1}>
@@ -893,14 +910,14 @@ export default function ReporteDiario() {
             Limpiar capturas
           </Button>
           <Button
-            startIcon={generandoPdf ? <CircularProgress size={16} color="inherit" /> : <PictureAsPdfOutlined />}
+            startIcon={<PictureAsPdfOutlined />}
             variant="contained"
             color="secondary"
             size="small"
             onClick={imprimir}
             disabled={generandoPdf}
           >
-            {generandoPdf ? "Generando PDF..." : "Imprimir / PDF"}
+            Imprimir / PDF
           </Button>
         </Stack>
       </Stack>
@@ -1440,6 +1457,7 @@ export default function ReporteDiario() {
           </Stack>
         </Paper>
       </Stack>
+      </Box>
     </Paper>
   );
 }

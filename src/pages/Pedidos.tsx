@@ -340,6 +340,7 @@ export default function Pedidos() {
   const [filterFechaFin, setFilterFechaFin] = useState(() => getTodayDateInputValue());
   const [filterBodega, setFilterBodega] = useState<number | "all">("all");
   const [generandoUnificado, setGenerandoUnificado] = useState(false);
+  const [loadingPedidos, setLoadingPedidos] = useState(false);
   const navigate = useNavigate();
   const cargandoPedidosRef = useRef(false);
   const pedidosSocketRef = useRef<Socket | null>(null);
@@ -570,6 +571,7 @@ export default function Pedidos() {
   const cargar = async (silent = false) => {
     if (cargandoPedidosRef.current) return;
     cargandoPedidosRef.current = true;
+    if (!silent) setLoadingPedidos(true);
 
     try {
       const [resp, respClientes, respBodegas, respProductos, respTelas, respTallas, respColores] = await Promise.all([
@@ -650,6 +652,7 @@ export default function Pedidos() {
       }
     } finally {
       cargandoPedidosRef.current = false;
+      if (!silent) setLoadingPedidos(false);
     }
   };
 
@@ -1261,6 +1264,7 @@ export default function Pedidos() {
 
       <div style={{ height: 620, width: "100%" }} onContextMenu={handleGridContextMenu}>
         <DataGrid
+          loading={loadingPedidos}
           rows={filtered}
           columns={columns}
           getRowId={(row) => row.id}

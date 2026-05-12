@@ -57,6 +57,7 @@ export default function Ventas() {
   const [clientes, setClientes] = useState<{ id: number; nombre: string }[]>([]);
   const [productos, setProductos] = useState<{ id: number; codigo: string; nombre: string }[]>([]);
   const [ventas, setVentas] = useState<VentaRow[]>([]);
+  const [loading, setLoading] = useState(false);
   const [filterCliente, setFilterCliente] = useState("");
   const [filterCodigo, setFilterCodigo] = useState("");
   const [fechaDesde, setFechaDesde] = useState(toDateOnly(new Date().toISOString()));
@@ -81,6 +82,7 @@ export default function Ventas() {
   }, [fetchConfig]);
 
   const cargarVentas = async () => {
+    setLoading(true);
     try {
       const [respVentas, respClientes, respProductos] = await Promise.all([
         api.get("/ventas"),
@@ -140,6 +142,8 @@ export default function Ventas() {
       setVentas(data);
     } catch (error) {
       Swal.fire("Error", "No se pudo cargar ventas", "error");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -722,6 +726,7 @@ export default function Ventas() {
 
       <div style={{ height: 620, width: "100%" }}>
         <DataGrid
+          loading={loading}
           rows={filtered}
           columns={columns}
           getRowId={(row) => {

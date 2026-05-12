@@ -25,6 +25,7 @@ import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
 import { hasPermission } from "../auth/permissions";
+import UniformaTableLoadingRow from "../components/UniformaTableLoadingRow";
 
 interface CorrelativoRow {
   id: number | string;
@@ -330,7 +331,9 @@ export default function Correlativos() {
             </TableRow>
           </TableHead>
           <TableBody>
-            {usuarioRowsFiltradas.map((row) => (
+            {loading ? (
+              <UniformaTableLoadingRow colSpan={6} />
+            ) : usuarioRowsFiltradas.map((row) => (
               <TableRow key={`${row.usuarioId}-${row.operacion}`}>
                 <TableCell>
                   <Typography fontWeight={700}>{row.nombreOperacion}</Typography>
@@ -376,7 +379,7 @@ export default function Correlativos() {
                 </TableCell>
               </TableRow>
             ))}
-            {!usuarioRowsFiltradas.length && (
+            {!loading && !usuarioRowsFiltradas.length && (
               <TableRow>
                 <TableCell colSpan={6} align="center">
                   No hay correlativos por usuario disponibles.
@@ -402,7 +405,9 @@ export default function Correlativos() {
             </TableRow>
           </TableHead>
           <TableBody>
-            {rows.map((row) => (
+            {loading ? (
+              <UniformaTableLoadingRow colSpan={4} />
+            ) : rows.map((row) => (
               <TableRow key={row.scope}>
                 <TableCell>
                   <Typography fontWeight={700}>{row.nombre}</Typography>
@@ -438,7 +443,7 @@ export default function Correlativos() {
                 </TableCell>
               </TableRow>
             ))}
-            {!rows.length && (
+            {!loading && !rows.length && (
               <TableRow>
                 <TableCell colSpan={4} align="center">
                   No hay configuraciones disponibles.

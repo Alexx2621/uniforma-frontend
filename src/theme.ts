@@ -1,4 +1,6 @@
 import { createTheme } from "@mui/material/styles";
+import type {} from "@mui/x-data-grid/themeAugmentation";
+import { UniformaDataGridLoadingOverlay } from "./components/UniformaLoader";
 import { APP_FONT_FAMILY } from "./utils/fontFamily";
 
 export const appTheme = createTheme({
@@ -13,6 +15,13 @@ export const appTheme = createTheme({
         },
         body: {
           fontFamily: APP_FONT_FAMILY,
+        },
+      },
+    },
+    MuiDataGrid: {
+      defaultProps: {
+        slots: {
+          loadingOverlay: UniformaDataGridLoadingOverlay,
         },
       },
     },

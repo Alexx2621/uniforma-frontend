@@ -28,6 +28,7 @@ import { useSearchParams } from "react-router-dom";
 import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
+import UniformaTableLoadingRow from "../components/UniformaTableLoadingRow";
 import { canUseVendedorDropdown } from "../utils/vendedorDropdownAccess";
 
 interface PagoRecibido {
@@ -223,7 +224,9 @@ export default function PagosRecibidos() {
             </TableRow>
           </TableHead>
           <TableBody>
-            {pagosFiltrados.map((pago) => (
+            {loading ? (
+              <UniformaTableLoadingRow colSpan={9} />
+            ) : pagosFiltrados.map((pago) => (
               <TableRow key={`${pago.pedidoId}-${pago.id}`} hover>
                 <TableCell>{pago.fecha ? new Date(pago.fecha).toLocaleString() : "-"}</TableCell>
                 <TableCell>#{pago.id}</TableCell>
@@ -244,7 +247,7 @@ export default function PagosRecibidos() {
         </Table>
       </TableContainer>
 
-      {!pagosFiltrados.length && (
+      {!loading && !pagosFiltrados.length && (
         <Paper variant="outlined" sx={{ p: 4, mt: 2, textAlign: "center" }}>
           <Typography color="text.secondary">No se encontraron pagos recibidos.</Typography>
         </Paper>

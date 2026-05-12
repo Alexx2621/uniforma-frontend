@@ -26,6 +26,7 @@ import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
 import { hasPermission } from "../auth/permissions";
+import UniformaTableLoadingRow from "../components/UniformaTableLoadingRow";
 
 interface Bodega {
   id: number;
@@ -184,7 +185,9 @@ export default function Bodegas() {
             </TableRow>
           </TableHead>
           <TableBody>
-            {bodegas.map((b) => (
+            {loading ? (
+              <UniformaTableLoadingRow colSpan={4} />
+            ) : bodegas.map((b) => (
               <TableRow key={b.id}>
                 <TableCell>{b.id}</TableCell>
                 <TableCell>{b.nombre}</TableCell>
@@ -214,7 +217,7 @@ export default function Bodegas() {
                 </TableCell>
               </TableRow>
             ))}
-            {!bodegas.length && (
+            {!loading && !bodegas.length && (
               <TableRow>
                 <TableCell colSpan={4} align="center">
                   No hay bodegas registradas.

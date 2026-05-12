@@ -26,6 +26,7 @@ import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
 import { hasPermission } from "../auth/permissions";
+import UniformaTableLoadingRow from "../components/UniformaTableLoadingRow";
 
 interface Cliente {
   id: number;
@@ -181,7 +182,9 @@ export default function Clientes() {
             </TableRow>
           </TableHead>
           <TableBody>
-            {clientes.map((c) => (
+            {loading ? (
+              <UniformaTableLoadingRow colSpan={6} />
+            ) : clientes.map((c) => (
               <TableRow key={c.id}>
                 <TableCell>{c.id}</TableCell>
                 <TableCell>{c.nombre}</TableCell>
@@ -200,7 +203,7 @@ export default function Clientes() {
                 </TableCell>
               </TableRow>
             ))}
-            {!clientes.length && (
+            {!loading && !clientes.length && (
               <TableRow>
                 <TableCell colSpan={6} align="center">
                   No hay clientes registrados.

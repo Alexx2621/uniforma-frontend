@@ -26,6 +26,7 @@ interface TallaForm {
 
 export default function Tallas() {
   const [rows, setRows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const [editar, setEditar] = useState(false);
   const [filter, setFilter] = useState("");
@@ -35,11 +36,14 @@ export default function Tallas() {
   });
 
   const cargar = async () => {
+    setLoading(true);
     try {
       const resp = await api.get("/tallas");
       setRows(resp.data);
     } catch (error) {
       Swal.fire("Error", "No se pudieron cargar tallas", "error");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -157,6 +161,7 @@ export default function Tallas() {
 
       <div style={{ height: 520, width: "100%" }}>
         <DataGrid
+          loading={loading}
           rows={filtrados}
           columns={columns}
           getRowId={(row) => row.id}

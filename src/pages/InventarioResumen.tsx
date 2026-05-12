@@ -32,9 +32,11 @@ interface ReporteRow {
 export default function InventarioResumen() {
   const [bodegas, setBodegas] = useState<Bodega[]>([]);
   const [rows, setRows] = useState<ReporteRow[]>([]);
+  const [loading, setLoading] = useState(false);
   const [busqueda, setBusqueda] = useState("");
 
   const cargar = async () => {
+    setLoading(true);
     try {
       const [respBod, respRep] = await Promise.all([
         api.get("/bodegas"),
@@ -57,6 +59,8 @@ export default function InventarioResumen() {
       setRows(expanded);
     } catch (error) {
       Swal.fire("Error", "No se pudo cargar inventario o bodegas", "error");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -132,6 +136,7 @@ export default function InventarioResumen() {
 
       <div style={{ height: 650, width: "100%" }}>
         <DataGrid
+          loading={loading}
           rows={filteredRows}
           columns={columns}
           getRowId={(row) => row.id}

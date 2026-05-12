@@ -29,6 +29,7 @@ import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
 import { hasPermission } from "../auth/permissions";
+import UniformaTableLoadingRow from "../components/UniformaTableLoadingRow";
 
 interface Usuario {
   id: number;
@@ -345,7 +346,9 @@ export default function Usuarios() {
             </TableRow>
           </TableHead>
           <TableBody>
-            {usuarios.map((u) => (
+            {loading ? (
+              <UniformaTableLoadingRow colSpan={11} />
+            ) : usuarios.map((u) => (
               <TableRow key={u.id}>
                 <TableCell>{u.id}</TableCell>
                 <TableCell>
@@ -373,7 +376,7 @@ export default function Usuarios() {
                 </TableCell>
               </TableRow>
             ))}
-            {!usuarios.length && (
+            {!loading && !usuarios.length && (
               <TableRow>
                 <TableCell colSpan={11} align="center">
                   No hay usuarios registrados.

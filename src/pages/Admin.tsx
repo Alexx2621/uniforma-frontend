@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Paper,
+  Box,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Typography,
   Stack,
   Grid,
@@ -28,6 +33,7 @@ import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import { menuPathItems } from "../layout/menuItems";
 import { useAuthStore } from "../auth/useAuthStore";
 import { hasPermission } from "../auth/permissions";
+import { UniformaLoader } from "../components/UniformaLoader";
 
 interface NotifConfig {
   emailTo: string;
@@ -321,6 +327,7 @@ export default function Admin() {
   const [savedVendedorDropdownRoleIds, setSavedVendedorDropdownRoleIds] = useState<number[]>([]);
   const [savedVendedorDropdownBodegaIds, setSavedVendedorDropdownBodegaIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loaderPreviewOpen, setLoaderPreviewOpen] = useState(false);
   const [usuarios, setUsuarios] = useState<UsuarioModulo[]>([]);
   const [roles, setRoles] = useState<RolOption[]>([]);
   const [bodegas, setBodegas] = useState<BodegaOption[]>([]);
@@ -1128,9 +1135,14 @@ export default function Admin() {
 
   return (
     <Paper sx={{ p: 3 }}>
-      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
-        <NotificationsActiveOutlined color="primary" />
-        <Typography variant="h4">Notificaciones</Typography>
+      <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" alignItems={{ xs: "flex-start", sm: "center" }} spacing={1} sx={{ mb: 2 }}>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <NotificationsActiveOutlined color="primary" />
+          <Typography variant="h4">Notificaciones</Typography>
+        </Stack>
+        <Button variant="outlined" onClick={() => setLoaderPreviewOpen(true)}>
+          Ver animacion de carga
+        </Button>
       </Stack>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
         Configura alertas de stock bajo, ventas altas o errores por correo o WhatsApp.
@@ -2435,6 +2447,25 @@ export default function Admin() {
           Guardar
         </Button>
       </Stack>
+
+      <Dialog open={loaderPreviewOpen} onClose={() => setLoaderPreviewOpen(false)} fullWidth maxWidth="xs">
+        <DialogTitle>Animacion de carga</DialogTitle>
+        <DialogContent dividers>
+          <Box
+            sx={{
+              minHeight: 220,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <UniformaLoader size={120} />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setLoaderPreviewOpen(false)}>Cerrar</Button>
+        </DialogActions>
+      </Dialog>
     </Paper>
   );
 }

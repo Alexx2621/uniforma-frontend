@@ -20,6 +20,7 @@ import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
 import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
 import Swal from "sweetalert2";
 import { api } from "../../api/axios";
+import UniformaTableLoadingRow from "../../components/UniformaTableLoadingRow";
 import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../../utils/fontFamily";
 
 interface Venta {
@@ -246,7 +247,9 @@ export default function TopClientes() {
             </TableRow>
           </TableHead>
           <TableBody>
-            {filas.map((row) => (
+            {loading ? (
+              <UniformaTableLoadingRow colSpan={4} />
+            ) : filas.map((row) => (
               <TableRow key={`${row.clienteId ?? "na"}`}>
                 <TableCell>{row.nombre}</TableCell>
                 <TableCell>{row.tickets}</TableCell>
@@ -254,12 +257,12 @@ export default function TopClientes() {
                 <TableCell>{`Q ${row.promedio.toFixed(2)}`}</TableCell>
               </TableRow>
             ))}
-            <TableRow>
+            {!loading && <TableRow>
               <TableCell sx={{ fontWeight: 700 }}>Totales</TableCell>
               <TableCell sx={{ fontWeight: 700 }}>{totalTickets}</TableCell>
               <TableCell sx={{ fontWeight: 700 }}>{`Q ${totalMonto.toFixed(2)}`}</TableCell>
               <TableCell />
-            </TableRow>
+            </TableRow>}
           </TableBody>
         </Table>
       </TableContainer>

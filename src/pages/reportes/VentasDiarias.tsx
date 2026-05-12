@@ -20,6 +20,7 @@ import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
 import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
 import Swal from "sweetalert2";
 import { api } from "../../api/axios";
+import UniformaTableLoadingRow from "../../components/UniformaTableLoadingRow";
 import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../../utils/fontFamily";
 
 interface Venta {
@@ -257,7 +258,9 @@ export default function VentasDiarias() {
             </TableRow>
           </TableHead>
           <TableBody>
-            {filas.map((row) => (
+            {loading ? (
+              <UniformaTableLoadingRow colSpan={6} />
+            ) : filas.map((row) => (
               <TableRow key={row.fecha}>
                 <TableCell>{row.fecha}</TableCell>
                 <TableCell>{row.tickets}</TableCell>
@@ -267,14 +270,14 @@ export default function VentasDiarias() {
                 <TableCell>{`Q ${row.transferencia.toFixed(2)}`}</TableCell>
               </TableRow>
             ))}
-            <TableRow>
+            {!loading && <TableRow>
               <TableCell sx={{ fontWeight: 700 }}>Totales</TableCell>
               <TableCell sx={{ fontWeight: 700 }}>{totalGeneral.tickets}</TableCell>
               <TableCell sx={{ fontWeight: 700 }}>{`Q ${totalGeneral.total.toFixed(2)}`}</TableCell>
               <TableCell sx={{ fontWeight: 700 }}>{`Q ${totalGeneral.efectivo.toFixed(2)}`}</TableCell>
               <TableCell sx={{ fontWeight: 700 }}>{`Q ${totalGeneral.tarjeta.toFixed(2)}`}</TableCell>
               <TableCell sx={{ fontWeight: 700 }}>{`Q ${totalGeneral.transferencia.toFixed(2)}`}</TableCell>
-            </TableRow>
+            </TableRow>}
           </TableBody>
         </Table>
       </TableContainer>

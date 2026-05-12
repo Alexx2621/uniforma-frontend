@@ -46,6 +46,7 @@ interface FormProducto {
 
 export default function Productos() {
   const [productos, setProductos] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
   const [openForm, setOpenForm] = useState(false);
   const [filter, setFilter] = useState("");
   const [editar, setEditar] = useState(false);
@@ -90,6 +91,7 @@ export default function Productos() {
   };
 
   const cargar = async () => {
+    setLoading(true);
     try {
       const resp = await api.get("/productos");
       const parsed = (resp.data || []).map((p: any) => ({
@@ -101,6 +103,8 @@ export default function Productos() {
       setProductos(parsed);
     } catch (error) {
       Swal.fire("Error", "No se pudieron cargar productos", "error");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -276,6 +280,7 @@ export default function Productos() {
       {/* DATAGRID */}
       <div style={{ height: 600, width: "100%" }}>
         <DataGrid
+          loading={loading}
           rows={filtrados}
           columns={columns}
           getRowId={(row: any) => row.id}

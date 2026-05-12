@@ -27,6 +27,7 @@ interface TelaForm {
 
 export default function Telas() {
   const [rows, setRows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const [editar, setEditar] = useState(false);
   const [filter, setFilter] = useState("");
@@ -37,11 +38,14 @@ export default function Telas() {
   });
 
   const cargar = async () => {
+    setLoading(true);
     try {
       const resp = await api.get("/telas");
       setRows(resp.data);
     } catch (error) {
       Swal.fire("Error", "No se pudieron cargar telas", "error");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -161,6 +165,7 @@ export default function Telas() {
 
       <div style={{ height: 520, width: "100%" }}>
         <DataGrid
+          loading={loading}
           rows={filtrados}
           columns={columns}
           getRowId={(row) => row.id}
