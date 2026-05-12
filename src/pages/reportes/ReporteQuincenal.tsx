@@ -704,7 +704,7 @@ export default function ReporteQuincenal() {
           direction={{ xs: "column", sm: "row" }}
           justifyContent="flex-end"
           spacing={2}
-          sx={{ mt: 2, p: 2, borderRadius: 1, bgcolor: "grey.50" }}
+          sx={{ mt: 2, p: 2, borderRadius: 1, bgcolor: "action.hover", border: 1, borderColor: "divider" }}
         >
           <Typography color="text.secondary">
             Cierres visibles: <strong>{documentosGridRows.length}</strong>
@@ -799,7 +799,16 @@ export default function ReporteQuincenal() {
       <TableContainer sx={{ overflowX: "auto" }}>
         <Table size="small">
           <TableHead>
-            <TableRow>
+            <TableRow
+              sx={{
+                bgcolor: "action.hover",
+                "& .MuiTableCell-root": {
+                  color: "text.primary",
+                  borderTop: 1,
+                  borderColor: "divider",
+                },
+              }}
+            >
               <TableCell align="center">Fecha</TableCell>
               <TableCell align="center">Día</TableCell>
               <TableCell align="center">Venta diaria</TableCell>

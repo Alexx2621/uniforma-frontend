@@ -408,7 +408,8 @@ export default function PedidoDetalle() {
       Swal.fire("Aviso", "Habilita las ventanas emergentes para ver el PDF", "info");
       return;
     }
-    const fecha = new Date();
+    const fechaImpresion = new Date();
+    const fechaDocumento = pedido.fecha ? new Date(pedido.fecha) : fechaImpresion;
     const subtotal = pedido.detalle.reduce((sum, d: any) => {
       const precio = Number(d.precioUnit || 0);
       const bordado = Number(d.bordado || 0);
@@ -460,7 +461,7 @@ export default function PedidoDetalle() {
             <div class="title-block">
               <h1 class="pedido-no">RECIBO No.: <span class="value">${escapeHtml(pedido.folio || `P-${pedido.id}`)}</span></h1>
             </div>
-            <div class="date">${escapeHtml(fecha.toLocaleDateString("es-GT"))}</div>
+            <div class="date">${escapeHtml(fechaImpresion.toLocaleDateString("es-GT"))}</div>
           </div>
 
           <div class="meta-wrap">
@@ -494,7 +495,7 @@ export default function PedidoDetalle() {
             </div>
             <div class="info-card">
               <div class="info-title">FECHA Y HORA</div>
-              <div class="info-value">${escapeHtml(`${fecha.toLocaleDateString("es-GT")} ${fecha.toLocaleTimeString("es-GT", { hour: "2-digit", minute: "2-digit" })}`)}</div>
+              <div class="info-value">${escapeHtml(`${fechaDocumento.toLocaleDateString("es-GT")} ${fechaDocumento.toLocaleTimeString("es-GT", { hour: "2-digit", minute: "2-digit" })}`)}</div>
             </div>
           </div>
 
@@ -537,7 +538,8 @@ export default function PedidoDetalle() {
       Swal.fire("Aviso", "Habilita las ventanas emergentes para ver el PDF", "info");
       return;
     }
-    const fecha = new Date();
+    const fechaImpresion = new Date();
+    const fechaDocumento = pedido.fecha ? new Date(pedido.fecha) : fechaImpresion;
     const logoUrl = uniformaLogo;
     const filasHtml = pedido.detalle
       .map((d: any) => {
@@ -568,7 +570,7 @@ export default function PedidoDetalle() {
             <div class="title-block">
               <h1 class="pedido-no">PEDIDO No.: <span class="value">${escapeHtml(pedido.folio || `P-${pedido.id}`)}</span></h1>
             </div>
-            <div class="date">${escapeHtml(fecha.toLocaleDateString("es-GT"))}</div>
+            <div class="date">${escapeHtml(fechaImpresion.toLocaleDateString("es-GT"))}</div>
           </div>
 
           <div class="meta-wrap" style="width:418px;">
@@ -598,7 +600,7 @@ export default function PedidoDetalle() {
             </div>
             <div class="info-card">
               <div class="info-title">FECHA Y HORA</div>
-              <div class="info-value">${escapeHtml(`${fecha.toLocaleDateString("es-GT")} ${fecha.toLocaleTimeString("es-GT", { hour: "2-digit", minute: "2-digit" })}`)}</div>
+              <div class="info-value">${escapeHtml(`${fechaDocumento.toLocaleDateString("es-GT")} ${fechaDocumento.toLocaleTimeString("es-GT", { hour: "2-digit", minute: "2-digit" })}`)}</div>
             </div>
           </div>
 

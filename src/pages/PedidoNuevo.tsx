@@ -1167,7 +1167,8 @@ export default function PedidoNuevo() {
       Swal.fire("Aviso", "Habilita las ventanas emergentes para ver el PDF", "info");
       return;
     }
-    const fecha = fechaPedido ? new Date(fechaPedido) : new Date();
+    const fechaImpresion = new Date();
+    const fechaDocumento = fechaPedido ? new Date(fechaPedido) : fechaImpresion;
     const clienteNombrePdf =
       clienteSnapshot?.nombre ||
       clienteNombre.trim() ||
@@ -1212,7 +1213,7 @@ export default function PedidoNuevo() {
             <div class="title-block">
               <h1 class="pedido-no">RECIBO No.: <span class="value">${escapeHtml(id)}</span></h1>
             </div>
-            <div class="date">${escapeHtml(fecha.toLocaleDateString("es-GT"))}</div>
+            <div class="date">${escapeHtml(fechaImpresion.toLocaleDateString("es-GT"))}</div>
           </div>
 
           <div class="meta-wrap">
@@ -1267,7 +1268,7 @@ export default function PedidoNuevo() {
             <div class="info-card">
               <div class="info-title">FECHA Y HORA</div>
               <div class="info-value">${escapeHtml(
-                `${fecha.toLocaleDateString("es-GT")} ${fecha.toLocaleTimeString("es-GT", { hour: "2-digit", minute: "2-digit" })}`
+                `${fechaDocumento.toLocaleDateString("es-GT")} ${fechaDocumento.toLocaleTimeString("es-GT", { hour: "2-digit", minute: "2-digit" })}`
               )}</div>
             </div>
           </div>
@@ -1319,7 +1320,8 @@ export default function PedidoNuevo() {
       Swal.fire("Aviso", "Habilita las ventanas emergentes para ver el PDF", "info");
       return;
     }
-    const fecha = fechaPedido ? new Date(fechaPedido) : new Date();
+    const fechaImpresion = new Date();
+    const fechaDocumento = fechaPedido ? new Date(fechaPedido) : fechaImpresion;
     const clienteNombrePdf =
       clienteSnapshot?.nombre ||
       clienteNombre.trim() ||
@@ -1357,7 +1359,7 @@ export default function PedidoNuevo() {
             <div class="title-block">
               <h1 class="pedido-no">PEDIDO No.: <span class="value">${escapeHtml(id)}</span></h1>
             </div>
-            <div class="date">${escapeHtml(fecha.toLocaleDateString("es-GT"))}</div>
+            <div class="date">${escapeHtml(fechaImpresion.toLocaleDateString("es-GT"))}</div>
           </div>
 
           <div class="meta-wrap" style="width:418px;">
@@ -1396,7 +1398,7 @@ export default function PedidoNuevo() {
             <div class="info-card">
               <div class="info-title">FECHA Y HORA</div>
               <div class="info-value">${escapeHtml(
-                `${fecha.toLocaleDateString("es-GT")} ${fecha.toLocaleTimeString("es-GT", { hour: "2-digit", minute: "2-digit" })}`
+                `${fechaDocumento.toLocaleDateString("es-GT")} ${fechaDocumento.toLocaleTimeString("es-GT", { hour: "2-digit", minute: "2-digit" })}`
               )}</div>
             </div>
           </div>

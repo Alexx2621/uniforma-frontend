@@ -882,7 +882,7 @@ export default function ReporteDiario() {
           direction={{ xs: "column", sm: "row" }}
           justifyContent="flex-end"
           spacing={2}
-          sx={{ mt: 2, p: 2, borderRadius: 1, bgcolor: "grey.50" }}
+          sx={{ mt: 2, p: 2, borderRadius: 1, bgcolor: "action.hover", border: 1, borderColor: "divider" }}
         >
           <Typography color="text.secondary">
             Cierres visibles: <strong>{documentosGridRows.length}</strong>
@@ -1471,7 +1471,11 @@ export default function ReporteDiario() {
             <Stack direction="row" justifyContent="space-between"><Typography>Departamento</Typography><Typography>{money(subtotalDepartamento)}</Typography></Stack>
             <Stack direction="row" justifyContent="space-between"><Typography>Tienda</Typography><Typography>{money(subtotalTienda)}</Typography></Stack>
             <Divider />
-            <Stack direction="row" justifyContent="space-between">
+            <Stack
+              direction="row"
+              justifyContent="space-between"
+              sx={{ bgcolor: "action.hover", borderRadius: 1, px: 1.5, py: 1, color: "text.primary" }}
+            >
               <Typography fontWeight={700}>TOTAL</Typography>
               <Typography fontWeight={700}>{money(totalResumen)}</Typography>
             </Stack>
