@@ -352,6 +352,23 @@ export default function Navbar() {
   };
 
   const getLogActionLabel = (log: LogAcceso) => {
+    const endpoint = `${log.endpoint || ""}`.split("?")[0];
+    const method = `${log.metodo || ""}`.toUpperCase();
+
+    if (endpoint === "/auth/login") return "Inicio de sesion";
+    if (endpoint.includes("/pdf")) return "Genero PDF";
+    if (endpoint.includes("/produccion/unificados")) {
+      if (method === "GET") return "Consulto/reimprimio reporte unificado";
+      if (method === "POST") return "Genero pedido unificado";
+      if (method === "DELETE") return "Elimino pedido unificado";
+      return "Actualizo pedido unificado";
+    }
+    if (endpoint === "/documentos" && method === "POST") return "Genero cierre/reporte";
+    if (endpoint.startsWith("/documentos") && method === "PATCH") return "Edito cierre/reporte";
+    if (endpoint.startsWith("/documentos") && method === "DELETE") return "Elimino cierre/reporte";
+    if (endpoint === "/produccion" && method === "POST") return "Creo pedido";
+    if (endpoint.startsWith("/produccion") && method === "POST") return "Actualizo pedido";
+
     const methodMap: Record<string, string> = {
       GET: "Consulto",
       POST: "Creo/ejecuto",
@@ -359,7 +376,7 @@ export default function Navbar() {
       PATCH: "Actualizo",
       DELETE: "Elimino",
     };
-    return methodMap[log.metodo] || log.metodo;
+    return methodMap[method] || method;
   };
 
   return (
@@ -561,7 +578,7 @@ export default function Navbar() {
                   logs.map((log) => (
                     <ListItemButton key={log.id} sx={{ alignItems: "flex-start" }}>
                       <ListItemText
-                        primary={`${getLogActionLabel(log)} ${log.endpoint}`}
+                        primary={`${getLogActionLabel(log)}: ${log.endpoint}`}
                         secondary={
                           <>
                             <Typography component="span" variant="body2" color="text.primary" sx={{ display: "block", mb: 0.5 }}>
