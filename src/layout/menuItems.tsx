@@ -119,6 +119,7 @@ export const menuSections: MenuSection[] = [
           { label: "Ingresos de inventario", path: "/reportes/ingresos", icon: <AddBusinessOutlined /> },
           { label: "Traslados", path: "/reportes/traslados", icon: <CompareArrowsOutlined /> },
           { label: "Stock bajo", path: "/reportes/stock-bajo", icon: <WarningAmberOutlined /> },
+          { label: "Unificados produccion", path: "/reportes/produccion-unificados", icon: <SummarizeOutlined /> },
         ],
       },
     ],

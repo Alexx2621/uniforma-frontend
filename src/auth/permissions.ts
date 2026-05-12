@@ -33,6 +33,7 @@ export const routePermissionMap: Record<string, string> = {
   "/reportes/ingresos": "reportes.ingresos.view",
   "/reportes/traslados": "reportes.traslados.view",
   "/reportes/stock-bajo": "reportes.stock-bajo.view",
+  "/reportes/produccion-unificados": "produccion.view",
 };
 
 const defaultRoutePriority = [
@@ -61,6 +62,7 @@ const defaultRoutePriority = [
   "/reportes/ingresos",
   "/reportes/traslados",
   "/reportes/stock-bajo",
+  "/reportes/produccion-unificados",
 ];
 
 export function hasPermission(

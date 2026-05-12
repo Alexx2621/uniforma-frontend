@@ -36,6 +36,7 @@ import TopClientes from "./pages/reportes/TopClientes";
 import IngresosInventarioReporte from "./pages/reportes/IngresosInventarioReporte";
 import TrasladosReporte from "./pages/reportes/TrasladosReporte";
 import StockBajo from "./pages/reportes/StockBajo";
+import ProduccionUnificados from "./pages/reportes/ProduccionUnificados";
 
 export default function App() {
   return (
@@ -81,6 +82,7 @@ export default function App() {
           <Route path="/reportes/ingresos" element={<IngresosInventarioReporte />} />
           <Route path="/reportes/traslados" element={<TrasladosReporte />} />
           <Route path="/reportes/stock-bajo" element={<StockBajo />} />
+          <Route path="/reportes/produccion-unificados" element={<ProduccionUnificados />} />
           <Route path="/catalogos/categorias" element={<Categorias />} />
           <Route path="/catalogos/telas" element={<Telas />} />
           <Route path="/catalogos/colores" element={<Colores />} />
