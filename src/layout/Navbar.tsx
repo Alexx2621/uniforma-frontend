@@ -20,12 +20,16 @@ import {
 import LogoutIcon from "@mui/icons-material/Logout";
 import SettingsIcon from "@mui/icons-material/Settings";
 import NotificationsOutlinedIcon from "@mui/icons-material/NotificationsOutlined";
+import DarkModeRoundedIcon from "@mui/icons-material/DarkModeRounded";
+import WbSunnyRoundedIcon from "@mui/icons-material/WbSunnyRounded";
 import { io, Socket } from "socket.io-client";
 import Swal from "sweetalert2";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useNavigate } from "react-router-dom";
 import uniformaLogo from "../assets/uniforma-logo.png";
+import uniformaLogoBlanco from "../assets/uniforma-logo-blanco-new.png";
 import { api } from "../api/axios";
+import { useThemeMode } from "../themeMode";
 
 interface AlertaInterna {
   id: number;
@@ -39,6 +43,7 @@ interface AlertaInterna {
 }
 
 export default function Navbar() {
+  const { isDarkMode, toggleMode } = useThemeMode();
   const {
     usuario,
     nombre,
@@ -323,16 +328,17 @@ export default function Navbar() {
       elevation={0}
       sx={{
         zIndex: 2000,
-        background: "#ffffff",
-        color: "#1f2937",
-        borderBottom: "1px solid #e5e7eb",
+        background: isDarkMode ? "#111827" : "#ffffff",
+        color: isDarkMode ? "#f9fafb" : "#1f2937",
+        borderBottom: "1px solid",
+        borderColor: isDarkMode ? "#374151" : "#e5e7eb",
       }}
     >
       <Toolbar sx={{ minHeight: 64, px: 3 }}>
         <Stack direction="row" alignItems="center" spacing={1} sx={{ flexGrow: 1, minWidth: 0 }}>
           <Box
             component="img"
-            src={uniformaLogo}
+            src={isDarkMode ? uniformaLogoBlanco : uniformaLogo}
             alt="Uniforma"
             sx={{
               height: 64,
@@ -344,12 +350,63 @@ export default function Navbar() {
           />
         </Stack>
 
-        <Stack direction="row" spacing={2} alignItems="center">
+        <Stack direction="row" spacing={{ xs: 1, sm: 2 }} alignItems="center">
+          <Tooltip title={isDarkMode ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}>
+            <Box
+              component="button"
+              type="button"
+              aria-label={isDarkMode ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
+              aria-pressed={isDarkMode}
+              onClick={toggleMode}
+              sx={{
+                width: 76,
+                height: 38,
+                border: "1px solid",
+                borderColor: isDarkMode ? "#ffffff" : "#d6d6d6",
+                borderRadius: 999,
+                p: "4px",
+                cursor: "pointer",
+                position: "relative",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "flex-start",
+                backgroundColor: isDarkMode ? "#ffffff" : "#d9d9d9",
+                boxShadow: isDarkMode ? "0 1px 2px rgba(0, 0, 0, 0.18)" : "inset 0 0 0 1px #d6d6d6",
+                transition: "background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease",
+                flexShrink: 0,
+                "&:focus-visible": {
+                  outline: "3px solid",
+                  outlineColor: "primary.main",
+                  outlineOffset: 2,
+                },
+              }}
+            >
+              <Box
+                sx={{
+                  width: 30,
+                  height: 30,
+                  borderRadius: "50%",
+                  display: "grid",
+                  placeItems: "center",
+                  backgroundColor: isDarkMode ? "#2d2d30" : "#ffffff",
+                  color: isDarkMode ? "#ffffff" : "#f7d64a",
+                  transform: isDarkMode ? "translateX(36px)" : "translateX(0)",
+                  transition: "transform 180ms ease, background-color 180ms ease, color 180ms ease",
+                  position: "relative",
+                  zIndex: 1,
+                  boxShadow: isDarkMode ? "none" : "0 1px 4px rgba(15, 23, 42, 0.14)",
+                }}
+              >
+                {isDarkMode ? <DarkModeRoundedIcon fontSize="small" /> : <WbSunnyRoundedIcon fontSize="small" />}
+              </Box>
+            </Box>
+          </Tooltip>
+
           <Box textAlign="right">
             <Typography variant="body1" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
               {displayName}
             </Typography>
-            <Typography variant="body2" color="#6b7280">
+            <Typography variant="body2" sx={{ color: isDarkMode ? "#d1d5db" : "#6b7280" }}>
               {sourceBodegaNombre || "Sin bodega"}
             </Typography>
           </Box>
@@ -357,7 +414,7 @@ export default function Navbar() {
           <Avatar
             src={profileImageUrl}
             sx={{
-              bgcolor: "#1B2852",
+              bgcolor: isDarkMode ? "#334155" : "#1B2852",
               color: "#fff",
               width: 40,
               height: 40,
@@ -403,7 +460,7 @@ export default function Navbar() {
                     onClick={() => void abrirDetalleAlerta(alerta)}
                     sx={{
                       alignItems: "flex-start",
-                      backgroundColor: alerta.leida ? "#ffffff" : "#eff6ff",
+                      backgroundColor: alerta.leida ? "background.paper" : "action.selected",
                     }}
                   >
                     <ListItemText

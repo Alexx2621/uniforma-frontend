@@ -81,13 +81,13 @@ export default function Sidebar({ open, width, onToggle }: Props) {
             borderRadius: 2,
             mx: 1,
             my: 0.25,
-            backgroundColor: isActive(item.path) ? "#eef2ff" : "transparent",
+            backgroundColor: isActive(item.path) ? "action.selected" : "transparent",
             justifyContent: collapsed ? "center" : "flex-start",
             px: collapsed ? 1 : 2,
             opacity: disabled ? 0.55 : 1,
           }}
         >
-          <ListItemIcon sx={{ color: "#6f7884", minWidth: collapsed ? 32 : 40 }}>
+          <ListItemIcon sx={{ color: "text.secondary", minWidth: collapsed ? 32 : 40 }}>
             {item.icon}
           </ListItemIcon>
           <ListItemText
@@ -117,12 +117,12 @@ export default function Sidebar({ open, width, onToggle }: Props) {
                     borderRadius: 2,
                     mx: 1,
                     my: 0.25,
-                    backgroundColor: isActive(child.path) ? "#eef2ff" : "transparent",
+                    backgroundColor: isActive(child.path) ? "action.selected" : "transparent",
                     justifyContent: collapsed ? "center" : "flex-start",
                     opacity: childDisabled ? 0.55 : 1,
                   }}
                   >
-                    <ListItemIcon sx={{ color: "#6f7884", minWidth: collapsed ? 32 : 36 }}>
+                    <ListItemIcon sx={{ color: "text.secondary", minWidth: collapsed ? 32 : 36 }}>
                       {child.icon}
                   </ListItemIcon>
                   <ListItemText
@@ -149,7 +149,9 @@ export default function Sidebar({ open, width, onToggle }: Props) {
           width,
           boxSizing: "border-box",
           mt: 8,
-          borderRight: "1px solid #e6e9ef",
+          borderRight: "1px solid",
+          borderColor: "divider",
+          backgroundColor: "background.paper",
           paddingTop: 2,
           display: "flex",
           flexDirection: "column",
@@ -164,7 +166,7 @@ export default function Sidebar({ open, width, onToggle }: Props) {
             {section.title && !collapsed && (
               <ListSubheader
                 component="div"
-                sx={{ fontSize: 12, fontWeight: 700, color: "#98a0ad", lineHeight: "28px" }}
+                sx={{ fontSize: 12, fontWeight: 700, color: "text.secondary", lineHeight: "28px" }}
               >
                 {section.title}
               </ListSubheader>

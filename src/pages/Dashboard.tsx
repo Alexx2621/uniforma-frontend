@@ -329,7 +329,7 @@ export default function Dashboard() {
   }, [ventas, pedidos, postventa, documentos, inventario, productos, rango, bodegaFiltro]);
 
   return (
-    <Box sx={{ p: 3, minHeight: "100%", bgcolor: "#f6f8fb" }}>
+    <Box sx={{ p: 3, minHeight: "100%", bgcolor: "background.default" }}>
       <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" alignItems={{ xs: "stretch", md: "center" }} spacing={2} sx={{ mb: 2 }}>
         <Stack spacing={0.5}>
           <Typography variant="h4" sx={{ fontWeight: 700 }}>Dashboard operativo</Typography>

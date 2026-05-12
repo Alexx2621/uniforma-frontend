@@ -13,7 +13,7 @@ export default function Layout() {
   const drawerWidth = useMemo(() => (sidebarOpen ? 240 : 72), [sidebarOpen]);
 
   return (
-    <Box sx={{ display: "flex", minHeight: "100vh", backgroundColor: "#f7f9fc" }}>
+    <Box sx={{ display: "flex", minHeight: "100vh", backgroundColor: "background.default" }}>
       <Navbar />
 
       <Sidebar open={sidebarOpen} onToggle={() => setSidebarOpen((o) => !o)} width={drawerWidth} />
@@ -30,13 +30,14 @@ export default function Layout() {
             width: 26,
             height: 48,
             borderRadius: "0 6px 6px 0",
-            backgroundColor: "#f1f2f6",
+            backgroundColor: "background.paper",
             boxShadow: "none",
-            border: "1px solid #d8dbe2",
+            border: "1px solid",
+            borderColor: "divider",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            "&:hover": { backgroundColor: "#e5e7ed" },
+            "&:hover": { backgroundColor: "action.hover" },
           }}
         >
           {sidebarOpen ? <ChevronLeftIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
@@ -50,7 +51,7 @@ export default function Layout() {
           p: 3,
           mt: 8,
           ml: { xs: 0, sm: 2 },
-          backgroundColor: "#f7f9fc",
+          backgroundColor: "background.default",
         }}
       >
         <Outlet />
