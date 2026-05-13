@@ -188,6 +188,18 @@ export default function Clientes() {
     }
   };
 
+  const asignarCartera = async (cliente: Cliente, nextUsuarioId: string) => {
+    if (!isAdmin) return;
+    try {
+      await api.patch(`/clientes/${cliente.id}/cartera`, {
+        usuarioId: nextUsuarioId ? Number(nextUsuarioId) : null,
+      });
+      await cargar();
+    } catch (error: any) {
+      Swal.fire("Error", error?.response?.data?.message || "No se pudo asignar la cartera", "error");
+    }
+  };
+
   const eliminar = async (c: Cliente) => {
     if (!canManage) {
       Swal.fire("Acceso restringido", "No tienes permisos para eliminar clientes", "warning");
@@ -233,9 +245,27 @@ export default function Clientes() {
       {
         field: "usuarioCartera",
         headerName: "Cartera",
-        minWidth: 170,
-        flex: 0.8,
-        valueGetter: (_, row) => row.usuario?.nombre || row.usuario?.usuario || "Sin asignar",
+        minWidth: isAdmin ? 260 : 170,
+        flex: 0.9,
+        renderCell: (params) =>
+          isAdmin ? (
+            <TextField
+              select
+              size="small"
+              value={params.row.usuarioId ? String(params.row.usuarioId) : ""}
+              onChange={(event) => void asignarCartera(params.row, event.target.value)}
+              sx={{ minWidth: 230 }}
+            >
+              <MenuItem value="">Sin asignar</MenuItem>
+              {usuarios.map((item) => (
+                <MenuItem key={item.id} value={String(item.id)}>
+                  {item.nombre} ({item.usuario})
+                </MenuItem>
+              ))}
+            </TextField>
+          ) : (
+            <Typography variant="body2">{params.row.usuario?.nombre || params.row.usuario?.usuario || "Sin asignar"}</Typography>
+          ),
       },
       {
         field: "fechaRegistro",
