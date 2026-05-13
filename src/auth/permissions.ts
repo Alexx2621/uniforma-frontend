@@ -25,6 +25,8 @@ export const routePermissionMap: Record<string, string> = {
   "/produccion/correlativos": "correlativos.view",
   "/correlativos": "correlativos.view",
   "/admin": "admin.view",
+  "/auditoria": "logs.view",
+  "/whatsapp/config": "whatsapp.manage",
   "/reportes/reporte-diario": "reportes.reporte-diario.view",
   "/reportes/reporte-quincenal": "reportes.reporte-quincenal.view",
   "/reportes/ventas-diarias": "reportes.ventas-diarias.view",
@@ -34,6 +36,7 @@ export const routePermissionMap: Record<string, string> = {
   "/reportes/traslados": "reportes.traslados.view",
   "/reportes/stock-bajo": "reportes.stock-bajo.view",
   "/reportes/produccion-unificados": "reportes.produccion-unificados.view",
+  "/reportes/comparativo-tiendas": "reportes.comparativo-tiendas.view",
 };
 
 export function getAutoViewPermissionForPath(pathname: string) {
@@ -60,6 +63,7 @@ const defaultRoutePriority = [
   "/roles",
   "/correlativos",
   "/admin",
+  "/whatsapp/config",
   "/reportes/reporte-diario",
   "/reportes/reporte-quincenal",
   "/reportes/ventas-diarias",
@@ -69,6 +73,7 @@ const defaultRoutePriority = [
   "/reportes/traslados",
   "/reportes/stock-bajo",
   "/reportes/produccion-unificados",
+  "/reportes/comparativo-tiendas",
 ];
 
 export function hasPermission(

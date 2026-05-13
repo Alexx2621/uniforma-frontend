@@ -17,6 +17,7 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  Box,
 } from "@mui/material";
 import PlaylistAddCheckOutlined from "@mui/icons-material/PlaylistAddCheckOutlined";
 import DoneAllOutlined from "@mui/icons-material/DoneAllOutlined";
@@ -29,6 +30,7 @@ import { useAuthStore } from "../auth/useAuthStore";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../utils/fontFamily";
 import uniformaLogo from "../assets/3-logos.png";
+import { ActivityLog, getActivityLogActionLabel } from "../utils/activityLog";
 
 interface Detalle {
   producto: {
@@ -291,6 +293,7 @@ export default function PedidoDetalle() {
   const [telas, setTelas] = useState<any[]>([]);
   const [tallas, setTallas] = useState<any[]>([]);
   const [colores, setColores] = useState<any[]>([]);
+  const [historial, setHistorial] = useState<ActivityLog[]>([]);
   const canAccessAllBodegas = rol === "ADMIN" || crossStoreRoleIds.includes(Number(rolId));
 
   const cargar = useCallback(async () => {
@@ -319,10 +322,24 @@ export default function PedidoDetalle() {
     }
   }, [id, userBodegaId, canAccessAllBodegas]);
 
+  const cargarHistorial = useCallback(async () => {
+    if (!id) return;
+    try {
+      const { data } = await api.get(`/logs/produccion/${id}`);
+      setHistorial(Array.isArray(data) ? data : []);
+    } catch {
+      setHistorial([]);
+    }
+  }, [id]);
+
   useEffect(() => {
     void fetchConfig();
     void cargar();
   }, [fetchConfig, cargar]);
+
+  useEffect(() => {
+    void cargarHistorial();
+  }, [cargarHistorial]);
 
   const totalPagado = useMemo(
     () => (pedido?.pagos || []).reduce((sum, p) => sum + getPagoAplicado(p), 0),
@@ -388,6 +405,7 @@ export default function PedidoDetalle() {
       });
       Swal.fire("Listo", "Pedido regresado por inconformidades de produccion", "success");
       await cargar();
+      await cargarHistorial();
     } catch (error: any) {
       const msg = error?.response?.data?.message || error?.message || "No se pudo regresar el pedido";
       Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
@@ -778,6 +796,50 @@ export default function PedidoDetalle() {
                 >
                   Regresar por inconformidad
                 </Button>
+              )}
+            </Stack>
+          </Paper>
+        </Grid>
+        <Grid size={{ xs: 12 }}>
+          <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+            <Typography variant="h6" sx={{ mb: 1.5 }}>
+              Historial del pedido
+            </Typography>
+            <Stack spacing={1.5}>
+              <Stack direction="row" spacing={1.5} alignItems="flex-start">
+                <Box sx={{ width: 10, height: 10, borderRadius: "50%", bgcolor: "success.main", mt: 0.7, flexShrink: 0 }} />
+                <Box>
+                  <Typography variant="body2" fontWeight={700}>
+                    Pedido creado
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {pedido.fecha ? new Date(pedido.fecha).toLocaleString("es-GT") : "Fecha no disponible"}
+                    {pedido.solicitadoPor ? ` | Usuario: ${pedido.solicitadoPor}` : ""}
+                  </Typography>
+                </Box>
+              </Stack>
+              {historial.map((log) => (
+                <Stack key={log.id} direction="row" spacing={1.5} alignItems="flex-start">
+                  <Box sx={{ width: 10, height: 10, borderRadius: "50%", bgcolor: "primary.main", mt: 0.7, flexShrink: 0 }} />
+                  <Box>
+                    <Typography variant="body2" fontWeight={700}>
+                      {getActivityLogActionLabel(log)}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {new Date(log.fecha).toLocaleString("es-GT")}
+                      {log.usuario ? ` | Usuario: ${log.usuario}` : ""}
+                      {log.resultado ? ` | Resultado: ${log.resultado}` : ""}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                      {log.endpoint}
+                    </Typography>
+                  </Box>
+                </Stack>
+              ))}
+              {!historial.length && (
+                <Typography variant="body2" color="text.secondary">
+                  Aun no hay acciones adicionales registradas para este pedido.
+                </Typography>
               )}
             </Stack>
           </Paper>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Box,
@@ -29,9 +29,11 @@ import PlaylistAddCheckOutlined from "@mui/icons-material/PlaylistAddCheckOutlin
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
+import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
+import { whatsappFeatureEnabled } from "../config/features";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
 
 interface Venta {
@@ -101,6 +103,31 @@ interface InventarioRow {
 interface Bodega {
   id: number;
   nombre: string;
+}
+
+interface WhatsappUltimoMensaje {
+  id: number;
+  remitente: string;
+  remitenteNombre?: string | null;
+  mensaje?: string | null;
+  leido: boolean;
+  recibidoEn: string;
+}
+
+interface WhatsappResumenUsuario {
+  usuarioId: number;
+  usuario: string;
+  nombre: string;
+  telefono?: string | null;
+  totalNuevos: number;
+  totalHoy: number;
+  ultimoMensaje?: WhatsappUltimoMensaje | null;
+}
+
+interface WhatsappResumen {
+  totalNuevos: number;
+  totalHoy: number;
+  usuarios: WhatsappResumenUsuario[];
 }
 
 const toDateOnly = (value: string | Date) => {
@@ -183,6 +210,7 @@ export default function Dashboard() {
   const [inventario, setInventario] = useState<InventarioRow[]>([]);
   const [productos, setProductos] = useState<ProductoResumen[]>([]);
   const [bodegas, setBodegas] = useState<Bodega[]>([]);
+  const [whatsappResumen, setWhatsappResumen] = useState<WhatsappResumen | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [rango, setRango] = useState<"7" | "30" | "90">("30");
@@ -191,13 +219,24 @@ export default function Dashboard() {
   const { rol, rolId, bodegaId: userBodegaId } = useAuthStore();
   const { crossStoreRoleIds, fetchConfig } = useSystemConfigStore();
   const canAccessAllBodegas = rol === "ADMIN" || crossStoreRoleIds.includes(Number(rolId));
+  const canManageWhatsapp = rol === "ADMIN";
+
+  const cargarWhatsapp = useCallback(async () => {
+    if (!whatsappFeatureEnabled) return;
+    try {
+      const { data } = await api.get("/whatsapp/resumen");
+      setWhatsappResumen(data || null);
+    } catch {
+      setWhatsappResumen(null);
+    }
+  }, []);
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
       setLoadError("");
       try {
-        const [respVentas, respPedidos, respPostventa, respDocumentos, respInv, respProd, respBod] = await Promise.all([
+        const [respVentas, respPedidos, respPostventa, respDocumentos, respInv, respProd, respBod, respWhatsapp] = await Promise.all([
           api.get("/ventas").catch(() => ({ data: [] })),
           api.get("/produccion").catch(() => ({ data: [] })),
           api.get("/postventa").catch(() => ({ data: [] })),
@@ -205,6 +244,7 @@ export default function Dashboard() {
           api.get("/inventario/reporte").catch(() => ({ data: [] })),
           api.get("/productos").catch(() => ({ data: [] })),
           api.get("/bodegas").catch(() => ({ data: [] })),
+          whatsappFeatureEnabled ? api.get("/whatsapp/resumen").catch(() => ({ data: null })) : Promise.resolve({ data: null }),
         ]);
         setVentas(respVentas.data || []);
         setPedidos(respPedidos.data || []);
@@ -213,6 +253,7 @@ export default function Dashboard() {
         setInventario(respInv.data || []);
         setProductos(respProd.data || []);
         setBodegas(respBod.data || []);
+        setWhatsappResumen(respWhatsapp.data || null);
       } catch (error) {
         setLoadError("No se pudieron cargar todos los datos del dashboard.");
       } finally {
@@ -221,7 +262,13 @@ export default function Dashboard() {
     };
     void load();
     void fetchConfig();
-  }, [fetchConfig]);
+  }, [cargarWhatsapp, fetchConfig]);
+
+  const marcarWhatsappLeidos = async (vendedorId?: number) => {
+    if (!whatsappFeatureEnabled) return;
+    await api.patch("/whatsapp/mensajes/leidos", { vendedorId });
+    await cargarWhatsapp();
+  };
 
   useEffect(() => {
     if (!canAccessAllBodegas) {
@@ -400,6 +447,64 @@ export default function Dashboard() {
           />
         </Grid>
       </Grid>
+
+      {whatsappFeatureEnabled && <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 1 }}>
+        <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" alignItems={{ xs: "stretch", md: "center" }} spacing={1.5} sx={{ mb: 1 }}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <WhatsAppIcon color="success" />
+            <Box>
+              <Typography variant="h6">Mensajes WhatsApp Business</Typography>
+              <Typography variant="body2" color="text.secondary">
+                {canManageWhatsapp ? "Resumen de mensajes nuevos por vendedor." : "Mensajes nuevos recibidos en tu numero asignado."}
+              </Typography>
+            </Box>
+          </Stack>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Chip color="success" label={`${whatsappResumen?.totalNuevos || 0} nuevos`} />
+            <Chip variant="outlined" label={`${whatsappResumen?.totalHoy || 0} hoy`} />
+          </Stack>
+        </Stack>
+        <Divider sx={{ mb: 1 }} />
+        {!whatsappResumen?.usuarios?.length ? (
+          <Typography variant="body2" color="text.secondary">
+            Aun no hay numeros con mensajes registrados. Cuando se conecte el webhook de WhatsApp Business, apareceran aqui.
+          </Typography>
+        ) : (
+          <Grid container spacing={1}>
+            {whatsappResumen.usuarios.map((item) => (
+              <Grid key={item.usuarioId} size={{ xs: 12, md: canManageWhatsapp ? 6 : 12, lg: canManageWhatsapp ? 4 : 12 }}>
+                <Box sx={{ p: 1.5, border: "1px solid", borderColor: "divider", borderRadius: 1, height: "100%" }}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
+                    <Box>
+                      <Typography variant="subtitle2">{item.nombre || item.usuario}</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {item.telefono || "Sin numero asignado"}
+                      </Typography>
+                    </Box>
+                    <Chip size="small" color={item.totalNuevos ? "success" : "default"} label={`${item.totalNuevos} nuevos`} />
+                  </Stack>
+                  <Typography variant="body2" sx={{ mt: 1 }}>
+                    {item.ultimoMensaje?.mensaje || "Sin mensajes recientes"}
+                  </Typography>
+                  {item.ultimoMensaje && (
+                    <Typography variant="caption" color="text.secondary">
+                      {item.ultimoMensaje.remitenteNombre || item.ultimoMensaje.remitente} | {new Date(item.ultimoMensaje.recibidoEn).toLocaleString()}
+                    </Typography>
+                  )}
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 1 }}>
+                    <Typography variant="caption" color="text.secondary">
+                      {item.totalHoy} recibido(s) hoy
+                    </Typography>
+                    <Button size="small" disabled={!item.totalNuevos} onClick={() => marcarWhatsappLeidos(item.usuarioId)}>
+                      Marcar leidos
+                    </Button>
+                  </Stack>
+                </Box>
+              </Grid>
+            ))}
+          </Grid>
+        )}
+      </Paper>}
 
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, lg: 8 }}>

@@ -17,10 +17,13 @@ import Traslados from "./pages/Traslados";
 import VentaNueva from "./pages/VentaNueva";
 import Bodegas from "./pages/Bodegas";
 import Clientes from "./pages/Clientes";
+import ClienteFicha from "./pages/ClienteFicha";
 import Cotizaciones from "./pages/Cotizaciones";
 import Usuarios from "./pages/Usuarios";
 import Admin from "./pages/Admin";
+import Auditoria from "./pages/Auditoria";
 import Correlativos from "./pages/Correlativos";
+import WhatsappConfig from "./pages/WhatsappConfig";
 import Roles from "./pages/Roles";
 import Pedidos from "./pages/Pedidos";
 import PedidoNuevo from "./pages/PedidoNuevo";
@@ -37,7 +40,9 @@ import IngresosInventarioReporte from "./pages/reportes/IngresosInventarioReport
 import TrasladosReporte from "./pages/reportes/TrasladosReporte";
 import StockBajo from "./pages/reportes/StockBajo";
 import ProduccionUnificados from "./pages/reportes/ProduccionUnificados";
+import ComparativoTiendas from "./pages/reportes/ComparativoTiendas";
 import { useTextInputStandards } from "./utils/useTextInputStandards";
+import { whatsappFeatureEnabled } from "./config/features";
 
 export default function App() {
   useTextInputStandards();
@@ -67,9 +72,12 @@ export default function App() {
           <Route path="/bodegas" element={<Bodegas />} />
           <Route path="/cotizaciones" element={<Cotizaciones />} />
           <Route path="/clientes" element={<Clientes />} />
+          <Route path="/clientes/:id/ficha" element={<ClienteFicha />} />
           <Route path="/usuarios" element={<Usuarios />} />
           <Route path="/roles" element={<Roles />} />
           <Route path="/admin" element={<Admin />} />
+          <Route path="/auditoria" element={<Auditoria />} />
+          {whatsappFeatureEnabled && <Route path="/whatsapp/config" element={<WhatsappConfig />} />}
           <Route path="/correlativos" element={<Correlativos />} />
           <Route path="/produccion/correlativos" element={<Correlativos />} />
           <Route path="/produccion" element={<Pedidos />} />
@@ -86,6 +94,7 @@ export default function App() {
           <Route path="/reportes/traslados" element={<TrasladosReporte />} />
           <Route path="/reportes/stock-bajo" element={<StockBajo />} />
           <Route path="/reportes/produccion-unificados" element={<ProduccionUnificados />} />
+          <Route path="/reportes/comparativo-tiendas" element={<ComparativoTiendas />} />
           <Route path="/catalogos/categorias" element={<Categorias />} />
           <Route path="/catalogos/telas" element={<Telas />} />
           <Route path="/catalogos/colores" element={<Colores />} />

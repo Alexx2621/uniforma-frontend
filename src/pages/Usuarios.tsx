@@ -19,11 +19,14 @@ import {
   TableRow,
   TextField,
   Typography,
+  Chip,
 } from "@mui/material";
 import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import DeleteOutline from "@mui/icons-material/DeleteOutline";
+import BlockOutlined from "@mui/icons-material/BlockOutlined";
+import CheckCircleOutlineOutlined from "@mui/icons-material/CheckCircleOutlineOutlined";
 import ManageAccountsOutlined from "@mui/icons-material/ManageAccountsOutlined";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
@@ -46,6 +49,7 @@ interface Usuario {
   direccion?: string | null;
   fechaNacimiento?: string | null;
   fotoUrl?: string | null;
+  activo: boolean;
   rolId: number;
   rol?: { id: number; nombre: string };
   bodegaId?: number | null;
@@ -307,6 +311,34 @@ export default function Usuarios() {
     }
   };
 
+  const toggleActivo = async (u: Usuario) => {
+    if (!canManage) {
+      Swal.fire("Acceso restringido", "No tienes permisos para modificar usuarios", "warning");
+      return;
+    }
+
+    const nextActivo = !u.activo;
+    const confirm = await Swal.fire({
+      title: nextActivo ? "Habilitar usuario" : "Deshabilitar usuario",
+      text: nextActivo
+        ? `El usuario "${u.usuario}" podra ingresar nuevamente al sistema.`
+        : `El usuario "${u.usuario}" no podra iniciar sesion.`,
+      icon: nextActivo ? "question" : "warning",
+      showCancelButton: true,
+      confirmButtonText: nextActivo ? "Si, habilitar" : "Si, deshabilitar",
+      cancelButtonText: "Cancelar",
+    });
+    if (!confirm.isConfirmed) return;
+
+    try {
+      await api.patch(`/usuarios/${u.id}/activo`, { activo: nextActivo });
+      Swal.fire("Actualizado", nextActivo ? "Usuario habilitado" : "Usuario deshabilitado", "success");
+      await cargar();
+    } catch (error: any) {
+      Swal.fire("Error", error?.response?.data?.message || "No se pudo actualizar el estado del usuario", "error");
+    }
+  };
+
   return (
     <Paper sx={{ p: 3 }}>
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
@@ -342,12 +374,13 @@ export default function Usuarios() {
               <TableCell>Correo</TableCell>
               <TableCell>Rol</TableCell>
               <TableCell>Bodega</TableCell>
+              <TableCell>Estado</TableCell>
               <TableCell align="right">Acciones</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {loading ? (
-              <UniformaTableLoadingRow colSpan={11} />
+              <UniformaTableLoadingRow colSpan={12} />
             ) : usuarios.map((u) => (
               <TableRow key={u.id}>
                 <TableCell>{u.id}</TableCell>
@@ -364,8 +397,21 @@ export default function Usuarios() {
                 <TableCell>{u.correo || "N/D"}</TableCell>
                 <TableCell>{u.rol?.nombre || u.rolId}</TableCell>
                 <TableCell>{u.bodega?.nombre || u.bodegaId || "N/D"}</TableCell>
+                <TableCell>
+                  <Chip size="small" color={u.activo ? "success" : "default"} label={u.activo ? "Activo" : "Deshabilitado"} />
+                </TableCell>
                 <TableCell align="right">
                   <Stack direction="row" spacing={1} justifyContent="flex-end">
+                    <Button
+                      variant="text"
+                      size="small"
+                      color={u.activo ? "warning" : "success"}
+                      startIcon={u.activo ? <BlockOutlined /> : <CheckCircleOutlineOutlined />}
+                      disabled={!canManage}
+                      onClick={() => toggleActivo(u)}
+                    >
+                      {u.activo ? "Deshabilitar" : "Habilitar"}
+                    </Button>
                     <Button variant="text" size="small" startIcon={<EditOutlined />} disabled={!canManage} onClick={() => abrirEditar(u)}>
                       Editar
                     </Button>
@@ -378,7 +424,7 @@ export default function Usuarios() {
             ))}
             {!loading && !usuarios.length && (
               <TableRow>
-                <TableCell colSpan={11} align="center">
+                <TableCell colSpan={12} align="center">
                   No hay usuarios registrados.
                 </TableCell>
               </TableRow>

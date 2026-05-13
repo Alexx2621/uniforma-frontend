@@ -19,11 +19,15 @@ import PeopleAltOutlined from "@mui/icons-material/PeopleAltOutlined";
 import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 import AdminPanelSettingsOutlined from "@mui/icons-material/AdminPanelSettingsOutlined";
 import SummarizeOutlined from "@mui/icons-material/SummarizeOutlined";
+import StorefrontOutlined from "@mui/icons-material/StorefrontOutlined";
 import RequestQuoteOutlined from "@mui/icons-material/RequestQuoteOutlined";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import PaidOutlined from "@mui/icons-material/PaidOutlined";
 import AssignmentReturnOutlined from "@mui/icons-material/AssignmentReturnOutlined";
 import SwapHorizOutlined from "@mui/icons-material/SwapHorizOutlined";
+import ManageSearchOutlined from "@mui/icons-material/ManageSearchOutlined";
+import WhatsAppIcon from "@mui/icons-material/WhatsApp";
+import { whatsappFeatureEnabled } from "../config/features";
 
 export interface MenuItem {
   label: string;
@@ -102,6 +106,8 @@ export const menuSections: MenuSection[] = [
       { label: "Roles", icon: <AdminPanelSettingsOutlined />, path: "/roles" },
       { label: "Correlativos", icon: <SettingsOutlined />, path: "/correlativos" },
       { label: "Configuracion", icon: <SettingsOutlined />, path: "/admin" },
+      ...(whatsappFeatureEnabled ? [{ label: "WhatsApp Business", icon: <WhatsAppIcon />, path: "/whatsapp/config" }] : []),
+      { label: "Auditoria", icon: <ManageSearchOutlined />, path: "/auditoria" },
     ],
   },
   {
@@ -120,6 +126,7 @@ export const menuSections: MenuSection[] = [
           { label: "Traslados", path: "/reportes/traslados", icon: <CompareArrowsOutlined /> },
           { label: "Stock bajo", path: "/reportes/stock-bajo", icon: <WarningAmberOutlined /> },
           { label: "Unificados produccion", path: "/reportes/produccion-unificados", icon: <SummarizeOutlined /> },
+          { label: "Comparativo tiendas", path: "/reportes/comparativo-tiendas", icon: <StorefrontOutlined /> },
         ],
       },
     ],

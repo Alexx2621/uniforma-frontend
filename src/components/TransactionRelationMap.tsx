@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
-import { Dialog, DialogTitle, DialogContent, DialogActions, Button, Box, Card, CardContent, Typography, Stack } from "@mui/material";
+import { Dialog, DialogTitle, DialogContent, DialogActions, Button, Box, Card, CardContent, Typography, Stack, Tooltip } from "@mui/material";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
+import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
 
 export type RelationNode = {
   id: string;
@@ -11,6 +12,7 @@ export type RelationNode = {
   amount?: number;
   date?: string;
   sourceId: number;
+  path?: string;
 };
 
 export type RelationEdge = {
@@ -25,6 +27,7 @@ interface Props {
   nodes: RelationNode[];
   edges: RelationEdge[];
   onClose: () => void;
+  onCardClick?: (node: RelationNode) => void;
   onCardDoubleClick?: (node: RelationNode) => void;
 }
 
@@ -39,6 +42,7 @@ const relationTypeLabels: Record<RelationNode["type"], string> = {
 function RelationCard({
   node,
   onDoubleClick,
+  onClick,
   draggable,
   onDragStart,
   onDragEnd,
@@ -47,6 +51,7 @@ function RelationCard({
   isDragging,
 }: {
   node: RelationNode;
+  onClick?: () => void;
   onDoubleClick?: () => void;
   draggable?: boolean;
   onDragStart?: (event: DragEvent<HTMLDivElement>) => void;
@@ -66,10 +71,11 @@ function RelationCard({
       sx={{
         minWidth: 220,
         maxWidth: 260,
-        cursor: draggable ? "grab" : onDoubleClick ? "pointer" : "default",
+        cursor: draggable ? "grab" : onClick || onDoubleClick ? "pointer" : "default",
+        userSelect: "none",
         opacity: isDragging ? 0.5 : 1,
         transition: "transform 120ms ease-in-out, box-shadow 120ms ease-in-out",
-        '&:hover': onDoubleClick
+        '&:hover': onClick || onDoubleClick
           ? {
               transform: "translateY(-2px)",
               boxShadow: 3,
@@ -77,11 +83,19 @@ function RelationCard({
           : undefined,
         }}
       onDoubleClick={onDoubleClick}
+      onClick={onClick}
     >
       <CardContent>
-        <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-          {relationTypeLabels[node.type] || node.type}
-        </Typography>
+        <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
+          <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+            {relationTypeLabels[node.type] || node.type}
+          </Typography>
+          {(onClick || onDoubleClick) && (
+            <Tooltip title="Abrir documento">
+              <OpenInNewOutlined fontSize="small" color="action" />
+            </Tooltip>
+          )}
+        </Stack>
         <Typography variant="h6" gutterBottom>
           {node.title}
         </Typography>
@@ -111,6 +125,7 @@ export default function TransactionRelationMap({
   nodes,
   edges,
   onClose,
+  onCardClick,
   onCardDoubleClick,
 }: Props) {
   const rootNode = useMemo(() => nodes.find((node) => node.type === "pedido"), [nodes]);
@@ -120,6 +135,8 @@ export default function TransactionRelationMap({
   const draggingIdRef = useRef<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [dropPosition, setDropPosition] = useState<"before" | "after" | null>(null);
+  const dragStartedAtRef = useRef<{ x: number; y: number } | null>(null);
+  const didDragRef = useRef(false);
 
   useEffect(() => {
     setOrderedChildIds((current) => {
@@ -139,7 +156,10 @@ export default function TransactionRelationMap({
 
   const handleDragStart = (id: string) => (event: DragEvent<HTMLDivElement>) => {
     event.dataTransfer?.setData("text/plain", id);
+    event.dataTransfer?.setData("application/x-relation-node", id);
     event.dataTransfer.effectAllowed = "move";
+    dragStartedAtRef.current = { x: event.clientX, y: event.clientY };
+    didDragRef.current = false;
     draggingIdRef.current = id;
     setDraggingId(id);
     setDragOverId(null);
@@ -148,6 +168,7 @@ export default function TransactionRelationMap({
 
   const handleDragEnd = () => {
     draggingIdRef.current = null;
+    dragStartedAtRef.current = null;
     setDraggingId(null);
     setDragOverId(null);
     setDropPosition(null);
@@ -158,6 +179,7 @@ export default function TransactionRelationMap({
 
   const handleDragOver = (targetId: string, position: "before" | "after") => (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
+    event.stopPropagation();
     event.dataTransfer.dropEffect = "move";
 
     const sourceId = getDragSourceId(event);
@@ -169,10 +191,15 @@ export default function TransactionRelationMap({
 
     setDragOverId(targetId);
     setDropPosition(position);
+    const start = dragStartedAtRef.current;
+    if (start && Math.abs(event.clientX - start.x) + Math.abs(event.clientY - start.y) > 6) {
+      didDragRef.current = true;
+    }
   };
 
   const handleDragEnter = (targetId: string) => (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
+    event.stopPropagation();
     const sourceId = getDragSourceId(event);
     if (sourceId && sourceId !== targetId) {
       setDragOverId(targetId);
@@ -188,6 +215,7 @@ export default function TransactionRelationMap({
 
   const handleDrop = (targetId: string, position: "before" | "after") => (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
+    event.stopPropagation();
     const sourceId = getDragSourceId(event);
     if (!sourceId || sourceId === targetId) {
       draggingIdRef.current = null;
@@ -211,9 +239,18 @@ export default function TransactionRelationMap({
     });
 
     draggingIdRef.current = null;
+    dragStartedAtRef.current = null;
     setDraggingId(null);
     setDragOverId(null);
     setDropPosition(null);
+  };
+
+  const handleCardClick = (node: RelationNode) => {
+    if (didDragRef.current) {
+      didDragRef.current = false;
+      return;
+    }
+    onCardClick?.(node);
   };
 
   return (
@@ -223,7 +260,11 @@ export default function TransactionRelationMap({
         <Stack spacing={3}>
           {rootNode ? (
             <Box display="flex" justifyContent="center">
-              <RelationCard node={rootNode} onDoubleClick={onCardDoubleClick ? () => onCardDoubleClick(rootNode) : undefined} />
+              <RelationCard
+                node={rootNode}
+                onClick={onCardClick ? () => handleCardClick(rootNode) : undefined}
+                onDoubleClick={onCardDoubleClick ? () => onCardDoubleClick(rootNode) : undefined}
+              />
             </Box>
           ) : (
             <Typography color="text.secondary">No se encontró el pedido principal.</Typography>
@@ -241,6 +282,17 @@ export default function TransactionRelationMap({
                   return (
                     <Box
                       key={node.id}
+                      onDragOver={(event) => {
+                        event.preventDefault();
+                        const rect = event.currentTarget.getBoundingClientRect();
+                        const position = event.clientX < rect.left + rect.width / 2 ? "before" : "after";
+                        handleDragOver(node.id, position)(event as DragEvent<HTMLDivElement>);
+                      }}
+                      onDrop={(event) => {
+                        const rect = event.currentTarget.getBoundingClientRect();
+                        const position = event.clientX < rect.left + rect.width / 2 ? "before" : "after";
+                        handleDrop(node.id, position)(event as DragEvent<HTMLDivElement>);
+                      }}
                       onDragEnter={handleDragEnter(node.id)}
                       onDragLeave={handleDragLeave}
                       sx={{
@@ -308,6 +360,7 @@ export default function TransactionRelationMap({
                       />
                       <RelationCard
                         node={node}
+                        onClick={onCardClick ? () => handleCardClick(node) : undefined}
                         onDoubleClick={onCardDoubleClick ? () => onCardDoubleClick(node) : undefined}
                         draggable
                         onDragStart={handleDragStart(node.id)}

@@ -29,6 +29,7 @@ import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import TransactionRelationMap, { RelationEdge, RelationNode } from "../components/TransactionRelationMap";
+import { buildProductionRelationData } from "../utils/productionRelations";
 import { descargarProduccionUnificadoPdf } from "../utils/produccionUnificadoPdf";
 
 interface ProductoCatalogo {
@@ -328,97 +329,8 @@ export default function Pedidos() {
   const [contextMenuAnchor, setContextMenuAnchor] = useState<{ mouseX: number; mouseY: number } | null>(null);
   const [contextMenuPedido, setContextMenuPedido] = useState<PedidoRow | null>(null);
 
-  const buildRelationData = (pedido: PedidoRow) => {
-    const rootNode: RelationNodeItem = {
-      id: `pedido-${pedido.id}`,
-      type: "pedido",
-      title: pedido.displayFolio || pedido.folio || `Pedido ${pedido.id}`,
-      subtitle: `Cliente: ${obtenerNombreCliente(pedido)}`,
-      amount: pedido.totalEstimado,
-      date: pedido.fecha,
-      sourceId: pedido.id,
-    };
-
-    const childNodes: RelationNodeItem[] = [];
-
-    const postventa = pedido.postventa;
-    if (postventa || pedido.postventaId) {
-      const postventaId = Number(postventa?.id ?? pedido.postventaId ?? 0);
-      const tipoPostventa = `${postventa?.tipo || ""}`.trim().toLowerCase();
-      const tipoLabel = tipoPostventa === "devolucion" ? "Devolucion" : "Cambio";
-      const cobroLabel = pedido.postventaCobro === "sin_cobro" ? "Sin valor monetario" : "Con cobro normal";
-      const motivo = `${postventa?.motivo || ""}`.trim();
-      const estado = `${postventa?.estado || ""}`.trim();
-
-      childNodes.push({
-        id: `postventa-${postventaId || pedido.id}`,
-        type: "postventa",
-        title: postventa?.folio || `${tipoLabel} #${postventaId || pedido.postventaId || pedido.id}`,
-        subtitle: [tipoLabel, motivo || estado, cobroLabel].filter(Boolean).join(" | "),
-        label: tipoPostventa || "cambio",
-        amount: postventa?.monto != null ? Number(postventa.monto) : undefined,
-        date: postventa?.fecha || undefined,
-        sourceId: postventaId || pedido.id,
-      });
-    }
-
-    (pedido.unificaciones || []).forEach((unificacion) => {
-      const unificacionId = Number(unificacion.produccionUnificadoId || 0);
-      if (!unificacionId) return;
-      childNodes.push({
-        id: `unificacion-${unificacionId}`,
-        type: "unificacion",
-        title: `Unificacion #${unificacionId}`,
-        subtitle: "Pedido incluido en documento unificado",
-        sourceId: unificacionId,
-      });
-    });
-
-    (pedido.pagos || []).forEach((pago) => {
-      childNodes.push({
-        id: `pago-${pago.id}`,
-        type: "pago",
-        title: `Pago #${pago.id}`,
-        subtitle: pago.fecha || "Fecha no disponible",
-        amount: pago.total,
-        sourceId: pedido.id,
-      });
-    });
-
-    (pedido.avances || []).forEach((avance) => {
-      childNodes.push({
-        id: `avance-${avance.id}`,
-        type: "avance",
-        title: `Avance #${avance.id}`,
-        subtitle: avance.fecha || "Fecha no disponible",
-        amount: avance.total,
-        sourceId: pedido.id,
-      });
-    });
-
-    const edges: RelationEdgeItem[] = childNodes.map((node) => ({
-      from: rootNode.id,
-      to: node.id,
-      label:
-        node.type === "pago"
-          ? "Pago"
-          : node.type === "avance"
-            ? "Avance"
-            : node.type === "unificacion"
-              ? "Unificacion"
-              : pedido.postventaCobro === "sin_cobro"
-                ? "Cambio/Devolucion sin cobro"
-                : "Cambio/Devolucion",
-    }));
-
-    return {
-      nodes: [rootNode, ...childNodes],
-      edges,
-    };
-  };
-
   const openRelationModal = (pedido: PedidoRow) => {
-    setRelationModalData(buildRelationData(pedido));
+    setRelationModalData(buildProductionRelationData(pedido));
     setRelationModalOpen(true);
   };
 
@@ -427,18 +339,8 @@ export default function Pedidos() {
     setRelationModalData(null);
   };
 
-  const handleRelationNodeDoubleClick = (node: RelationNodeItem) => {
-    if (node.type === "postventa") {
-      navigate(node.label === "devolucion" ? "/devoluciones" : "/cambios");
-      return;
-    }
-    if (node.type === "unificacion") {
-      navigate("/produccion/correlativos");
-      return;
-    }
-    if (node.sourceId) {
-      navigate(`/produccion/${node.sourceId}`);
-    }
+  const handleRelationNodeClick = (node: RelationNodeItem) => {
+    if (node.path) navigate(node.path);
   };
 
   const handleGridContextMenu = (event: MouseEvent<HTMLElement>) => {
@@ -1155,7 +1057,7 @@ export default function Pedidos() {
         nodes={relationModalData?.nodes || []}
         edges={relationModalData?.edges || []}
         onClose={closeRelationModal}
-        onCardDoubleClick={handleRelationNodeDoubleClick}
+        onCardClick={handleRelationNodeClick}
       />
     </Paper>
   );

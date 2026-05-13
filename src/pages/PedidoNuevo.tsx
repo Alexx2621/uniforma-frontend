@@ -43,6 +43,8 @@ interface Cliente {
   id: number;
   nombre: string;
   telefono?: string | null;
+  usuarioId?: number | null;
+  usuario?: { id?: number; nombre?: string | null; usuario?: string | null } | null;
 }
 
 interface Producto {
@@ -375,6 +377,7 @@ export default function PedidoNuevo() {
     rol,
     rolId,
     bodegaId: userBodegaId,
+    id: userId,
   } = useAuthStore();
   const usuarioSolicitante =
     [primerNombre?.trim(), primerApellido?.trim()].filter(Boolean).join(" ") ||
@@ -397,7 +400,7 @@ export default function PedidoNuevo() {
   const cargarCatalogos = async () => {
     try {
       const [respCli, respProd, respBod, respTelas, respTallas, respColores, respPostventa] = await Promise.all([
-        api.get("/clientes"),
+        api.get("/clientes/todos"),
         api.get("/productos"),
         api.get("/bodegas"),
         api.get("/telas").catch(() => ({ data: [] })),
@@ -426,7 +429,22 @@ export default function PedidoNuevo() {
     void fetchConfig();
   }, [fetchConfig]);
 
+  const clientePerteneceCartera = (cliente: Cliente) =>
+    rol === "ADMIN" || Number(cliente.usuarioId || 0) === Number(userId || 0);
+
+  const alertarClienteFueraCartera = (cliente: Cliente) => {
+    Swal.fire(
+      "Cliente fuera de cartera",
+      `El cliente "${cliente.nombre}" pertenece a ${cliente.usuario?.nombre || cliente.usuario?.usuario || "otro usuario"}. No puedes seleccionarlo.`,
+      "warning"
+    );
+  };
+
   const sincronizarCliente = (cliente: Cliente) => {
+    if (!clientePerteneceCartera(cliente)) {
+      alertarClienteFueraCartera(cliente);
+      return;
+    }
     setClienteId(cliente.id);
     setClienteNombre(cliente.nombre || "Mostrador");
     setClienteTelefono(`${cliente.telefono || ""}`.trim());
@@ -1009,6 +1027,10 @@ export default function PedidoNuevo() {
     const existente = seleccionado || buscarClienteExistente(nombreCliente, telefono);
 
     if (existente) {
+      if (!clientePerteneceCartera(existente)) {
+        alertarClienteFueraCartera(existente);
+        return false;
+      }
       sincronizarCliente(existente);
       return {
         id: existente.id,
