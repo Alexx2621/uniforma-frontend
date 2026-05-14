@@ -62,8 +62,7 @@ const getPagoAplicado = (pago: Pago) => Number(pago.monto || 0) + Number(pago.re
 
 export default function PagosPedidos() {
   const { rol, rolId } = useAuthStore();
-  const { vendedorDropdownRoleIds, vendedorDropdownBodegaIds, fetchConfig } = useSystemConfigStore();
-  const isAdmin = Boolean(rol?.toLowerCase().includes("admin"));
+  const { vendedorDropdownRoleIds, fetchConfig } = useSystemConfigStore();
   const canUseDropdown = canUseVendedorDropdown(rol, rolId, vendedorDropdownRoleIds);
   const [pedidos, setPedidos] = useState<PedidoPago[]>([]);
   const [forms, setForms] = useState<Record<number, PagoForm>>({});
@@ -119,25 +118,14 @@ export default function PagosPedidos() {
     void cargar();
   }, []);
 
-  const pedidosPermitidos = useMemo(
-    () =>
-      isAdmin || !canUseDropdown || !vendedorDropdownBodegaIds.length
-        ? pedidos
-        : pedidos.filter((pedido) => {
-            const bodegaId = Number(pedido.bodegaId);
-            return Number.isFinite(bodegaId) && vendedorDropdownBodegaIds.includes(bodegaId);
-          }),
-    [canUseDropdown, isAdmin, pedidos, vendedorDropdownBodegaIds]
-  );
-
   const vendedores = useMemo(
-    () => Array.from(new Set(pedidosPermitidos.map((pedido) => pedido.vendedor).filter((value) => value))).sort((a, b) => a.localeCompare(b)),
-    [pedidosPermitidos]
+    () => Array.from(new Set(pedidos.map((pedido) => pedido.vendedor).filter((value) => value))).sort((a, b) => a.localeCompare(b)),
+    [pedidos]
   );
 
   const pendientes = useMemo(
     () =>
-      pedidosPermitidos.filter((pedido) => {
+      pedidos.filter((pedido) => {
         const estado = `${pedido.estado || ""}`.trim().toLowerCase();
         const fecha = `${pedido.fecha || ""}`.slice(0, 10);
         const estadoCerrado = ["anulado", "recibido", "completado", "regresado_produccion"].includes(estado);
@@ -148,7 +136,7 @@ export default function PagosPedidos() {
         if (selectedVendedor !== "all" && pedido.vendedor !== selectedVendedor) return false;
         return true;
       }),
-    [pedidosPermitidos, filtroDesde, filtroHasta, selectedVendedor]
+    [pedidos, filtroDesde, filtroHasta, selectedVendedor]
   );
 
   const updateForm = (pedidoId: number, patch: Partial<PagoForm>) => {
