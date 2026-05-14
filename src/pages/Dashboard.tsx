@@ -4,6 +4,9 @@ import {
   Box,
   Button,
   Chip,
+  Dialog,
+  DialogContent,
+  DialogTitle,
   Divider,
   FormControl,
   Grid,
@@ -16,6 +19,11 @@ import {
   Paper,
   Select,
   Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
   ToggleButton,
   ToggleButtonGroup,
   Typography,
@@ -183,14 +191,32 @@ const MetricCard = ({
   helper,
   icon,
   tone = "primary",
+  onClick,
 }: {
   title: string;
   value: string | number;
   helper?: string;
   icon: React.ReactNode;
   tone?: "primary" | "success" | "warning" | "error" | "info";
+  onClick?: () => void;
 }) => (
-  <Paper variant="outlined" sx={{ p: 2, height: "100%", borderRadius: 1 }}>
+  <Paper
+    variant="outlined"
+    onClick={onClick}
+    sx={{
+      p: 2,
+      height: "100%",
+      borderRadius: 1,
+      cursor: onClick ? "pointer" : "default",
+      transition: "border-color 120ms ease, box-shadow 120ms ease",
+      "&:hover": onClick
+        ? {
+            borderColor: `${tone}.main`,
+            boxShadow: 2,
+          }
+        : undefined,
+    }}
+  >
     <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
       <Stack spacing={0.5}>
         <Typography variant="caption" color="text.secondary">{title}</Typography>
@@ -215,6 +241,7 @@ export default function Dashboard() {
   const [loadError, setLoadError] = useState("");
   const [rango, setRango] = useState<"7" | "30" | "90">("30");
   const [bodegaFiltro, setBodegaFiltro] = useState<"all" | number>("all");
+  const [saldoModalOpen, setSaldoModalOpen] = useState(false);
   const navigate = useNavigate();
   const { rol, rolId, bodegaId: userBodegaId } = useAuthStore();
   const { crossStoreRoleIds, fetchConfig } = useSystemConfigStore();
@@ -302,7 +329,10 @@ export default function Dashboard() {
       estadosAbiertos.has(`${pedido.estado || ""}`.trim().toLowerCase())
     );
     const pedidosSaldo = pedidosFiltrados.filter((pedido) => Number(pedido.saldoPendiente || 0) > 0);
-    const saldoPendiente = pedidosSaldo.reduce((sum, pedido) => sum + Number(pedido.saldoPendiente || 0), 0);
+    const pedidosSaldoOrdenados = pedidosSaldo
+      .slice()
+      .sort((a, b) => Number(b.saldoPendiente || 0) - Number(a.saldoPendiente || 0));
+    const saldoPendiente = pedidosSaldoOrdenados.reduce((sum, pedido) => sum + Number(pedido.saldoPendiente || 0), 0);
     const pedidosSinCobro = pedidosFiltrados.filter((pedido) => pedido.postventaCobro === "sin_cobro");
 
     const postventaAbierta = postventa.filter((row) =>
@@ -358,7 +388,7 @@ export default function Dashboard() {
       totalVentasHoy,
       ticketsHoy: ventasHoy.length,
       pedidosProduccion,
-      pedidosSaldo,
+      pedidosSaldo: pedidosSaldoOrdenados,
       saldoPendiente,
       pedidosSinCobro,
       postventaAbierta,
@@ -435,6 +465,7 @@ export default function Dashboard() {
             helper={`${stats.pedidosSaldo.length} pedidos con saldo`}
             icon={<PaymentsOutlined />}
             tone="warning"
+            onClick={() => setSaldoModalOpen(true)}
           />
         </Grid>
         <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
@@ -447,6 +478,68 @@ export default function Dashboard() {
           />
         </Grid>
       </Grid>
+
+      <Dialog open={saldoModalOpen} onClose={() => setSaldoModalOpen(false)} maxWidth="lg" fullWidth>
+        <DialogTitle>Pedidos que suman el saldo pendiente</DialogTitle>
+        <DialogContent dividers>
+          <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1} sx={{ mb: 2 }}>
+            <Typography variant="body2" color="text.secondary">
+              {stats.pedidosSaldo.length} pedido(s) con saldo en la tienda seleccionada.
+            </Typography>
+            <Chip color="warning" label={`Total: ${formatCurrency(stats.saldoPendiente)}`} />
+          </Stack>
+          {!stats.pedidosSaldo.length ? (
+            <Typography color="text.secondary">No hay pedidos con saldo pendiente para este filtro.</Typography>
+          ) : (
+            <Box sx={{ overflowX: "auto" }}>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Folio</TableCell>
+                    <TableCell>Fecha</TableCell>
+                    <TableCell>Cliente</TableCell>
+                    <TableCell>Tienda</TableCell>
+                    <TableCell>Estado</TableCell>
+                    <TableCell align="right">Total</TableCell>
+                    <TableCell align="right">Anticipo</TableCell>
+                    <TableCell align="right">Saldo</TableCell>
+                    <TableCell align="right">Accion</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {stats.pedidosSaldo.map((pedido) => (
+                    <TableRow key={pedido.id} hover>
+                      <TableCell>{getPedidoFolio(pedido)}</TableCell>
+                      <TableCell>{pedido.fecha ? new Date(pedido.fecha).toLocaleDateString() : "N/D"}</TableCell>
+                      <TableCell>{getPedidoCliente(pedido)}</TableCell>
+                      <TableCell>{pedido.bodega?.nombre || "N/D"}</TableCell>
+                      <TableCell>
+                        <Chip size="small" label={estadoLabel(pedido.estado)} />
+                      </TableCell>
+                      <TableCell align="right">{formatCurrency(pedido.totalEstimado)}</TableCell>
+                      <TableCell align="right">{formatCurrency(pedido.anticipo)}</TableCell>
+                      <TableCell align="right">
+                        <Typography component="span" fontWeight={700}>
+                          {formatCurrency(pedido.saldoPendiente)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Button
+                          size="small"
+                          endIcon={<OpenInNewOutlined fontSize="small" />}
+                          onClick={() => navigate(`/produccion/${pedido.id}`)}
+                        >
+                          Ver
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </Box>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {whatsappFeatureEnabled && <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 1 }}>
         <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" alignItems={{ xs: "stretch", md: "center" }} spacing={1.5} sx={{ mb: 1 }}>
