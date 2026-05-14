@@ -328,7 +328,11 @@ export default function Dashboard() {
     const pedidosProduccion = pedidosFiltrados.filter((pedido) =>
       estadosAbiertos.has(`${pedido.estado || ""}`.trim().toLowerCase())
     );
-    const pedidosSaldo = pedidosFiltrados.filter((pedido) => Number(pedido.saldoPendiente || 0) > 0);
+    const estadosSinSaldo = new Set(["anulado"]);
+    const pedidosSaldo = pedidosFiltrados.filter((pedido) => {
+      const estado = `${pedido.estado || ""}`.trim().toLowerCase();
+      return !estadosSinSaldo.has(estado) && Number(pedido.saldoPendiente || 0) > 0;
+    });
     const pedidosSaldoOrdenados = pedidosSaldo
       .slice()
       .sort((a, b) => Number(b.saldoPendiente || 0) - Number(a.saldoPendiente || 0));
