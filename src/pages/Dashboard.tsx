@@ -328,7 +328,7 @@ export default function Dashboard() {
     const pedidosProduccion = pedidosFiltrados.filter((pedido) =>
       estadosAbiertos.has(`${pedido.estado || ""}`.trim().toLowerCase())
     );
-    const estadosSinSaldo = new Set(["anulado"]);
+    const estadosSinSaldo = new Set(["anulado", "recibido", "completado"]);
     const pedidosSaldo = pedidosFiltrados.filter((pedido) => {
       const estado = `${pedido.estado || ""}`.trim().toLowerCase();
       return !estadosSinSaldo.has(estado) && Number(pedido.saldoPendiente || 0) > 0;
