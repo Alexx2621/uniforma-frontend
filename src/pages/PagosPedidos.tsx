@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Box,
   Button,
@@ -61,10 +61,8 @@ const metodoRequiereReferencia = (metodo: string) => metodo !== "efectivo";
 const getPagoAplicado = (pago: Pago) => Number(pago.monto || 0) + Number(pago.recargo || 0);
 
 export default function PagosPedidos() {
-  const { usuario, usuarioCorrelativo, rol, rolId } = useAuthStore();
+  const { rol, rolId } = useAuthStore();
   const { vendedorDropdownRoleIds, vendedorDropdownBodegaIds, fetchConfig } = useSystemConfigStore();
-  const currentUser = `${usuario || ""}`.trim().toLowerCase();
-  const currentUserAlt = `${usuarioCorrelativo || ""}`.trim().toLowerCase();
   const isAdmin = Boolean(rol?.toLowerCase().includes("admin"));
   const canUseDropdown = canUseVendedorDropdown(rol, rolId, vendedorDropdownRoleIds);
   const [pedidos, setPedidos] = useState<PedidoPago[]>([]);
@@ -137,15 +135,6 @@ export default function PagosPedidos() {
     [pedidosPermitidos]
   );
 
-  const matchesCurrentUser = useCallback(
-    (value?: string) => {
-      const normalized = `${value || ""}`.trim().toLowerCase();
-      if (!normalized) return false;
-      return [currentUser, currentUserAlt].some((key) => key && normalized.includes(key));
-    },
-    [currentUser, currentUserAlt]
-  );
-
   const pendientes = useMemo(
     () =>
       pedidosPermitidos.filter((pedido) => {
@@ -156,13 +145,10 @@ export default function PagosPedidos() {
         if (Number(pedido.saldoPendiente || 0) <= 0) return false;
         if (filtroDesde && fecha < filtroDesde) return false;
         if (filtroHasta && fecha > filtroHasta) return false;
-        if (!canUseDropdown) {
-          return matchesCurrentUser(pedido.vendedor);
-        }
         if (selectedVendedor !== "all" && pedido.vendedor !== selectedVendedor) return false;
         return true;
       }),
-    [pedidosPermitidos, filtroDesde, filtroHasta, canUseDropdown, selectedVendedor, matchesCurrentUser]
+    [pedidosPermitidos, filtroDesde, filtroHasta, selectedVendedor]
   );
 
   const updateForm = (pedidoId: number, patch: Partial<PagoForm>) => {
