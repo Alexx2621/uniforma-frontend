@@ -71,6 +71,23 @@ const getCatalogWithMenuModules = (catalog: PermissionDefinition[]) => {
     });
   });
 
+  [
+    {
+      key: "bordados.view",
+      label: "Bordados",
+      description: "Ver modulo de bordados",
+      category: "Bordados",
+    },
+    {
+      key: "bordados.manage",
+      label: "Gestionar bordados",
+      description: "Actualizar estado y fecha estimada de bordados",
+      category: "Bordados",
+    },
+  ].forEach((permission) => {
+    byKey.set(permission.key, permission);
+  });
+
   return Array.from(byKey.values());
 };
 
