@@ -129,6 +129,7 @@ export default function Bordados() {
   const { rol, id: currentUserId, nombre: currentNombre, usuario: currentUsuario } = useAuthStore();
   const isAdmin = `${rol || ""}`.toUpperCase() === "ADMIN";
   const canEditSeguimiento = ["ADMIN", "BORDADOR"].includes(`${rol || ""}`.toUpperCase());
+  const canFilterUsuarios = ["ADMIN", "BORDADOR"].includes(`${rol || ""}`.toUpperCase());
   const navigate = useNavigate();
 
   const cargar = useCallback(async () => {
@@ -136,6 +137,7 @@ export default function Bordados() {
       setLoading(true);
       const params = {
         ...(isAdmin && usuarioFiltro ? { usuarioId: usuarioFiltro } : {}),
+        ...(!isAdmin && canFilterUsuarios && usuarioFiltro ? { usuarioId: usuarioFiltro } : {}),
         ...(fechaInicio ? { fechaInicio } : {}),
         ...(fechaFin ? { fechaFin } : {}),
       };
@@ -146,14 +148,14 @@ export default function Bordados() {
     } finally {
       setLoading(false);
     }
-  }, [fechaFin, fechaInicio, isAdmin, usuarioFiltro]);
+  }, [canFilterUsuarios, fechaFin, fechaInicio, isAdmin, usuarioFiltro]);
 
   useEffect(() => {
     void cargar();
   }, [cargar]);
 
   useEffect(() => {
-    if (!isAdmin) {
+    if (!canFilterUsuarios) {
       setUsuarioFiltro(currentUserId ? String(currentUserId) : "");
       return;
     }
@@ -163,7 +165,7 @@ export default function Bordados() {
         setUsuarios(Array.isArray(data) ? data : []);
       })
       .catch(() => setUsuarios([]));
-  }, [currentUserId, isAdmin]);
+  }, [canFilterUsuarios, currentUserId]);
 
   const abrirPedido = (pedido: PedidoBordado) => {
     setSelected(pedido);
@@ -291,14 +293,14 @@ export default function Bordados() {
           </Typography>
         </Box>
         <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ xs: "stretch", sm: "center" }}>
-          <FormControl size="small" sx={{ minWidth: 240 }} disabled={!isAdmin}>
+          <FormControl size="small" sx={{ minWidth: 240 }} disabled={!canFilterUsuarios}>
             <InputLabel>Usuario</InputLabel>
             <Select
               label="Usuario"
-              value={isAdmin ? usuarioFiltro : currentUserId ? String(currentUserId) : ""}
+              value={canFilterUsuarios ? usuarioFiltro : currentUserId ? String(currentUserId) : ""}
               onChange={(event) => setUsuarioFiltro(event.target.value)}
             >
-              {isAdmin ? (
+              {canFilterUsuarios ? (
                 [
                   <MenuItem key="todos" value="">
                     Todos los usuarios
