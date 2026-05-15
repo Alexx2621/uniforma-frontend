@@ -79,6 +79,13 @@ type DetalleDraft = {
 };
 
 const BORDADO_ESTADOS = ["EN PRODUCCION", "EN COLA", "BORDANDO", "ENVIADO"];
+const BORDADO_ESTADO_COLORS: Record<string, { bg: string; color: string; border: string }> = {
+  "EN PRODUCCION": { bg: "#e3f2fd", color: "#0d47a1", border: "#90caf9" },
+  "EN COLA": { bg: "#fff8e1", color: "#8a5a00", border: "#ffca28" },
+  BORDANDO: { bg: "#f3e5f5", color: "#6a1b9a", border: "#ce93d8" },
+  ENVIADO: { bg: "#e8f5e9", color: "#1b5e20", border: "#81c784" },
+  VARIOS: { bg: "#eceff1", color: "#263238", border: "#b0bec5" },
+};
 const getFolio = (pedido: PedidoBordado) => pedido.folio || `P-${pedido.id}`;
 const getCliente = (pedido: PedidoBordado) => pedido.clienteNombre || pedido.cliente?.nombre || "Mostrador";
 const getUsuario = (pedido: PedidoBordado) => pedido.usuario?.nombre || pedido.solicitadoPor || pedido.usuario?.usuario || "N/D";
@@ -86,6 +93,22 @@ const getProducto = (detalle: DetalleBordado) => detalle.producto?.nombre || det
 const getEstadoBordado = (detalle: DetalleBordado) => detalle.bordadoEstado || "EN PRODUCCION";
 const money = (value: number) => `Q ${Number(value || 0).toFixed(2)}`;
 const safeText = (value?: string | null) => `${value || ""}`.trim() || "N/D";
+const getTodayInputValue = () => {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+const estadoChipSx = (estado?: string | null) => {
+  const palette = BORDADO_ESTADO_COLORS[`${estado || "EN PRODUCCION"}`] || BORDADO_ESTADO_COLORS.VARIOS;
+  return {
+    bgcolor: palette.bg,
+    color: palette.color,
+    borderColor: palette.border,
+    fontWeight: 700,
+  };
+};
 const toDateInputValue = (value?: string | null) => {
   if (!value) return "";
   const date = new Date(value);
@@ -97,6 +120,8 @@ export default function Bordados() {
   const [pedidos, setPedidos] = useState<PedidoBordado[]>([]);
   const [usuarios, setUsuarios] = useState<UsuarioOption[]>([]);
   const [usuarioFiltro, setUsuarioFiltro] = useState("");
+  const [fechaInicio, setFechaInicio] = useState(getTodayInputValue);
+  const [fechaFin, setFechaFin] = useState(getTodayInputValue);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<PedidoBordado | null>(null);
   const [drafts, setDrafts] = useState<Record<number, DetalleDraft>>({});
@@ -109,7 +134,11 @@ export default function Bordados() {
   const cargar = useCallback(async () => {
     try {
       setLoading(true);
-      const params = isAdmin && usuarioFiltro ? { usuarioId: usuarioFiltro } : undefined;
+      const params = {
+        ...(isAdmin && usuarioFiltro ? { usuarioId: usuarioFiltro } : {}),
+        ...(fechaInicio ? { fechaInicio } : {}),
+        ...(fechaFin ? { fechaFin } : {}),
+      };
       const { data } = await api.get("/produccion/bordados", { params });
       setPedidos(Array.isArray(data) ? data : []);
     } catch (error: any) {
@@ -117,7 +146,7 @@ export default function Bordados() {
     } finally {
       setLoading(false);
     }
-  }, [isAdmin, usuarioFiltro]);
+  }, [fechaFin, fechaInicio, isAdmin, usuarioFiltro]);
 
   useEffect(() => {
     void cargar();
@@ -214,7 +243,9 @@ export default function Bordados() {
       field: "estadoBordadoDisplay",
       headerName: "Estado",
       minWidth: 150,
-      renderCell: (params) => <Chip size="small" label={params.row.estadoBordadoDisplay} color={params.row.estadoBordadoDisplay === "ENVIADO" ? "success" : "default"} />,
+      renderCell: (params) => (
+        <Chip size="small" label={params.row.estadoBordadoDisplay} variant="outlined" sx={estadoChipSx(params.row.estadoBordadoDisplay)} />
+      ),
     },
     {
       field: "totalLineasBordado",
@@ -285,6 +316,36 @@ export default function Bordados() {
               )}
             </Select>
           </FormControl>
+          <TextField
+            size="small"
+            type="date"
+            label="Desde"
+            value={fechaInicio}
+            onChange={(event) => setFechaInicio(event.target.value)}
+            InputLabelProps={{ shrink: true }}
+            sx={{ minWidth: 150 }}
+          />
+          <TextField
+            size="small"
+            type="date"
+            label="Hasta"
+            value={fechaFin}
+            onChange={(event) => setFechaFin(event.target.value)}
+            InputLabelProps={{ shrink: true }}
+            sx={{ minWidth: 150 }}
+          />
+          {(fechaInicio !== getTodayInputValue() || fechaFin !== getTodayInputValue()) && (
+            <Button
+              variant="text"
+              onClick={() => {
+                const today = getTodayInputValue();
+                setFechaInicio(today);
+                setFechaFin(today);
+              }}
+            >
+              Hoy
+            </Button>
+          )}
           <Button variant="outlined" onClick={cargar} disabled={loading}>
             Recargar
           </Button>
@@ -384,10 +445,13 @@ export default function Bordados() {
                                 value={draft.bordadoEstado || "EN PRODUCCION"}
                                 onChange={(event) => updateDraft(detalle.id, { bordadoEstado: event.target.value })}
                                 disabled={!canEditSeguimiento}
+                                renderValue={(value) => (
+                                  <Chip size="small" label={`${value}`} variant="outlined" sx={estadoChipSx(`${value}`)} />
+                                )}
                               >
                                 {BORDADO_ESTADOS.map((estado) => (
                                   <MenuItem key={estado} value={estado}>
-                                    {estado}
+                                    <Chip size="small" label={estado} variant="outlined" sx={estadoChipSx(estado)} />
                                   </MenuItem>
                                 ))}
                               </Select>
