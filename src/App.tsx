@@ -28,6 +28,7 @@ import Roles from "./pages/Roles";
 import Pedidos from "./pages/Pedidos";
 import PedidoNuevo from "./pages/PedidoNuevo";
 import PedidoDetalle from "./pages/PedidoDetalle";
+import Bordados from "./pages/Bordados";
 import PagosPedidos from "./pages/PagosPedidos";
 import PagosRecibidos from "./pages/PagosRecibidos";
 import { Cambios, Devoluciones } from "./pages/PostVenta";
@@ -83,6 +84,7 @@ export default function App() {
           <Route path="/produccion" element={<Pedidos />} />
           <Route path="/produccion/nuevo" element={<PedidoNuevo />} />
           <Route path="/produccion/:id" element={<PedidoDetalle />} />
+          <Route path="/bordados" element={<Bordados />} />
           <Route path="/pagos/pedidos" element={<PagosPedidos />} />
           <Route path="/pagos/recibidos" element={<PagosRecibidos />} />
           <Route path="/reportes/reporte-diario" element={<ReporteDiario />} />

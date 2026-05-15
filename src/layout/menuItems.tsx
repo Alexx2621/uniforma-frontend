@@ -23,6 +23,7 @@ import StorefrontOutlined from "@mui/icons-material/StorefrontOutlined";
 import RequestQuoteOutlined from "@mui/icons-material/RequestQuoteOutlined";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import PaidOutlined from "@mui/icons-material/PaidOutlined";
+import GestureOutlined from "@mui/icons-material/GestureOutlined";
 import AssignmentReturnOutlined from "@mui/icons-material/AssignmentReturnOutlined";
 import SwapHorizOutlined from "@mui/icons-material/SwapHorizOutlined";
 import ManageSearchOutlined from "@mui/icons-material/ManageSearchOutlined";
@@ -89,6 +90,10 @@ export const menuSections: MenuSection[] = [
   {
     title: "PRODUCCION",
     items: [{ label: "Pedidos", icon: <ShoppingBagOutlined />, path: "/produccion" }],
+  },
+  {
+    title: "BORDADOS",
+    items: [{ label: "Bordados", icon: <GestureOutlined />, path: "/bordados" }],
   },
   {
     title: "PAGOS",
