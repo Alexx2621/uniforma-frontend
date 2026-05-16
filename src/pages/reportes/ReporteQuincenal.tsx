@@ -418,9 +418,7 @@ export default function ReporteQuincenal() {
         setDocumentos([]);
         return;
       }
-      if (!canUseDropdown) {
-        params.usuarioId = userId;
-      } else if (filtroUsuarioSeleccionadoId) {
+      if (filtroUsuarioSeleccionadoId) {
         params.usuarioId = filtroUsuarioSeleccionadoId;
       }
       const resp = await api.get("/documentos", { params });
