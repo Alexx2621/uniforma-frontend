@@ -27,6 +27,7 @@ import GestureOutlined from "@mui/icons-material/GestureOutlined";
 import AssignmentReturnOutlined from "@mui/icons-material/AssignmentReturnOutlined";
 import SwapHorizOutlined from "@mui/icons-material/SwapHorizOutlined";
 import ManageSearchOutlined from "@mui/icons-material/ManageSearchOutlined";
+import LocalShippingOutlined from "@mui/icons-material/LocalShippingOutlined";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import { whatsappFeatureEnabled } from "../config/features";
 
@@ -89,7 +90,10 @@ export const menuSections: MenuSection[] = [
   },
   {
     title: "PRODUCCION",
-    items: [{ label: "Pedidos", icon: <ShoppingBagOutlined />, path: "/produccion" }],
+    items: [
+      { label: "Pedidos", icon: <ShoppingBagOutlined />, path: "/produccion" },
+      { label: "Tracking pedidos", icon: <LocalShippingOutlined />, path: "/tracking-pedidos" },
+    ],
   },
   {
     title: "BORDADOS",

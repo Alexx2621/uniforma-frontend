@@ -84,6 +84,12 @@ const getCatalogWithMenuModules = (catalog: PermissionDefinition[]) => {
       description: "Actualizar estado y fecha estimada de bordados",
       category: "Bordados",
     },
+    {
+      key: "tracking.manage",
+      label: "Gestionar tracking",
+      description: "Reenviar correos de tracking de pedidos",
+      category: "Produccion",
+    },
   ].forEach((permission) => {
     byKey.set(permission.key, permission);
   });

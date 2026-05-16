@@ -47,6 +47,7 @@ interface Cliente {
   id: number;
   nombre: string;
   telefono?: string | null;
+  correo?: string | null;
   usuarioId?: number | null;
   usuario?: { id?: number; nombre?: string | null; usuario?: string | null } | null;
 }
@@ -187,7 +188,7 @@ const escapeHtml = (value?: string | number | null) =>
     .replace(/'/g, "&#39;");
 
 const formatClienteOption = (cliente: Cliente) => {
-  const telefono = `${cliente.telefono || ""}`.trim();
+  const telefono = formatTelefono(cliente.telefono);
   return telefono ? `${telefono} - ${cliente.nombre}` : cliente.nombre;
 };
 
@@ -199,9 +200,16 @@ type ClientePedido = {
   id?: number | null;
   nombre: string;
   telefono?: string | null;
+  correo?: string | null;
 };
 
 const normalizeTelefono = (value?: string | null) => `${value || ""}`.replace(/\D/g, "");
+
+const formatTelefono = (value?: string | null) => {
+  const digits = normalizeTelefono(value).slice(0, 8);
+  if (digits.length <= 4) return digits;
+  return `${digits.slice(0, 4)}-${digits.slice(4)}`;
+};
 
 const escapeInputValue = (value?: string | null) =>
   `${value || ""}`
@@ -382,6 +390,7 @@ export default function PedidoNuevo() {
   const [colores, setColores] = useState<any[]>([]);
   const [clienteId, setClienteId] = useState<number | "">("");
   const [clienteTelefono, setClienteTelefono] = useState("");
+  const [clienteCorreo, setClienteCorreo] = useState("");
   const [clienteNombre, setClienteNombre] = useState("Mostrador");
   const [bodegaId, setBodegaId] = useState<number | "">("");
   const [ubicacion, setUbicacion] = useState<string>("TIENDA");
@@ -486,7 +495,8 @@ export default function PedidoNuevo() {
     }
     setClienteId(cliente.id);
     setClienteNombre(cliente.nombre || "Mostrador");
-    setClienteTelefono(`${cliente.telefono || ""}`.trim());
+    setClienteTelefono(formatTelefono(cliente.telefono));
+    setClienteCorreo(`${cliente.correo || ""}`.trim().toLowerCase());
   };
 
   const buscarClientePorTelefono = (telefono: string) => {
@@ -510,7 +520,8 @@ export default function PedidoNuevo() {
   };
 
   const manejarTelefonoCliente = (value: string) => {
-    setClienteTelefono(value);
+    const formatted = formatTelefono(value);
+    setClienteTelefono(formatted);
     const encontrado = buscarClientePorTelefono(value);
     if (encontrado) {
       sincronizarCliente(encontrado);
@@ -534,7 +545,8 @@ export default function PedidoNuevo() {
     }
     if (postventaSeleccionada.clienteNombre) {
       setClienteNombre(postventaSeleccionada.clienteNombre);
-      setClienteTelefono(`${postventaSeleccionada.clienteTelefono || ""}`.trim());
+      setClienteTelefono(formatTelefono(postventaSeleccionada.clienteTelefono));
+      setClienteCorreo("");
       if (clienteId !== "" && Number(clienteId) > 0) setClienteId("");
     }
   }, [postventaSeleccionada, clienteId]);
@@ -595,6 +607,7 @@ export default function PedidoNuevo() {
     if (!pedidoParaStock) return;
     setClienteId("");
     setClienteTelefono("");
+    setClienteCorreo("");
     setClienteNombre("Pedido para stock");
     setPostventaId("");
     setPostventaCobro("normal");
@@ -1021,6 +1034,7 @@ export default function PedidoNuevo() {
       if (current) {
         setMetodoPago("efectivo");
         setClienteNombre("Mostrador");
+        setClienteCorreo("");
       }
       return !current;
     });
@@ -1053,8 +1067,8 @@ export default function PedidoNuevo() {
       title: "Registrar cliente",
       html: `
         <input id="cliente-nombre" class="swal2-input" placeholder="Nombre" value="${escapeInputValue(datosIniciales.nombre)}">
-        <input id="cliente-telefono" class="swal2-input" placeholder="Telefono" value="${escapeInputValue(datosIniciales.telefono)}">
-        <input id="cliente-correo" class="swal2-input" placeholder="Correo (opcional)">
+        <input id="cliente-telefono" class="swal2-input" placeholder="Telefono" value="${escapeInputValue(formatTelefono(datosIniciales.telefono))}">
+        <input id="cliente-correo" class="swal2-input" placeholder="Correo (opcional)" value="${escapeInputValue(datosIniciales.correo?.toLowerCase())}">
         <input id="cliente-direccion" class="swal2-input" placeholder="Direccion (opcional)">
       `,
       focusConfirm: false,
@@ -1063,8 +1077,8 @@ export default function PedidoNuevo() {
       cancelButtonText: "Cancelar",
       preConfirm: () => {
         const nombre = (document.getElementById("cliente-nombre") as HTMLInputElement | null)?.value.trim() || "";
-        const telefono = (document.getElementById("cliente-telefono") as HTMLInputElement | null)?.value.trim() || "";
-        const correo = (document.getElementById("cliente-correo") as HTMLInputElement | null)?.value.trim() || "";
+        const telefono = formatTelefono((document.getElementById("cliente-telefono") as HTMLInputElement | null)?.value || "");
+        const correo = ((document.getElementById("cliente-correo") as HTMLInputElement | null)?.value.trim() || "").toLowerCase();
         const direccion = (document.getElementById("cliente-direccion") as HTMLInputElement | null)?.value.trim() || "";
         if (!nombre) {
           Swal.showValidationMessage("Ingresa el nombre del cliente");
@@ -1091,7 +1105,8 @@ export default function PedidoNuevo() {
 
   const resolverClientePedido = async (): Promise<ClientePedido | false> => {
     const nombreCliente = clienteNombre.trim() || "Mostrador";
-    const telefono = clienteTelefono.trim();
+    const telefono = formatTelefono(clienteTelefono);
+    const correoCliente = clienteCorreo.trim().toLowerCase();
     const mostrador = !telefono && nombreCliente.toLowerCase() === "mostrador";
     const seleccionado =
       clienteId !== "" && Number(clienteId) > 0
@@ -1108,7 +1123,8 @@ export default function PedidoNuevo() {
       return {
         id: existente.id,
         nombre: existente.nombre,
-        telefono: existente.telefono || null,
+        telefono: formatTelefono(existente.telefono) || null,
+        correo: correoCliente || `${existente.correo || ""}`.trim().toLowerCase() || null,
       };
     }
 
@@ -1117,6 +1133,7 @@ export default function PedidoNuevo() {
         id: null,
         nombre: "Mostrador",
         telefono: null,
+        correo: correoCliente || null,
       };
     }
 
@@ -1139,16 +1156,18 @@ export default function PedidoNuevo() {
         id: null,
         nombre: nombreCliente,
         telefono: telefono || null,
+        correo: correoCliente || null,
       };
     }
 
     try {
-      const creado = await mostrarFormularioRegistroCliente({ nombre: nombreCliente, telefono });
+      const creado = await mostrarFormularioRegistroCliente({ nombre: nombreCliente, telefono, correo: correoCliente });
       if (!creado) return false;
       return {
         id: creado.id,
         nombre: creado.nombre,
-        telefono: creado.telefono || null,
+        telefono: formatTelefono(creado.telefono) || null,
+        correo: `${creado.correo || ""}`.trim().toLowerCase() || null,
       };
     } catch (error: any) {
       const msg = error?.response?.data?.message || error?.message || "No se pudo registrar el cliente";
@@ -1192,7 +1211,7 @@ export default function PedidoNuevo() {
     }
 
     const clienteParaPedido = pedidoParaStock
-      ? { id: null, nombre: "Pedido para stock", telefono: null }
+      ? { id: null, nombre: "Pedido para stock", telefono: null, correo: null }
       : await resolverClientePedido();
     if (clienteParaPedido === false) return;
 
@@ -1202,6 +1221,7 @@ export default function PedidoNuevo() {
       clienteId: clienteParaPedido.id && Number(clienteParaPedido.id) > 0 ? Number(clienteParaPedido.id) : null,
       clienteNombre: clienteParaPedido.nombre,
       clienteTelefono: clienteParaPedido.telefono || null,
+      clienteCorreo: clienteParaPedido.correo || null,
       bodegaId: Number(bodegaId),
       ubicacion: pedidoParaStock ? "TIENDA" : ubicacion,
       observaciones: postventaSeleccionada
@@ -1274,7 +1294,7 @@ export default function PedidoNuevo() {
       clienteNombre.trim() ||
       clientes.find((c) => c.id === (clienteId === "" ? null : Number(clienteId)))?.nombre ||
       "Mostrador";
-    const clienteTelefonoPdf = clienteSnapshot?.telefono || clienteTelefono.trim();
+    const clienteTelefonoPdf = formatTelefono(clienteSnapshot?.telefono || clienteTelefono);
     const bodegaNombre = bodegas.find((b) => b.id === Number(bodegaId))?.nombre || "N/D";
     const logoUrl = uniformaLogo;
     const filasHtml = detalle
@@ -1427,7 +1447,7 @@ export default function PedidoNuevo() {
       clienteNombre.trim() ||
       clientes.find((c) => c.id === (clienteId === "" ? null : Number(clienteId)))?.nombre ||
       "Mostrador";
-    const clienteTelefonoPdf = clienteSnapshot?.telefono || clienteTelefono.trim();
+    const clienteTelefonoPdf = formatTelefono(clienteSnapshot?.telefono || clienteTelefono);
     const bodegaNombre = bodegas.find((b) => b.id === Number(bodegaId))?.nombre || "N/D";
     const logoUrl = uniformaLogo;
     const filasHtml = detalle
@@ -1569,7 +1589,7 @@ export default function PedidoNuevo() {
             freeSolo
             options={clientes.filter((cliente) => `${cliente.telefono || ""}`.trim())}
             getOptionLabel={(option) =>
-              typeof option === "string" ? option : `${option.telefono || ""}`.trim()
+              typeof option === "string" ? formatTelefono(option) : formatTelefono(option.telefono)
             }
             filterOptions={filterClienteOptions}
             inputValue={clienteTelefono}
@@ -1589,6 +1609,7 @@ export default function PedidoNuevo() {
               }
               setClienteId("");
               setClienteTelefono("");
+              setClienteCorreo("");
             }}
             renderOption={(props, option) => (
               <li {...props}>{formatClienteOption(option)}</li>
@@ -1618,6 +1639,18 @@ export default function PedidoNuevo() {
                 }
               }}
               helperText="Se guardara con el pedido"
+            />
+          </Grid>
+        )}
+        {!pedidoParaStock && (
+          <Grid size={{ xs: 12, sm: 3 }}>
+            <TextField
+              label="Correo del cliente"
+              type="email"
+              fullWidth
+              value={clienteCorreo}
+              onChange={(e) => setClienteCorreo(e.target.value.toLowerCase())}
+              helperText="Se usara para enviar el tracking"
             />
           </Grid>
         )}
