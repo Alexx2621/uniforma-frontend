@@ -438,7 +438,7 @@ export default function Usuarios() {
         <DialogContent sx={{ pt: 2 }}>
           <Stack spacing={2}>
             <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-              <TextField label="Primer nombre" value={primerNombre} onChange={(e) => setPrimerNombre(e.target.value)} fullWidth autoFocus disabled={!canManage} />
+              <TextField label="Primer nombre" value={primerNombre} onChange={(e) => setPrimerNombre(e.target.value)} fullWidth disabled={!canManage} />
               <TextField label="Segundo nombre" value={segundoNombre} onChange={(e) => setSegundoNombre(e.target.value)} fullWidth disabled={!canManage} />
             </Stack>
             <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>

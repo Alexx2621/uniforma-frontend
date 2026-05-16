@@ -412,7 +412,7 @@ export default function Clientes() {
         <DialogTitle>{editing ? "Editar cliente" : "Nuevo cliente"}</DialogTitle>
         <DialogContent sx={{ pt: 2 }}>
           <Stack spacing={2}>
-            <TextField label="Nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} fullWidth autoFocus disabled={!canManage} />
+            <TextField label="Nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} fullWidth disabled={!canManage} />
             <TextField label="Telefono" value={telefono} onChange={(e) => setTelefono(e.target.value)} fullWidth disabled={!canManage} />
             <TextField label="Correo" type="email" value={correo} onChange={(e) => setCorreo(e.target.value)} fullWidth disabled={!canManage} />
             <TextField label="Direccion" value={direccion} onChange={(e) => setDireccion(e.target.value)} fullWidth disabled={!canManage} />

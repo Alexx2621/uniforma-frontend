@@ -1,4 +1,4 @@
-import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, ReactNode, use, useEffect, useMemo, useState } from "react";
 import { CssBaseline } from "@mui/material";
 import { ThemeProvider } from "@mui/material/styles";
 import type { PaletteMode } from "@mui/material";
@@ -48,7 +48,7 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
 }
 
 export function useThemeMode() {
-  const context = useContext(ThemeModeContext);
+  const context = use(ThemeModeContext);
   if (!context) {
     throw new Error("useThemeMode debe usarse dentro de AppThemeProvider");
   }

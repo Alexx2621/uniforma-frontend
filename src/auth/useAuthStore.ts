@@ -1,5 +1,19 @@
 import { create } from 'zustand';
 
+const PERMISOS_STORAGE_KEY = 'permisos:v1';
+
+const readStoredPermisos = () => {
+  try {
+    return JSON.parse(
+      localStorage.getItem(PERMISOS_STORAGE_KEY) ||
+        localStorage.getItem('permisos') ||
+        '[]',
+    );
+  } catch {
+    return [];
+  }
+};
+
 interface AuthState {
   token: string | null;
   usuario: string | null;
@@ -32,7 +46,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   fotoUrl: localStorage.getItem('fotoUrl'),
   rol: localStorage.getItem('rol'),
   rolId: Number(localStorage.getItem('rolId') || '') || null,
-  permisos: JSON.parse(localStorage.getItem('permisos') || '[]'),
+  permisos: readStoredPermisos(),
   bodegaId: localStorage.getItem('bodegaId'),
   bodegaNombre: localStorage.getItem('bodegaNombre'),
   id: Number(localStorage.getItem('id') || '') || null,
@@ -48,7 +62,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     localStorage.setItem('fotoUrl', data.fotoUrl ?? '');
     localStorage.setItem('rol', data.rol);
     localStorage.setItem('rolId', data.rolId != null ? String(data.rolId) : '');
-    localStorage.setItem('permisos', JSON.stringify(data.permisos || []));
+    localStorage.setItem(PERMISOS_STORAGE_KEY, JSON.stringify(data.permisos || []));
+    localStorage.removeItem('permisos');
     localStorage.setItem('id', data.id != null ? String(data.id) : '');
     if (data.bodegaId !== undefined) {
       localStorage.setItem('bodegaId', data.bodegaId);
@@ -104,7 +119,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       localStorage.setItem('rolId', data.rolId != null ? String(data.rolId) : '');
     }
     if (data.permisos !== undefined) {
-      localStorage.setItem('permisos', JSON.stringify(data.permisos || []));
+      localStorage.setItem(PERMISOS_STORAGE_KEY, JSON.stringify(data.permisos || []));
+      localStorage.removeItem('permisos');
     }
     if (data.id !== undefined) {
       localStorage.setItem('id', data.id != null ? String(data.id) : '');

@@ -403,13 +403,13 @@ export default function Admin() {
   const [selectedUserDisabledPathsDraft, setSelectedUserDisabledPathsDraft] = useState<string[]>([]);
   const [mensajeActualizacion, setMensajeActualizacion] = useState("");
   const [productMassConfigDraft, setProductMassConfigDraft] = useState<ProductMassConfigDraft>(
-    createEmptyMassConfigDraft()
+    () => createEmptyMassConfigDraft()
   );
   const [productBulkUpdateDraft, setProductBulkUpdateDraft] = useState<ProductBulkUpdateDraft>(
-    createEmptyBulkUpdateDraft()
+    () => createEmptyBulkUpdateDraft()
   );
   const [productBulkCreateDraft, setProductBulkCreateDraft] = useState<ProductBulkCreateDraft>(
-    createEmptyBulkCreateDraft()
+    () => createEmptyBulkCreateDraft()
   );
   const {
     disabledPaths,

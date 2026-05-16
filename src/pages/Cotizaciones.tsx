@@ -577,7 +577,8 @@ const buildCotizacionHtml = ({
 export default function Cotizaciones() {
   const { nombre, usuario, rol, rolId, id: userId } = useAuthStore();
   const { vendedorDropdownRoleIds, vendedorDropdownBodegaIds, fetchConfig } = useSystemConfigStore();
-  const location = useLocation();
+  const { state: routeState } = useLocation();
+  const sidebarClickAt = (routeState as any)?.sidebarClickAt;
   const [documentos, setDocumentos] = useState<DocumentoGenerado[]>([]);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [filtroUsuarioId, setFiltroUsuarioId] = useState<number | null | "">("");
@@ -589,8 +590,8 @@ export default function Cotizaciones() {
   const [dirigidoA, setDirigidoA] = useState("");
   const [cliente, setCliente] = useState("");
   const [entrega, setEntrega] = useState("7 DÍAS HÁBILES UNA VEZ RECIBIDO EL ANTICIPO.");
-  const [fecha, setFecha] = useState(todayInput());
-  const [ejecutivo, setEjecutivo] = useState(nombre || usuario || "");
+  const [fecha, setFecha] = useState(() => todayInput());
+  const [ejecutivo, setEjecutivo] = useState(() => nombre || usuario || "");
   const [celular, setCelular] = useState("");
   const [items, setItems] = useState<CotizacionItem[]>([
     {
@@ -675,11 +676,11 @@ export default function Cotizaciones() {
   }, [cargarDocumentos]);
 
   useEffect(() => {
-    if ((location.state as any)?.sidebarClickAt) {
+    if (sidebarClickAt) {
       setShowForm(false);
       void cargarDocumentos();
     }
-  }, [location.state, cargarDocumentos]);
+  }, [sidebarClickAt, cargarDocumentos]);
 
   const resetForm = async () => {
     setDocumentoId(null);

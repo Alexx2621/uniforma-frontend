@@ -386,7 +386,8 @@ export default function ReporteDiario() {
   const today = toDateOnly(new Date());
   const { nombre, primerNombre, primerApellido, usuario, rol, rolId, id: userId } = useAuthStore();
   const { vendedorDropdownRoleIds, vendedorDropdownBodegaIds, reportesConfig, loaded: configLoaded, fetchConfig } = useSystemConfigStore();
-  const location = useLocation();
+  const { state: routeState } = useLocation();
+  const sidebarClickAt = (routeState as any)?.sidebarClickAt;
   const [documentos, setDocumentos] = useState<DocumentoGenerado[]>([]);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [filtroUsuarioId, setFiltroUsuarioId] = useState<number | null | "">("");
@@ -494,11 +495,11 @@ export default function ReporteDiario() {
   }, [cargarDocumentos]);
 
   useEffect(() => {
-    if ((location.state as any)?.sidebarClickAt) {
+    if (sidebarClickAt) {
       setShowForm(false);
       void cargarDocumentos();
     }
-  }, [location.state, cargarDocumentos]);
+  }, [sidebarClickAt, cargarDocumentos]);
 
   const documentosFiltrados = useMemo(
     () =>

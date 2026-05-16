@@ -46,22 +46,31 @@ export default function ModalVenta({ open, onClose, onSaved }: Props) {
       const resp = await api.get(`/productos/codigo/${busqueda}`);
       const prod = resp.data;
 
-      const existe = detalle.find((d) => d.productoId === prod.id);
+      setDetalle((prev) => {
+        const existe = prev.find((d) => d.productoId === prod.id);
+        if (existe) {
+          return prev.map((item) => {
+            if (item.productoId !== prod.id) return item;
+            const cantidad = Number(item.cantidad || 0) + 1;
+            return {
+              ...item,
+              cantidad,
+              subtotal: cantidad * Number(item.precio || 0),
+            };
+          });
+        }
 
-      if (existe) {
-        existe.cantidad++;
-        existe.subtotal = existe.cantidad * existe.precio;
-        setDetalle([...detalle]);
-      } else {
-        detalle.push({
-          productoId: prod.id,
-          nombre: prod.nombre,
-          precio: prod.precio,
-          cantidad: 1,
-          subtotal: prod.precio,
-        });
-        setDetalle([...detalle]);
-      }
+        return [
+          ...prev,
+          {
+            productoId: prod.id,
+            nombre: prod.nombre,
+            precio: prod.precio,
+            cantidad: 1,
+            subtotal: prod.precio,
+          },
+        ];
+      });
 
       setBusqueda("");
     } catch {
@@ -69,15 +78,18 @@ export default function ModalVenta({ open, onClose, onSaved }: Props) {
     }
   };
 
-  const actualizarCantidad = (i: number, cantidad: number) => {
-    detalle[i].cantidad = cantidad;
-    detalle[i].subtotal = cantidad * detalle[i].precio;
-    setDetalle([...detalle]);
+  const actualizarCantidad = (productoId: number, cantidad: number) => {
+    setDetalle((prev) =>
+      prev.map((item) =>
+        item.productoId === productoId
+          ? { ...item, cantidad, subtotal: cantidad * Number(item.precio || 0) }
+          : item
+      )
+    );
   };
 
-  const eliminarItem = (i: number) => {
-    detalle.splice(i, 1);
-    setDetalle([...detalle]);
+  const eliminarItem = (productoId: number) => {
+    setDetalle((prev) => prev.filter((item) => item.productoId !== productoId));
   };
 
   const total = detalle.reduce((acc, r) => acc + r.subtotal, 0);
@@ -117,7 +129,7 @@ export default function ModalVenta({ open, onClose, onSaved }: Props) {
               fullWidth
               value={form.clienteId}
               onChange={(e) =>
-                setForm({ ...form, clienteId: e.target.value })
+                setForm((prev) => ({ ...prev, clienteId: e.target.value }))
               }
             >
               {clientes.map((c) => (
@@ -136,7 +148,7 @@ export default function ModalVenta({ open, onClose, onSaved }: Props) {
               fullWidth
               value={form.metodoPago}
               onChange={(e) =>
-                setForm({ ...form, metodoPago: e.target.value })
+                setForm((prev) => ({ ...prev, metodoPago: e.target.value }))
               }
             >
               <MenuItem value="EFECTIVO">Efectivo</MenuItem>
@@ -154,7 +166,7 @@ export default function ModalVenta({ open, onClose, onSaved }: Props) {
               rows={2}
               value={form.observaciones}
               onChange={(e) =>
-                setForm({ ...form, observaciones: e.target.value })
+                setForm((prev) => ({ ...prev, observaciones: e.target.value }))
               }
             />
           </Grid>
@@ -187,8 +199,8 @@ export default function ModalVenta({ open, onClose, onSaved }: Props) {
             </tr>
           </thead>
           <tbody>
-            {detalle.map((r, i) => (
-              <tr key={i}>
+            {detalle.map((r) => (
+              <tr key={r.productoId}>
                 <td>{r.nombre}</td>
                 <td>Q {r.precio}</td>
                 <td>
@@ -197,14 +209,14 @@ export default function ModalVenta({ open, onClose, onSaved }: Props) {
                     value={r.cantidad}
                     min={1}
                     onChange={(e) =>
-                      actualizarCantidad(i, Number(e.target.value))
+                      actualizarCantidad(r.productoId, Number(e.target.value))
                     }
                     style={{ width: 60 }}
                   />
                 </td>
                 <td>Q {r.subtotal}</td>
                 <td>
-                  <Button color="error" onClick={() => eliminarItem(i)}>
+                  <Button color="error" onClick={() => eliminarItem(r.productoId)}>
                     X
                   </Button>
                 </td>

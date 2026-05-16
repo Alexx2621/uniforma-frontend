@@ -237,7 +237,6 @@ export default function Bodegas() {
               value={nombre}
               onChange={(e) => setNombre(e.target.value)}
               fullWidth
-              autoFocus
               disabled={!canManage}
             />
             <TextField

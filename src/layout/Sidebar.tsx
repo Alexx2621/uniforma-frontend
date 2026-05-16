@@ -27,7 +27,7 @@ interface Props {
 
 export default function Sidebar({ open, width, onToggle }: Props) {
   const navigate = useNavigate();
-  const location = useLocation();
+  const { pathname } = useLocation();
   const [openMap, setOpenMap] = useState<Record<string, boolean>>({});
   const collapsed = !open;
   const { disabledPaths, userDisabledPaths, fetchConfig } = useSystemConfigStore();
@@ -51,8 +51,8 @@ export default function Sidebar({ open, width, onToggle }: Props) {
   };
 
   const isActive = useMemo(
-    () => (path?: string) => (path ? location.pathname.startsWith(path) : false),
-    [location.pathname]
+    () => (path?: string) => (path ? pathname.startsWith(path) : false),
+    [pathname]
   );
 
   const renderItem = (item: MenuItem) => {

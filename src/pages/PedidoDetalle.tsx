@@ -415,7 +415,7 @@ export default function PedidoDetalle() {
   if (!pedido) {
     return (
       <Paper sx={{ p: 3 }}>
-        <Typography>Cargando...</Typography>
+        <Typography>Cargando…</Typography>
       </Paper>
     );
   }
@@ -716,8 +716,8 @@ export default function PedidoDetalle() {
             </TableRow>
           </TableHead>
           <TableBody>
-            {pedido.detalle.map((d, idx) => (
-              <TableRow key={idx}>
+            {pedido.detalle.map((d) => (
+              <TableRow key={`${d.productoId}-${d.producto?.codigo || ""}-${d.descripcion || ""}`}>
                 <TableCell>{d.producto?.codigo}</TableCell>
                 <TableCell>{d.producto?.tipo || d.producto?.nombre || "N/D"}</TableCell>
                 <TableCell>{d.producto?.genero || "N/D"}</TableCell>

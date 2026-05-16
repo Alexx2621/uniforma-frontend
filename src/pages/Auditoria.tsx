@@ -78,7 +78,7 @@ export default function Auditoria() {
   const [usuarioFiltro, setUsuarioFiltro] = useState("");
   const [textoFiltro, setTextoFiltro] = useState("");
   const [desde, setDesde] = useState("");
-  const [hasta, setHasta] = useState(todayDate());
+  const [hasta, setHasta] = useState(() => todayDate());
   const [selectedLog, setSelectedLog] = useState<ActivityLog | null>(null);
 
   const cargar = useCallback(async () => {

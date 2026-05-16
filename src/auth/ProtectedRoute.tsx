@@ -13,21 +13,21 @@ interface Props {
 
 export const ProtectedRoute = ({ children }: Props) => {
   const { token, usuario, rol, permisos } = useAuthStore();
-  const location = useLocation();
+  const { pathname } = useLocation();
   const { disabledPaths, userDisabledPaths, loaded, fetchConfig } = useSystemConfigStore();
   const usuarioKey = (usuario || "").trim().toUpperCase();
   const effectiveDisabledPaths = [
     ...disabledPaths,
     ...(userDisabledPaths[usuarioKey] || []),
   ];
-  const blocked = loaded && !isModuleAccessible(location.pathname, effectiveDisabledPaths);
-  const permissionBlocked = !hasPermission(rol, permisos, getRequiredPermission(location.pathname));
+  const blocked = loaded && !isModuleAccessible(pathname, effectiveDisabledPaths);
+  const permissionBlocked = !hasPermission(rol, permisos, getRequiredPermission(pathname));
 
   useEffect(() => {
     if (token) {
       void fetchConfig();
     }
-  }, [token, location.pathname, fetchConfig]);
+  }, [token, pathname, fetchConfig]);
 
   useEffect(() => {
     if (blocked) {

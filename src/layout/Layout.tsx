@@ -3,14 +3,14 @@ import { Box } from "@mui/material";
 import { Outlet } from "react-router-dom";
 import Navbar from "./Navbar";
 import Sidebar from "./Sidebar";
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { IconButton, Tooltip } from "@mui/material";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const drawerWidth = useMemo(() => (sidebarOpen ? 240 : 72), [sidebarOpen]);
+  const drawerWidth = sidebarOpen ? 240 : 72;
 
   return (
     <Box sx={{ display: "flex", minHeight: "100vh", backgroundColor: "background.default" }}>

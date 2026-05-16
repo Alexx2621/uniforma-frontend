@@ -60,9 +60,9 @@ export default function Ventas() {
   const [loading, setLoading] = useState(false);
   const [filterCliente, setFilterCliente] = useState("");
   const [filterCodigo, setFilterCodigo] = useState("");
-  const [fechaDesde, setFechaDesde] = useState(toDateOnly(new Date().toISOString()));
-  const [fechaHasta, setFechaHasta] = useState(toDateOnly(new Date().toISOString()));
-  const [cierreFecha, setCierreFecha] = useState(toDateOnly(new Date().toISOString()));
+  const [fechaDesde, setFechaDesde] = useState(() => toDateOnly(new Date().toISOString()));
+  const [fechaHasta, setFechaHasta] = useState(() => toDateOnly(new Date().toISOString()));
+  const [cierreFecha, setCierreFecha] = useState(() => toDateOnly(new Date().toISOString()));
   const { usuario, rol, rolId, bodegaId: userBodegaId } = useAuthStore();
   const { crossStoreRoleIds, fetchConfig } = useSystemConfigStore();
   const navigate = useNavigate();

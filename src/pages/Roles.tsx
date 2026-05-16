@@ -298,7 +298,6 @@ export default function Roles() {
               value={nombre}
               onChange={(e) => setNombre(e.target.value)}
               fullWidth
-              autoFocus
               disabled={Boolean(editing)}
               helperText={editing ? "El nombre del rol no se puede modificar" : undefined}
             />

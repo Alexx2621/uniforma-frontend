@@ -29,8 +29,9 @@ export default function Login() {
     password: "",
   });
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
+  const updateLoginField = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setForm((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -222,7 +223,7 @@ export default function Login() {
                   type="email"
                   fullWidth
                   value={form.correo}
-                  onChange={handleChange}
+                  onChange={updateLoginField}
                   autoComplete="email"
                   InputProps={{
                     startAdornment: (
@@ -253,7 +254,7 @@ export default function Login() {
                   type="password"
                   fullWidth
                   value={form.password}
-                  onChange={handleChange}
+                  onChange={updateLoginField}
                   autoComplete="current-password"
                   InputProps={{
                     startAdornment: (

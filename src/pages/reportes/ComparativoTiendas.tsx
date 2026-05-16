@@ -157,8 +157,8 @@ export default function ComparativoTiendas() {
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [postventa, setPostventa] = useState<Postventa[]>([]);
   const [inventario, setInventario] = useState<Inventario[]>([]);
-  const [desde, setDesde] = useState(daysAgo(30));
-  const [hasta, setHasta] = useState(today());
+  const [desde, setDesde] = useState(() => daysAgo(30));
+  const [hasta, setHasta] = useState(() => today());
   const [loading, setLoading] = useState(false);
 
   const cargar = async () => {

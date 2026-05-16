@@ -76,10 +76,12 @@ export default function Productos() {
 
   const cargarCatalogos = async () => {
     try {
-      const respCat = await api.get("/categorias");
-      const respTel = await api.get("/telas");
-      const respCol = await api.get("/colores");
-      const respTal = await api.get("/tallas");
+      const [respCat, respTel, respCol, respTal] = await Promise.all([
+        api.get("/categorias"),
+        api.get("/telas"),
+        api.get("/colores"),
+        api.get("/tallas"),
+      ]);
 
       setCategorias(respCat.data);
       setTelas(respTel.data);

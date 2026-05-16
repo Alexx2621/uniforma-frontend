@@ -119,6 +119,11 @@ const toDateKey = (year: number, month: number, day: number) =>
 
 const asArray = (value: unknown): any[] => (Array.isArray(value) ? value : []);
 
+const getUsuarioFilterId = (value: number | string | null) => {
+  const id = Number(value || 0);
+  return Number.isInteger(id) && id > 0 ? id : undefined;
+};
+
 const getTiendaRowTotal = (row: any) =>
   Number(row?.total || 0) ||
   Number(row?.transferencia || 0) + Number(row?.tarjeta || 0) + Number(row?.efectivo || 0);
@@ -360,12 +365,13 @@ const buildReporteQuincenalHtml = ({
 };
 
 export default function ReporteQuincenal() {
-  const currentDate = new Date();
+  const currentDate = useMemo(() => new Date(), []);
   const today = toDateKey(currentDate.getFullYear(), currentDate.getMonth() + 1, currentDate.getDate());
   const currentQuincena = currentDate.getDate() <= 15 ? "1" : "2";
   const { bodegaNombre, usuario, nombre, primerNombre, primerApellido, rol, rolId, id: userId } = useAuthStore();
   const { vendedorDropdownRoleIds, vendedorDropdownBodegaIds, loaded: configLoaded, fetchConfig } = useSystemConfigStore();
-  const location = useLocation();
+  const { state: routeState } = useLocation();
+  const sidebarClickAt = (routeState as any)?.sidebarClickAt;
   const [documentos, setDocumentos] = useState<DocumentoGenerado[]>([]);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [filtroUsuarioId, setFiltroUsuarioId] = useState<number | null | "">("");
@@ -378,7 +384,7 @@ export default function ReporteQuincenal() {
     .trim()
     .toUpperCase();
   const [month, setMonth] = useState(currentDate.getMonth() + 1);
-  const [year, setYear] = useState(currentDate.getFullYear());
+  const [year, setYear] = useState(() => currentDate.getFullYear());
   const [metaMes, setMetaMes] = useState(130000);
   const [promedioDiario, setPromedioDiario] = useState(9000);
   const [quincena, setQuincena] = useState<"1" | "2">(currentQuincena);
@@ -389,6 +395,7 @@ export default function ReporteQuincenal() {
 
   const isAdmin = rol === "ADMIN";
   const canUseDropdown = canUseVendedorDropdown(rol, rolId, vendedorDropdownRoleIds);
+  const filtroUsuarioSeleccionadoId = getUsuarioFilterId(filtroUsuarioId);
   const usuariosDropdown = useMemo(
     () => (isAdmin ? usuarios : filterUsuariosByBodega(usuarios, vendedorDropdownBodegaIds)),
     [isAdmin, usuarios, vendedorDropdownBodegaIds]
@@ -413,15 +420,15 @@ export default function ReporteQuincenal() {
       }
       if (!canUseDropdown) {
         params.usuarioId = userId;
-      } else if (typeof filtroUsuarioId === 'number') {
-        params.usuarioId = filtroUsuarioId;
+      } else if (filtroUsuarioSeleccionadoId) {
+        params.usuarioId = filtroUsuarioSeleccionadoId;
       }
       const resp = await api.get("/documentos", { params });
       setDocumentos(resp.data || []);
     } catch {
       Swal.fire("Error", "No se pudieron cargar los reportes quincenales generados", "error");
     }
-  }, [filtroUsuarioId, canUseDropdown, userId, configLoaded]);
+  }, [filtroUsuarioSeleccionadoId, canUseDropdown, userId, configLoaded]);
 
   useEffect(() => {
     void fetchConfig();
@@ -439,11 +446,11 @@ export default function ReporteQuincenal() {
   }, [cargarDocumentos]);
 
   useEffect(() => {
-    if ((location.state as any)?.sidebarClickAt) {
+    if (sidebarClickAt) {
       setShowForm(false);
       void cargarDocumentos();
     }
-  }, [location.state, cargarDocumentos]);
+  }, [sidebarClickAt, cargarDocumentos]);
 
   const documentosFiltrados = useMemo(
     () =>
@@ -451,13 +458,13 @@ export default function ReporteQuincenal() {
         const docFecha = String(doc.creadoEn || "").slice(0, 10);
         if (filtroDesde && docFecha < filtroDesde) return false;
         if (filtroHasta && docFecha > filtroHasta) return false;
-        if (!isAdmin && canUseDropdown && vendedorDropdownBodegaIds.length && typeof filtroUsuarioId !== "number") {
+        if (!isAdmin && canUseDropdown && vendedorDropdownBodegaIds.length && !filtroUsuarioSeleccionadoId) {
           const bodegaId = Number(doc.usuario?.bodegaId);
           if (!Number.isFinite(bodegaId) || !vendedorDropdownBodegaIds.includes(bodegaId)) return false;
         }
         return true;
       }),
-    [documentos, filtroDesde, filtroHasta, canUseDropdown, filtroUsuarioId, isAdmin, vendedorDropdownBodegaIds]
+    [documentos, filtroDesde, filtroHasta, canUseDropdown, filtroUsuarioSeleccionadoId, isAdmin, vendedorDropdownBodegaIds]
   );
 
   const documentosGridRows = useMemo(
@@ -559,7 +566,11 @@ export default function ReporteQuincenal() {
       const quincenaRows = getRows(year, month, quincena);
       const fechasQuincena = new Set(quincenaRows.map((row) => toDateKey(year, month, row.day)));
       const params: any = { tipo: "reporteDiario" };
-      if (userId) params.usuarioId = userId;
+      if (!canUseDropdown) {
+        if (userId) params.usuarioId = userId;
+      } else if (filtroUsuarioSeleccionadoId) {
+        params.usuarioId = filtroUsuarioSeleccionadoId;
+      }
       const resp = await api.get("/documentos", { params });
       const reportesDiarios = Array.isArray(resp.data) ? resp.data : [];
       const ventasEncontradas: Record<number, number> = {};
@@ -568,8 +579,8 @@ export default function ReporteQuincenal() {
         const fechaReporte = `${doc?.data?.fecha || ""}`.slice(0, 10);
         if (!fechasQuincena.has(fechaReporte)) continue;
         const day = Number(fechaReporte.slice(8, 10));
-        if (!Number.isInteger(day) || ventasEncontradas[day] !== undefined) continue;
-        ventasEncontradas[day] = getReporteDiarioTotal(doc.data || {});
+        if (!Number.isInteger(day)) continue;
+        ventasEncontradas[day] = Number(ventasEncontradas[day] || 0) + getReporteDiarioTotal(doc.data || {});
       }
 
       if (!Object.keys(ventasEncontradas).length) {
