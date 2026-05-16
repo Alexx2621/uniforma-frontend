@@ -117,6 +117,14 @@ const getRows = (year: number, month: number, quincena: "1" | "2"): QuincenaRow[
 const toDateKey = (year: number, month: number, day: number) =>
   `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 
+const toLocalDateKey = (value?: string | Date | null) => {
+  if (!value) return "";
+  const date = typeof value === "string" ? new Date(value) : new Date(value);
+  if (Number.isNaN(date.getTime())) return `${value}`.slice(0, 10);
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 10);
+};
+
 const asArray = (value: unknown): any[] => (Array.isArray(value) ? value : []);
 
 const getUsuarioFilterId = (value: number | string | null) => {
@@ -453,7 +461,7 @@ export default function ReporteQuincenal() {
   const documentosFiltrados = useMemo(
     () =>
       documentos.filter((doc) => {
-        const docFecha = String(doc.creadoEn || "").slice(0, 10);
+        const docFecha = toLocalDateKey(doc.creadoEn);
         if (filtroDesde && docFecha < filtroDesde) return false;
         if (filtroHasta && docFecha > filtroHasta) return false;
         if (!isAdmin && canUseDropdown && vendedorDropdownBodegaIds.length && !filtroUsuarioSeleccionadoId) {
