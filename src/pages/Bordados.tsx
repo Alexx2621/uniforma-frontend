@@ -84,6 +84,7 @@ const BORDADO_ESTADO_COLORS: Record<string, { bg: string; color: string; border:
   "EN COLA": { bg: "#fff8e1", color: "#8a5a00", border: "#ffca28" },
   BORDANDO: { bg: "#f3e5f5", color: "#6a1b9a", border: "#ce93d8" },
   ENVIADO: { bg: "#e8f5e9", color: "#1b5e20", border: "#81c784" },
+  ANULADO: { bg: "#ffebee", color: "#b71c1c", border: "#ef9a9a" },
   VARIOS: { bg: "#eceff1", color: "#263238", border: "#b0bec5" },
 };
 const getFolio = (pedido: PedidoBordado) => pedido.folio || `P-${pedido.id}`;
@@ -91,6 +92,8 @@ const getCliente = (pedido: PedidoBordado) => pedido.clienteNombre || pedido.cli
 const getUsuario = (pedido: PedidoBordado) => pedido.usuario?.nombre || pedido.solicitadoPor || pedido.usuario?.usuario || "N/D";
 const getProducto = (detalle: DetalleBordado) => detalle.producto?.nombre || detalle.descripcion || `Producto #${detalle.productoId}`;
 const getEstadoBordado = (detalle: DetalleBordado) => detalle.bordadoEstado || "EN PRODUCCION";
+const isPedidoAnulado = (pedido?: Pick<PedidoBordado, "estado"> | null) =>
+  `${pedido?.estado || ""}`.trim().toLowerCase() === "anulado";
 const money = (value: number) => `Q ${Number(value || 0).toFixed(2)}`;
 const safeText = (value?: string | null) => `${value || ""}`.trim() || "N/D";
 const getTodayInputValue = () => {
@@ -191,6 +194,10 @@ export default function Bordados() {
 
   const guardar = async () => {
     if (!selected) return;
+    if (isPedidoAnulado(selected)) {
+      Swal.fire("Pedido anulado", "No se puede actualizar el seguimiento de bordado de un pedido anulado", "info");
+      return;
+    }
     if (!canEditSeguimiento) {
       Swal.fire("Acceso restringido", "Solo ADMIN o BORDADOR pueden actualizar el seguimiento de bordado", "warning");
       return;
@@ -223,6 +230,7 @@ export default function Bordados() {
         totalPrendasBordado: (pedido.detalle || []).reduce((sum, item) => sum + Number(item.cantidad || 0), 0),
         totalLineasBordado: pedido.detalle?.length || 0,
         estadoBordadoDisplay: (() => {
+          if (isPedidoAnulado(pedido)) return "ANULADO";
           const estados = Array.from(new Set((pedido.detalle || []).map((item) => getEstadoBordado(item))));
           return estados.length === 1 ? estados[0] : "VARIOS";
         })(),
@@ -376,7 +384,15 @@ export default function Bordados() {
                 <Chip label={getCliente(selected)} />
                 <Chip label={selected.bodega?.nombre || "N/D"} variant="outlined" />
                 <Chip label={getUsuario(selected)} variant="outlined" />
+                {isPedidoAnulado(selected) && (
+                  <Chip label="Anulado" variant="outlined" sx={estadoChipSx("ANULADO")} />
+                )}
               </Stack>
+              {isPedidoAnulado(selected) && (
+                <Typography color="error" fontWeight={700}>
+                  Este pedido esta anulado. El seguimiento de bordado queda solo en modo consulta.
+                </Typography>
+              )}
               <Box sx={{ overflowX: "auto" }}>
                 <Table size="small">
                   <TableHead>
@@ -396,6 +412,7 @@ export default function Bordados() {
                   <TableBody>
                     {(selected.detalle || []).map((detalle) => {
                       const draft = drafts[detalle.id] || {};
+                      const readOnly = !canEditSeguimiento || isPedidoAnulado(selected);
                       return (
                         <TableRow key={detalle.id} hover>
                           <TableCell>
@@ -446,7 +463,7 @@ export default function Bordados() {
                                 label="Estado"
                                 value={draft.bordadoEstado || "EN PRODUCCION"}
                                 onChange={(event) => updateDraft(detalle.id, { bordadoEstado: event.target.value })}
-                                disabled={!canEditSeguimiento}
+                                disabled={readOnly}
                                 renderValue={(value) => (
                                   <Chip size="small" label={`${value}`} variant="outlined" sx={estadoChipSx(`${value}`)} />
                                 )}
@@ -467,7 +484,7 @@ export default function Bordados() {
                               value={draft.bordadoFechaEntrega || ""}
                               onChange={(event) => updateDraft(detalle.id, { bordadoFechaEntrega: event.target.value })}
                               InputLabelProps={{ shrink: true }}
-                              disabled={!canEditSeguimiento}
+                              disabled={readOnly}
                               sx={{ minWidth: 170 }}
                             />
                           </TableCell>
@@ -481,8 +498,8 @@ export default function Bordados() {
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setSelected(null)}>{canEditSeguimiento ? "Cancelar" : "Cerrar"}</Button>
-          {canEditSeguimiento && (
+          <Button onClick={() => setSelected(null)}>{canEditSeguimiento && !isPedidoAnulado(selected) ? "Cancelar" : "Cerrar"}</Button>
+          {canEditSeguimiento && !isPedidoAnulado(selected) && (
             <Button variant="contained" startIcon={<SaveOutlined />} onClick={guardar} disabled={saving}>
               Guardar
             </Button>
