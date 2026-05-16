@@ -421,7 +421,7 @@ export default function ReporteQuincenal() {
   const cargarDocumentos = useCallback(async () => {
     try {
       if (!configLoaded) return;
-      const params: any = { tipo: "reporteQuincenal" };
+      const params: any = { tipo: "reporteQuincenal", _ts: Date.now() };
       if (!canUseDropdown && !userId) {
         setDocumentos([]);
         return;
@@ -532,7 +532,7 @@ export default function ReporteQuincenal() {
   };
 
   const descargarDocumentoPdf = async (doc: DocumentoGenerado) => {
-    const resp = await api.get(`/documentos/${doc.id}/pdf`, {
+    const resp = await api.get(`/documentos/${doc.id}/pdf?t=${Date.now()}`, {
       responseType: "blob",
     });
     const url = window.URL.createObjectURL(new Blob([resp.data], { type: "application/pdf" }));
@@ -571,7 +571,7 @@ export default function ReporteQuincenal() {
       setRellenando(true);
       const quincenaRows = getRows(year, month, quincena);
       const fechasQuincena = new Set(quincenaRows.map((row) => toDateKey(year, month, row.day)));
-      const params: any = { tipo: "reporteDiario" };
+      const params: any = { tipo: "reporteDiario", _ts: Date.now() };
       if (!canUseDropdown) {
         if (userId) params.usuarioId = userId;
       } else if (filtroUsuarioSeleccionadoId) {
