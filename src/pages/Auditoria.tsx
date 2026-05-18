@@ -47,6 +47,7 @@ const getActivityTargetLabel = (log?: ActivityLog | null) => {
 
   if (endpoint === "/auth/login") return "Acceso al sistema";
   if (endpoint === "/documentos") return "Cierres y reportes";
+  if (parts[0] === "correcciones") return "Correcciones controladas";
   if (endpoint === "/inventario/reporte/pdf") return "Reporte de inventario";
   if (parts[0] === "documentos" && parts[1]) return `Documento #${parts[1]}`;
   if (parts[0] === "produccion" && parts[1] === "unificados") return parts[2] ? `Unificado #${parts[2]}` : "Pedidos unificados";

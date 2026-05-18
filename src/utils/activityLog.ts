@@ -23,6 +23,7 @@ export const getActivityLogActionLabel = (log: ActivityLog) => {
   if (endpoint === "/documentos" && method === "POST") return "Genero cierre/reporte";
   if (endpoint.startsWith("/documentos") && method === "PATCH") return "Edito cierre/reporte";
   if (endpoint.startsWith("/documentos") && method === "DELETE") return "Elimino cierre/reporte";
+  if (endpoint.startsWith("/correcciones") && method === "PATCH") return "Aplico correccion controlada";
   if (endpoint === "/produccion" && method === "POST") return "Creo pedido";
   if (endpoint.startsWith("/produccion") && method === "POST") return "Actualizo pedido";
 

@@ -27,6 +27,7 @@ import GestureOutlined from "@mui/icons-material/GestureOutlined";
 import AssignmentReturnOutlined from "@mui/icons-material/AssignmentReturnOutlined";
 import SwapHorizOutlined from "@mui/icons-material/SwapHorizOutlined";
 import ManageSearchOutlined from "@mui/icons-material/ManageSearchOutlined";
+import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
 import LocalShippingOutlined from "@mui/icons-material/LocalShippingOutlined";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import { whatsappFeatureEnabled } from "../config/features";
@@ -117,6 +118,7 @@ export const menuSections: MenuSection[] = [
       { label: "Configuracion", icon: <SettingsOutlined />, path: "/admin" },
       ...(whatsappFeatureEnabled ? [{ label: "WhatsApp Business", icon: <WhatsAppIcon />, path: "/whatsapp/config" }] : []),
       { label: "Auditoria", icon: <ManageSearchOutlined />, path: "/auditoria" },
+      { label: "Correcciones", icon: <FactCheckOutlined />, path: "/correcciones" },
     ],
   },
   {

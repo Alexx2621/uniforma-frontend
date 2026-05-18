@@ -22,6 +22,7 @@ import Cotizaciones from "./pages/Cotizaciones";
 import Usuarios from "./pages/Usuarios";
 import Admin from "./pages/Admin";
 import Auditoria from "./pages/Auditoria";
+import Correcciones from "./pages/Correcciones";
 import Correlativos from "./pages/Correlativos";
 import WhatsappConfig from "./pages/WhatsappConfig";
 import Roles from "./pages/Roles";
@@ -79,6 +80,7 @@ export default function App() {
           <Route path="/roles" element={<Roles />} />
           <Route path="/admin" element={<Admin />} />
           <Route path="/auditoria" element={<Auditoria />} />
+          <Route path="/correcciones" element={<Correcciones />} />
           {whatsappFeatureEnabled && <Route path="/whatsapp/config" element={<WhatsappConfig />} />}
           <Route path="/correlativos" element={<Correlativos />} />
           <Route path="/produccion/correlativos" element={<Correlativos />} />
