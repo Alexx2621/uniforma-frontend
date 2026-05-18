@@ -26,6 +26,7 @@ import AssignmentReturnOutlined from "@mui/icons-material/AssignmentReturnOutlin
 import { useNavigate, useParams } from "react-router-dom";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
+import { hasPermission } from "../auth/permissions";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../utils/fontFamily";
@@ -284,8 +285,8 @@ const getPagoAplicado = (pago: Pago) => Number(pago.monto || 0) + Number(pago.re
 export default function PedidoDetalle() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { rol, rolId, bodegaId: userBodegaId } = useAuthStore();
-  const { crossStoreRoleIds, fetchConfig } = useSystemConfigStore();
+  const { rol, permisos, bodegaId: userBodegaId } = useAuthStore();
+  const { fetchConfig } = useSystemConfigStore();
   const [pedido, setPedido] = useState<Pedido | null>(null);
   const [loading, setLoading] = useState(false);
   const [bodegas, setBodegas] = useState<any[]>([]);
@@ -294,7 +295,7 @@ export default function PedidoDetalle() {
   const [tallas, setTallas] = useState<any[]>([]);
   const [colores, setColores] = useState<any[]>([]);
   const [historial, setHistorial] = useState<ActivityLog[]>([]);
-  const canAccessAllBodegas = rol === "ADMIN" || crossStoreRoleIds.includes(Number(rolId));
+  const canAccessAllBodegas = hasPermission(rol, permisos, "sistema.multi-tienda");
 
   const cargar = useCallback(async () => {
     if (!id) return;

@@ -12,6 +12,7 @@ import {
   TableBody,
   TableCell,
   TableHead,
+  TablePagination,
   TableRow,
   TextField,
   Typography,
@@ -23,6 +24,7 @@ import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
 import { whatsappFeatureEnabled } from "../config/features";
+import { useTablePagination } from "../utils/useTablePagination";
 
 interface WhatsappConfigRow {
   id: number;
@@ -45,6 +47,7 @@ export default function WhatsappConfig() {
   const [savingId, setSavingId] = useState<number | null>(null);
 
   const canManage = whatsappFeatureEnabled && rol === "ADMIN";
+  const { paginatedRows, paginationProps } = useTablePagination(rows, 10);
 
   const cargar = async () => {
     try {
@@ -144,7 +147,7 @@ export default function WhatsappConfig() {
             </TableRow>
           </TableHead>
           <TableBody>
-            {rows.map((row) => {
+            {paginatedRows.map((row) => {
               const current = draft[row.id] || { whatsappBusinessNumber: "", whatsappPhoneNumberId: "" };
               const configured = Boolean(current.whatsappBusinessNumber && current.whatsappPhoneNumberId);
               return (
@@ -208,6 +211,7 @@ export default function WhatsappConfig() {
             )}
           </TableBody>
         </Table>
+        <TablePagination {...paginationProps} />
       </Box>
     </Paper>
   );

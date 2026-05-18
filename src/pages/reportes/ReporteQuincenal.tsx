@@ -376,7 +376,7 @@ export default function ReporteQuincenal() {
   const currentDate = useMemo(() => new Date(), []);
   const today = toDateKey(currentDate.getFullYear(), currentDate.getMonth() + 1, currentDate.getDate());
   const currentQuincena = currentDate.getDate() <= 15 ? "1" : "2";
-  const { bodegaNombre, usuario, nombre, primerNombre, primerApellido, rol, rolId, id: userId } = useAuthStore();
+  const { bodegaNombre, usuario, nombre, primerNombre, primerApellido, rol, rolId, permisos, id: userId } = useAuthStore();
   const { vendedorDropdownRoleIds, vendedorDropdownBodegaIds, loaded: configLoaded, fetchConfig } = useSystemConfigStore();
   const { state: routeState } = useLocation();
   const sidebarClickAt = (routeState as any)?.sidebarClickAt;
@@ -402,7 +402,7 @@ export default function ReporteQuincenal() {
   const [generandoPdf, setGenerandoPdf] = useState(false);
 
   const isAdmin = rol === "ADMIN";
-  const canUseDropdown = canUseVendedorDropdown(rol, rolId, vendedorDropdownRoleIds);
+  const canUseDropdown = canUseVendedorDropdown(rol, rolId, vendedorDropdownRoleIds, permisos);
   const filtroUsuarioSeleccionadoId = getUsuarioFilterId(filtroUsuarioId);
   const usuariosDropdown = useMemo(
     () => (isAdmin ? usuarios : filterUsuariosByBodega(usuarios, vendedorDropdownBodegaIds)),

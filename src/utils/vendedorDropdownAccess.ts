@@ -7,8 +7,10 @@ export const canUseVendedorDropdown = (
   rol: string | null | undefined,
   rolId: number | string | null | undefined,
   allowedRoleIds: number[],
+  permisos: string[] | null | undefined = [],
 ) => {
   if (`${rol || ""}`.trim().toUpperCase() === "ADMIN") return true;
+  if (permisos?.includes("sistema.selector-vendedores")) return true;
   const currentRoleId = Number(rolId);
   return Number.isFinite(currentRoleId) && allowedRoleIds.includes(currentRoleId);
 };

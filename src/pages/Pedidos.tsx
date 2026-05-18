@@ -26,6 +26,7 @@ import { useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
 import { io, Socket } from "socket.io-client";
 import { api } from "../api/axios";
+import { hasPermission } from "../auth/permissions";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import TransactionRelationMap, { RelationEdge, RelationNode } from "../components/TransactionRelationMap";
@@ -319,10 +320,10 @@ export default function Pedidos() {
   const navigate = useNavigate();
   const cargandoPedidosRef = useRef(false);
   const pedidosSocketRef = useRef<Socket | null>(null);
-  const { rol, rolId, bodegaId: userBodegaId } = useAuthStore();
-  const { crossStoreRoleIds, unifyOrderRoleIds, fetchConfig } = useSystemConfigStore();
-  const canAccessAllBodegas = rol === "ADMIN" || crossStoreRoleIds.includes(Number(rolId));
-  const canUnifyPedidos = rol === "ADMIN" || unifyOrderRoleIds.includes(Number(rolId));
+  const { rol, permisos, bodegaId: userBodegaId } = useAuthStore();
+  const { fetchConfig } = useSystemConfigStore();
+  const canAccessAllBodegas = hasPermission(rol, permisos, "sistema.multi-tienda");
+  const canUnifyPedidos = hasPermission(rol, permisos, "produccion.unificar");
 
   const [relationModalOpen, setRelationModalOpen] = useState(false);
   const [relationModalData, setRelationModalData] = useState<{ nodes: RelationNodeItem[]; edges: RelationEdgeItem[] } | null>(null);

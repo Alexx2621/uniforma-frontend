@@ -13,6 +13,7 @@ import {
   TableCell,
   TableContainer,
   TableHead,
+  TablePagination,
   TableRow,
   IconButton,
   FormControl,
@@ -32,6 +33,7 @@ import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import LOGO_URL from "../assets/cotizacion-logo.png";
 import { PDF_FONT_BOLD_FAMILY, PDF_FONT_FAMILY } from "../utils/fontFamily";
 import { canUseVendedorDropdown, filterUsuariosByBodega } from "../utils/vendedorDropdownAccess";
+import { useTablePagination } from "../utils/useTablePagination";
 
 interface CotizacionItem {
   key: number;
@@ -575,7 +577,7 @@ const buildCotizacionHtml = ({
 };
 
 export default function Cotizaciones() {
-  const { nombre, usuario, rol, rolId, id: userId } = useAuthStore();
+  const { nombre, usuario, rol, rolId, permisos, id: userId } = useAuthStore();
   const { vendedorDropdownRoleIds, vendedorDropdownBodegaIds, fetchConfig } = useSystemConfigStore();
   const { state: routeState } = useLocation();
   const sidebarClickAt = (routeState as any)?.sidebarClickAt;
@@ -610,7 +612,7 @@ export default function Cotizaciones() {
   const [validez, setValidez] = useState("COTIZACIÓN CON VALIDEZ DE 3 DÍAS.");
 
   const isAdmin = rol === "ADMIN";
-  const canUseDropdown = canUseVendedorDropdown(rol, rolId, vendedorDropdownRoleIds);
+  const canUseDropdown = canUseVendedorDropdown(rol, rolId, vendedorDropdownRoleIds, permisos);
   const usuariosDropdown = useMemo(
     () => (isAdmin ? usuarios : filterUsuariosByBodega(usuarios, vendedorDropdownBodegaIds)),
     [isAdmin, usuarios, vendedorDropdownBodegaIds]
@@ -635,6 +637,8 @@ export default function Cotizaciones() {
       }),
     [documentos, filtroDesde, filtroHasta, canUseDropdown, filtroUsuarioId, isAdmin, vendedorDropdownBodegaIds]
   );
+  const { paginatedRows: documentosPaginados, paginationProps: documentosPaginationProps } =
+    useTablePagination(documentosFiltrados, 10);
 
   const cargarSiguienteCotizacion = async () => {
     try {
@@ -868,7 +872,7 @@ export default function Cotizaciones() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {documentosFiltrados.map((doc) => (
+              {documentosPaginados.map((doc) => (
                 <TableRow key={doc.id}>
                   <TableCell>{doc.correlativo}</TableCell>
                   <TableCell>{doc.titulo || doc.data?.cliente || "Sin cliente"}</TableCell>
@@ -893,6 +897,7 @@ export default function Cotizaciones() {
             </TableBody>
           </Table>
         </TableContainer>
+        <TablePagination {...documentosPaginationProps} />
       </Paper>
     );
   }

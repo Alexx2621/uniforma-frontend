@@ -15,7 +15,6 @@ import ExpandMore from "@mui/icons-material/ExpandMore";
 import { useEffect, useMemo, useState } from "react";
 import { menuSections, MenuItem } from "./menuItems";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
-import { isModuleAccessible } from "../config/moduleAccess";
 import { useAuthStore } from "../auth/useAuthStore";
 import { canAccessPath, getRequiredPermission, hasPermission } from "../auth/permissions";
 
@@ -30,13 +29,8 @@ export default function Sidebar({ open, width, onToggle }: Props) {
   const { pathname } = useLocation();
   const [openMap, setOpenMap] = useState<Record<string, boolean>>({});
   const collapsed = !open;
-  const { disabledPaths, userDisabledPaths, fetchConfig } = useSystemConfigStore();
-  const { usuario, rol, permisos } = useAuthStore();
-  const usuarioKey = (usuario || "").trim().toUpperCase();
-  const effectiveDisabledPaths = useMemo(
-    () => [...disabledPaths, ...(userDisabledPaths[usuarioKey] || [])],
-    [disabledPaths, userDisabledPaths, usuarioKey]
-  );
+  const { fetchConfig } = useSystemConfigStore();
+  const { rol, permisos } = useAuthStore();
 
   useEffect(() => {
     void fetchConfig();
@@ -58,19 +52,16 @@ export default function Sidebar({ open, width, onToggle }: Props) {
   const renderItem = (item: MenuItem) => {
     const visibleChildren =
       item.children?.filter(
-        (child) =>
-          (!child.path || isModuleAccessible(child.path, effectiveDisabledPaths)) &&
-          canAccessPath(rol, permisos, child.path)
+        (child) => canAccessPath(rol, permisos, child.path)
       ) || [];
     const hasChildren = visibleChildren.length > 0;
     if (!hasChildren && !item.path) return null;
-    if (item.path && (!isModuleAccessible(item.path, effectiveDisabledPaths) || !canAccessPath(rol, permisos, item.path))) {
+    if (item.path && !canAccessPath(rol, permisos, item.path)) {
       return null;
     }
     const open = openMap[item.label] ?? isActive(item.path);
-    const disabledByConfig = item.path ? !isModuleAccessible(item.path, effectiveDisabledPaths) : false;
     const disabledByPermission = item.path ? !hasPermission(rol, permisos, getRequiredPermission(item.path)) : false;
-    const disabled = disabledByConfig || disabledByPermission;
+    const disabled = disabledByPermission;
 
     return (
       <Box key={item.label}>
@@ -102,11 +93,10 @@ export default function Sidebar({ open, width, onToggle }: Props) {
           <Collapse in={open} timeout="auto" unmountOnExit>
             <List component="div" disablePadding>
               {visibleChildren.map((child) => {
-                const childDisabledByConfig = child.path ? !isModuleAccessible(child.path, effectiveDisabledPaths) : false;
                 const childDisabledByPermission = child.path
                   ? !hasPermission(rol, permisos, getRequiredPermission(child.path))
                   : false;
-                const childDisabled = childDisabledByConfig || childDisabledByPermission;
+                const childDisabled = childDisabledByPermission;
                 return (
                 <ListItemButton
                   key={child.label}

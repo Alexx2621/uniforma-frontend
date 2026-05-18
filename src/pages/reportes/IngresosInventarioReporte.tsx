@@ -13,6 +13,7 @@ import {
   TableRow,
   TableCell,
   TableBody,
+  TablePagination,
   Chip,
   FormControl,
   InputLabel,
@@ -29,6 +30,7 @@ import { api } from "../../api/axios";
 import LOGO_URL from "../../assets/3-logos.png";
 import UniformaTableLoadingRow from "../../components/UniformaTableLoadingRow";
 import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../../utils/fontFamily";
+import { useTablePagination } from "../../utils/useTablePagination";
 import { buildIngresoInventarioPdfHtml } from "../../utils/inventarioPdf";
 
 interface DetalleIngreso {
@@ -261,6 +263,7 @@ export default function IngresosInventarioReporte() {
   };
 
   const totalItems = filas.reduce((sum, r) => sum + r.items, 0);
+  const { paginatedRows, paginationProps } = useTablePagination(filas, 10);
 
   return (
     <Paper sx={{ p: 3 }}>
@@ -365,7 +368,7 @@ export default function IngresosInventarioReporte() {
           <TableBody>
             {loading ? (
               <UniformaTableLoadingRow colSpan={6} />
-            ) : filas.map((row) => (
+            ) : paginatedRows.map((row) => (
               <TableRow key={row.folio}>
                 <TableCell>{row.folio}</TableCell>
                 <TableCell>{row.fecha}</TableCell>
@@ -390,6 +393,7 @@ export default function IngresosInventarioReporte() {
           </TableBody>
         </Table>
       </TableContainer>
+      <TablePagination {...paginationProps} />
     </Paper>
   );
 }

@@ -26,6 +26,7 @@ import EditOutlined from "@mui/icons-material/EditOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
+import { hasPermission } from "../auth/permissions";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import LOGO_URL from "../assets/3-logos.png";
@@ -127,9 +128,9 @@ export default function IngresoInventario() {
   const [filtroTalla, setFiltroTalla] = useState("");
   const [filtroColor, setFiltroColor] = useState("");
 
-  const { usuario, rol, rolId, bodegaId: userBodegaId } = useAuthStore();
-  const { crossStoreRoleIds, fetchConfig } = useSystemConfigStore();
-  const canAccessAllBodegas = rol === "ADMIN" || crossStoreRoleIds.includes(Number(rolId));
+  const { usuario, rol, permisos, bodegaId: userBodegaId } = useAuthStore();
+  const { fetchConfig } = useSystemConfigStore();
+  const canAccessAllBodegas = hasPermission(rol, permisos, "sistema.multi-tienda");
 
   const cargarCatalogos = async () => {
     try {

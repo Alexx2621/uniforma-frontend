@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   Paper,
   Box,
@@ -14,9 +14,6 @@ import {
   FormControlLabel,
   Button,
   Divider,
-  List,
-  ListItem,
-  ListItemText,
   IconButton,
   MenuItem,
   Checkbox,
@@ -26,7 +23,6 @@ import {
 } from "@mui/material";
 import SaveOutlined from "@mui/icons-material/SaveOutlined";
 import NotificationsActiveOutlined from "@mui/icons-material/NotificationsActiveOutlined";
-import TuneOutlined from "@mui/icons-material/TuneOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
@@ -35,7 +31,6 @@ import ScheduleOutlined from "@mui/icons-material/ScheduleOutlined";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
-import { menuPathItems } from "../layout/menuItems";
 import { useAuthStore } from "../auth/useAuthStore";
 import { hasPermission } from "../auth/permissions";
 import { UniformaLoader } from "../components/UniformaLoader";
@@ -54,9 +49,6 @@ interface NotifConfig {
   stockThreshold: number;
   highSaleThreshold: number;
   pedidoAlertRoleIds: number[];
-  crossStoreRoleIds: number[];
-  unifyOrderRoleIds: number[];
-  vendedorDropdownRoleIds: number[];
   vendedorDropdownBodegaIds: number[];
   salesInventoryEnabled: boolean;
   emailEnabled: boolean;
@@ -79,12 +71,6 @@ interface NotifConfig {
   fortnightlyReportEmailTo: string;
   fortnightlyReportSubject: string;
   productMassConfig?: unknown;
-}
-
-interface UsuarioModulo {
-  id: number;
-  usuario: string;
-  nombre: string;
 }
 
 interface RolOption {
@@ -361,9 +347,6 @@ export default function Admin() {
     stockThreshold: 5,
     highSaleThreshold: 1000,
     pedidoAlertRoleIds: [],
-    crossStoreRoleIds: [],
-    unifyOrderRoleIds: [],
-    vendedorDropdownRoleIds: [],
     vendedorDropdownBodegaIds: [],
     salesInventoryEnabled: true,
     emailEnabled: false,
@@ -386,21 +369,13 @@ export default function Admin() {
     fortnightlyReportSubject: "Reporte quincenal {periodo}",
   });
   const [savedPedidoAlertRoleIds, setSavedPedidoAlertRoleIds] = useState<number[]>([]);
-  const [savedCrossStoreRoleIds, setSavedCrossStoreRoleIds] = useState<number[]>([]);
-  const [savedUnifyOrderRoleIds, setSavedUnifyOrderRoleIds] = useState<number[]>([]);
-  const [savedVendedorDropdownRoleIds, setSavedVendedorDropdownRoleIds] = useState<number[]>([]);
   const [savedVendedorDropdownBodegaIds, setSavedVendedorDropdownBodegaIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
   const [loaderPreviewOpen, setLoaderPreviewOpen] = useState(false);
-  const [usuarios, setUsuarios] = useState<UsuarioModulo[]>([]);
   const [roles, setRoles] = useState<RolOption[]>([]);
   const [bodegas, setBodegas] = useState<BodegaOption[]>([]);
-  const [disabledPathsDraft, setDisabledPathsDraft] = useState<string[]>([]);
   const [smtpPassDraft, setSmtpPassDraft] = useState('');
   const [resendApiKeyDraft, setResendApiKeyDraft] = useState('');
-  const [userDisabledPathsDraft, setUserDisabledPathsDraft] = useState<Record<string, string[]>>({});
-  const [selectedUsuario, setSelectedUsuario] = useState("");
-  const [selectedUserDisabledPathsDraft, setSelectedUserDisabledPathsDraft] = useState<string[]>([]);
   const [mensajeActualizacion, setMensajeActualizacion] = useState("");
   const [productMassConfigDraft, setProductMassConfigDraft] = useState<ProductMassConfigDraft>(
     () => createEmptyMassConfigDraft()
@@ -412,9 +387,6 @@ export default function Admin() {
     () => createEmptyBulkCreateDraft()
   );
   const {
-    disabledPaths,
-    userDisabledPaths,
-    setDisabledPaths,
     fetchConfig,
   } = useSystemConfigStore();
   const { rol, permisos } = useAuthStore();
@@ -434,26 +406,11 @@ export default function Admin() {
     [bodegas]
   );
 
-  const modulesBySection = useMemo(() => {
-    const grouped = new Map<string, typeof menuPathItems>();
-    menuPathItems.forEach((item) => {
-      const key = item.sectionTitle || "GENERAL";
-      const current = grouped.get(key) || [];
-      current.push(item);
-      grouped.set(key, current);
-    });
-    return Array.from(grouped.entries()).map(([section, items]) => ({
-      section,
-      items,
-    }));
-  }, []);
-
   const cargar = useCallback(async () => {
     try {
       setLoading(true);
-      const [respConfig, respUsuarios, respRoles, respBodegas] = await Promise.all([
+      const [respConfig, respRoles, respBodegas] = await Promise.all([
         api.get("/config/notificaciones"),
-        canManageAdmin ? api.get("/usuarios").catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
         canManageAdmin ? api.get("/roles").catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
         canManageAdmin ? api.get("/bodegas").catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
       ]);
@@ -490,9 +447,6 @@ export default function Admin() {
         stockThreshold: data.stockThreshold ?? 5,
         highSaleThreshold: data.highSaleThreshold ?? 1000,
         pedidoAlertRoleIds: normalizeRoleIds(data.pedidoAlertRoleIds),
-        crossStoreRoleIds: normalizeRoleIds(data.crossStoreRoleIds),
-        unifyOrderRoleIds: normalizeRoleIds(data.unifyOrderRoleIds),
-        vendedorDropdownRoleIds: normalizeRoleIds(data.vendedorDropdownRoleIds),
         vendedorDropdownBodegaIds: normalizeRoleIds(data.vendedorDropdownBodegaIds),
         salesInventoryEnabled: data.salesInventoryEnabled !== false,
         emailEnabled: Boolean(data.emailTo),
@@ -519,25 +473,8 @@ export default function Admin() {
       setSmtpPassDraft('');
       setResendApiKeyDraft('');
       setSavedPedidoAlertRoleIds(normalizeRoleIds(data.pedidoAlertRoleIds));
-      setSavedCrossStoreRoleIds(normalizeRoleIds(data.crossStoreRoleIds));
-      setSavedUnifyOrderRoleIds(normalizeRoleIds(data.unifyOrderRoleIds));
-      setSavedVendedorDropdownRoleIds(normalizeRoleIds(data.vendedorDropdownRoleIds));
       setSavedVendedorDropdownBodegaIds(normalizeRoleIds(data.vendedorDropdownBodegaIds));
       setProductMassConfigDraft(mapMassConfigToDraft(data.productMassConfig || {}));
-      setDisabledPathsDraft(Array.isArray(data.disabledPaths) ? data.disabledPaths : []);
-      setUserDisabledPathsDraft(
-        data.userDisabledPaths && typeof data.userDisabledPaths === "object" ? data.userDisabledPaths : {}
-      );
-      const usuariosData = Array.isArray(respUsuarios.data) ? respUsuarios.data : [];
-      setUsuarios(
-        usuariosData
-          .filter((item: any) => typeof item?.usuario === "string")
-          .map((item: any) => ({
-            id: Number(item.id),
-            usuario: item.usuario,
-            nombre: item.nombre || item.usuario,
-          }))
-      );
       const rolesData = Array.isArray(respRoles.data) ? respRoles.data : [];
       setRoles(
         rolesData
@@ -569,36 +506,6 @@ export default function Admin() {
     void cargar();
   }, [fetchConfig, cargar]);
 
-  useEffect(() => {
-    setDisabledPathsDraft(disabledPaths);
-  }, [disabledPaths]);
-
-  useEffect(() => {
-    setUserDisabledPathsDraft(userDisabledPaths);
-  }, [userDisabledPaths]);
-
-  useEffect(() => {
-    if (!usuarios.length) {
-      setSelectedUsuario("");
-      return;
-    }
-
-    const exists = usuarios.some((item) => item.usuario === selectedUsuario);
-    if (!selectedUsuario || !exists) {
-      setSelectedUsuario(usuarios[0].usuario);
-    }
-  }, [usuarios, selectedUsuario]);
-
-  const selectedUsuarioKey = selectedUsuario.trim().toUpperCase();
-
-  useEffect(() => {
-    if (!selectedUsuarioKey) {
-      setSelectedUserDisabledPathsDraft([]);
-      return;
-    }
-    setSelectedUserDisabledPathsDraft(userDisabledPathsDraft[selectedUsuarioKey] || []);
-  }, [selectedUsuarioKey, userDisabledPathsDraft]);
-
   const guardar = async () => {
     try {
       setLoading(true);
@@ -608,8 +515,6 @@ export default function Admin() {
         stockThreshold: config.stockThreshold,
         highSaleThreshold: config.highSaleThreshold,
         pedidoAlertRoleIds: config.pedidoAlertRoleIds,
-        crossStoreRoleIds: config.crossStoreRoleIds,
-        unifyOrderRoleIds: config.unifyOrderRoleIds,
         salesInventoryEnabled: config.salesInventoryEnabled,
         smtpHost: config.smtpHost,
         smtpPort: config.smtpPort,
@@ -681,123 +586,24 @@ export default function Admin() {
     }
   };
 
-  const guardarRolesMultiBodega = async () => {
-    try {
-      setLoading(true);
-      const payload = {
-        crossStoreRoleIds: Array.from(
-          new Set(
-            (config.crossStoreRoleIds || [])
-              .map((value) => Number(value))
-              .filter((value) => Number.isFinite(value) && value > 0),
-          ),
-        ),
-      };
-      const { data } = await api.put("/config/notificaciones", payload);
-      const nextSavedRoleIds = normalizeRoleIds(data?.crossStoreRoleIds ?? payload.crossStoreRoleIds);
-      setConfig((prev) => ({
-        ...prev,
-        crossStoreRoleIds: nextSavedRoleIds,
-      }));
-      setSavedCrossStoreRoleIds(nextSavedRoleIds);
-      await fetchConfig();
-      await cargar();
-      Swal.fire("Guardado", "Los roles con acceso multi-bodega fueron actualizados", "success");
-    } catch {
-      Swal.fire("Error", "No se pudieron guardar los roles con acceso multi-bodega", "error");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const guardarRolesUnificarPedidos = async () => {
-    try {
-      setLoading(true);
-      const payload = {
-        unifyOrderRoleIds: Array.from(
-          new Set(
-            (config.unifyOrderRoleIds || [])
-              .map((value) => Number(value))
-              .filter((value) => Number.isFinite(value) && value > 0),
-          ),
-        ),
-      };
-      const { data } = await api.put("/config/notificaciones", payload);
-      const nextSavedRoleIds = normalizeRoleIds(data?.unifyOrderRoleIds ?? payload.unifyOrderRoleIds);
-      setConfig((prev) => ({
-        ...prev,
-        unifyOrderRoleIds: nextSavedRoleIds,
-      }));
-      setSavedUnifyOrderRoleIds(nextSavedRoleIds);
-      await fetchConfig();
-      await cargar();
-      Swal.fire("Guardado", "Los roles con permiso para unificar pedidos fueron actualizados", "success");
-    } catch {
-      Swal.fire("Error", "No se pudieron guardar los roles con permiso para unificar pedidos", "error");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const guardarModulos = async () => {
-    try {
-      setLoading(true);
-      await setDisabledPaths(disabledPathsDraft);
-      Swal.fire("Guardado", "La configuracion de modulos fue actualizada", "success");
-    } catch {
-      Swal.fire("Error", "No se pudo guardar la configuracion de modulos", "error");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const guardarModulosPorUsuario = async () => {
-    if (!selectedUsuarioKey) return;
-    try {
-      setLoading(true);
-      const nextUserDisabledPaths = {
-        ...userDisabledPathsDraft,
-        [selectedUsuarioKey]: selectedUserDisabledPathsDraft,
-      };
-      await api.put("/config/notificaciones", {
-        userDisabledPaths: nextUserDisabledPaths,
-      });
-      await fetchConfig();
-      setUserDisabledPathsDraft(nextUserDisabledPaths);
-      Swal.fire(
-        "Guardado",
-        `La configuracion de modulos para ${selectedUsuarioKey} fue actualizada`,
-        "success"
-      );
-    } catch {
-      Swal.fire("Error", "No se pudo guardar la configuracion por usuario", "error");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const guardarAccesoDropdownVendedores = async () => {
     try {
       setLoading(true);
       const payload = {
-        vendedorDropdownRoleIds: normalizeRoleIds(config.vendedorDropdownRoleIds),
         vendedorDropdownBodegaIds: normalizeRoleIds(config.vendedorDropdownBodegaIds),
       };
       const { data } = await api.put("/config/notificaciones", payload);
-      const nextRoleIds = normalizeRoleIds(data?.vendedorDropdownRoleIds ?? payload.vendedorDropdownRoleIds);
       const nextBodegaIds = normalizeRoleIds(data?.vendedorDropdownBodegaIds ?? payload.vendedorDropdownBodegaIds);
       setConfig((prev) => ({
         ...prev,
-        vendedorDropdownRoleIds: nextRoleIds,
         vendedorDropdownBodegaIds: nextBodegaIds,
       }));
-      setSavedVendedorDropdownRoleIds(nextRoleIds);
       setSavedVendedorDropdownBodegaIds(nextBodegaIds);
       await fetchConfig();
       await cargar();
-      Swal.fire("Guardado", "El acceso al selector de vendedores fue actualizado", "success");
+      Swal.fire("Guardado", "El alcance del selector de vendedores fue actualizado", "success");
     } catch {
-      Swal.fire("Error", "No se pudo guardar el acceso al selector de vendedores", "error");
+      Swal.fire("Error", "No se pudo guardar el alcance del selector de vendedores", "error");
     } finally {
       setLoading(false);
     }
@@ -836,21 +642,6 @@ export default function Admin() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const togglePath = (path: string, enabled: boolean) => {
-    setDisabledPathsDraft((prev) =>
-      enabled ? prev.filter((item) => item !== path) : Array.from(new Set([...prev, path]))
-    );
-  };
-
-  const toggleUserPath = (path: string, enabled: boolean) => {
-    if (!selectedUsuarioKey) return;
-    const current = selectedUserDisabledPathsDraft;
-    const nextPaths = enabled
-      ? current.filter((item) => item !== path)
-      : Array.from(new Set([...current, path]));
-    setSelectedUserDisabledPathsDraft(nextPaths);
   };
 
   const ejecutarCargaMasivaProductos = async () => {
@@ -1241,74 +1032,6 @@ export default function Admin() {
 
       {canManageAdmin && (
         <SettingsSection
-          title="Modulos del sistema"
-          description="Activa o desactiva modulos globales y submodulos del menu."
-          icon={<TuneOutlined color="primary" />}
-        >
-          <Stack spacing={1.5}>
-            <Stack direction="row" spacing={1} alignItems="center">
-              <TuneOutlined color="primary" />
-              <Typography variant="h6">Modulos del sistema</Typography>
-            </Stack>
-            <Typography variant="body2" color="text.secondary">
-              Activa o desactiva modulos y submodulos globalmente. Los nuevos modulos que se agreguen al menu apareceran aqui automaticamente.
-            </Typography>
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-              <Button variant="outlined" onClick={() => setDisabledPathsDraft([])} disabled={loading}>
-                Habilitar todos
-              </Button>
-              <Button
-                variant="outlined"
-                color="warning"
-                onClick={() =>
-                  setDisabledPathsDraft(menuPathItems.map((item) => item.path).filter((path) => path !== "/" && path !== "/admin"))
-                }
-                disabled={loading}
-              >
-                Deshabilitar todos menos Dashboard y Configuracion
-              </Button>
-              <Button variant="contained" onClick={guardarModulos} disabled={loading}>
-                Guardar modulos
-              </Button>
-            </Stack>
-            <Grid container spacing={2}>
-              {modulesBySection.map((section) => (
-                <Grid key={section.section} size={{ xs: 12, md: 6 }}>
-                  <Paper variant="outlined" sx={{ p: 2, height: "100%" }}>
-                    <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                      {section.section}
-                    </Typography>
-                    <List dense disablePadding>
-                      {section.items.map((item) => {
-                        const enabled = !disabledPathsDraft.includes(item.path);
-                        const label = item.parentLabel ? `${item.parentLabel} / ${item.label}` : item.label;
-                        return (
-                          <ListItem
-                            key={item.path}
-                            disableGutters
-                            secondaryAction={
-                              <Switch
-                                edge="end"
-                                checked={enabled}
-                                onChange={(e) => togglePath(item.path, e.target.checked)}
-                              />
-                            }
-                          >
-                            <ListItemText primary={label} secondary={item.path} />
-                          </ListItem>
-                        );
-                      })}
-                    </List>
-                  </Paper>
-                </Grid>
-              ))}
-            </Grid>
-          </Stack>
-        </SettingsSection>
-      )}
-
-      {canManageAdmin && (
-        <SettingsSection
           title="Comunicados del sistema"
           description="Avisos globales para usuarios activos y cierre de sesiones cuando aplique."
           icon={<NotificationsActiveOutlined color="primary" />}
@@ -1378,50 +1101,22 @@ export default function Admin() {
 
       {canManageAdmin && (
         <SettingsSection
-          title="Acceso a vendedores"
-          description="Roles y tiendas visibles para el selector de vendedores."
+          title="Selector de vendedores"
+          description="Tiendas visibles para roles con permiso de selector de vendedores."
           icon={<NotificationsActiveOutlined color="primary" />}
         >
           <Stack spacing={1.5}>
             <Stack direction="row" spacing={1} alignItems="center">
               <NotificationsActiveOutlined color="primary" />
-              <Typography variant="subtitle2">Selector de vendedores por rol</Typography>
+              <Typography variant="subtitle2">Alcance del selector de vendedores</Typography>
             </Stack>
             <Typography variant="body2" color="text.secondary">
-              Los roles seleccionados podran ver el dropdown de vendedores. Las tiendas limitan que usuarios aparecen en ese selector.
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Roles guardados actualmente:{" "}
-              {savedVendedorDropdownRoleIds.length ? getRoleNames(savedVendedorDropdownRoleIds) : "ninguno"}
+              El permiso para usar este selector se asigna en Roles con "Selector de vendedores". Aqui solo se limita que tiendas aparecen en la lista.
             </Typography>
             <Typography variant="body2" color="text.secondary">
               Tiendas visibles actualmente:{" "}
               {savedVendedorDropdownBodegaIds.length ? getBodegaNames(savedVendedorDropdownBodegaIds) : "todas"}
             </Typography>
-            <TextField
-              select
-              fullWidth
-              label="Roles con acceso al selector"
-              value={config.vendedorDropdownRoleIds}
-              onChange={(e) =>
-                setConfig((prev) => ({
-                  ...prev,
-                  vendedorDropdownRoleIds: normalizeRoleIds(e.target.value),
-                }))
-              }
-              SelectProps={{
-                multiple: true,
-                renderValue: (selected) => getRoleNames(normalizeRoleIds(selected)),
-              }}
-              helperText="ADMIN siempre conserva acceso completo."
-            >
-              {roles.map((role) => (
-                <MenuItem key={role.id} value={role.id}>
-                  <Checkbox checked={config.vendedorDropdownRoleIds.includes(role.id)} />
-                  {role.nombre}
-                </MenuItem>
-              ))}
-            </TextField>
             <TextField
               select
               fullWidth
@@ -1452,7 +1147,7 @@ export default function Admin() {
             </TextField>
             <Stack direction="row" justifyContent="flex-end">
               <Button variant="contained" onClick={guardarAccesoDropdownVendedores} disabled={loading}>
-                Aplicar selector de vendedores
+                Guardar tiendas visibles
               </Button>
             </Stack>
           </Stack>
@@ -2002,204 +1697,6 @@ export default function Admin() {
               </Button>
               <Button variant="contained" onClick={ejecutarCreacionMasivaProductos} disabled={loading}>
                 Crear codigos
-              </Button>
-            </Stack>
-          </Stack>
-        </SettingsSection>
-      )}
-
-      {canManageAdmin && (
-        <SettingsSection
-          title="Modulos por usuario"
-          description="Restricciones especificas de acceso para usuarios puntuales."
-          icon={<TuneOutlined color="primary" />}
-        >
-          <Stack spacing={1.5}>
-            <Typography variant="subtitle2">Modulos por usuario</Typography>
-            <Typography variant="body2" color="text.secondary">
-              Define accesos especificos por usuario. Estas restricciones se suman a las restricciones globales.
-            </Typography>
-            <Grid container spacing={2}>
-              <Grid size={{ xs: 12, md: 4 }}>
-                <TextField
-                  select
-                  label="Usuario"
-                  fullWidth
-                  value={selectedUsuario}
-                  onChange={(e) => setSelectedUsuario(e.target.value)}
-                  disabled={!usuarios.length}
-                >
-                  {usuarios.map((item) => (
-                    <MenuItem key={item.id} value={item.usuario}>
-                      {item.usuario} - {item.nombre}
-                    </MenuItem>
-                  ))}
-                </TextField>
-              </Grid>
-            </Grid>
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-              <Button
-                variant="outlined"
-                disabled={!selectedUsuarioKey || loading}
-                onClick={() => setSelectedUserDisabledPathsDraft([])}
-              >
-                Habilitar todo para el usuario
-              </Button>
-              <Button
-                variant="outlined"
-                color="warning"
-                disabled={!selectedUsuarioKey || loading}
-                onClick={() =>
-                  setSelectedUserDisabledPathsDraft(
-                    menuPathItems.map((item) => item.path).filter((path) => path !== "/" && path !== "/admin")
-                  )
-                }
-              >
-                Deshabilitar todo menos Dashboard y Configuracion
-              </Button>
-              <Button variant="contained" onClick={guardarModulosPorUsuario} disabled={!selectedUsuarioKey || loading}>
-                Guardar configuracion por usuario
-              </Button>
-            </Stack>
-            <Grid container spacing={2}>
-              {modulesBySection.map((section) => (
-                <Grid key={`user-${section.section}`} size={{ xs: 12, md: 6 }}>
-                  <Paper variant="outlined" sx={{ p: 2, height: "100%" }}>
-                    <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                      {section.section}
-                    </Typography>
-                    <List dense disablePadding>
-                      {section.items.map((item) => {
-                        const enabled = !selectedUserDisabledPathsDraft.includes(item.path);
-                        const label = item.parentLabel ? `${item.parentLabel} / ${item.label}` : item.label;
-                        return (
-                          <ListItem
-                            key={`user-${selectedUsuarioKey}-${item.path}`}
-                            disableGutters
-                            secondaryAction={
-                              <Switch
-                                edge="end"
-                                checked={enabled}
-                                disabled={!selectedUsuarioKey}
-                                onChange={(e) => toggleUserPath(item.path, e.target.checked)}
-                              />
-                            }
-                          >
-                            <ListItemText primary={label} secondary={item.path} />
-                          </ListItem>
-                        );
-                      })}
-                    </List>
-                  </Paper>
-                </Grid>
-              ))}
-            </Grid>
-          </Stack>
-        </SettingsSection>
-      )}
-
-      {canManageAdmin && (
-        <SettingsSection
-          title="Acceso multi-tienda"
-          description="Roles que pueden operar con varias tiendas."
-          icon={<NotificationsActiveOutlined color="primary" />}
-        >
-          <Stack spacing={1.5}>
-            <Stack direction="row" spacing={1} alignItems="center">
-              <NotificationsActiveOutlined color="primary" />
-              <Typography variant="subtitle2">Acceso multi-tienda por rol</Typography>
-            </Stack>
-            <Typography variant="body2" color="text.secondary">
-              Los roles seleccionados podran operar con varias tiendas y elegir bodega en pantallas donde normalmente se usa la bodega asignada al usuario.
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Roles guardados actualmente:{" "}
-              {savedCrossStoreRoleIds.length ? getRoleNames(savedCrossStoreRoleIds) : "ninguno"}
-            </Typography>
-            <TextField
-              select
-              fullWidth
-              label="Roles con acceso multi-tienda"
-              value={config.crossStoreRoleIds}
-              onChange={(e) =>
-                setConfig((prev) => ({
-                  ...prev,
-                  crossStoreRoleIds: normalizeRoleIds(e.target.value),
-                }))
-              }
-              SelectProps={{
-                multiple: true,
-                renderValue: (selected) => {
-                  const ids = normalizeRoleIds(selected);
-                  return getRoleNames(ids);
-                },
-              }}
-              helperText="Se aplica especificamente con el boton de abajo."
-            >
-              {roles.map((role) => (
-                <MenuItem key={role.id} value={role.id}>
-                  <Checkbox checked={config.crossStoreRoleIds.includes(role.id)} />
-                  {role.nombre}
-                </MenuItem>
-              ))}
-            </TextField>
-            <Stack direction="row" justifyContent="flex-end">
-              <Button variant="contained" onClick={guardarRolesMultiBodega} disabled={loading}>
-                Aplicar acceso multi-tienda
-              </Button>
-            </Stack>
-          </Stack>
-        </SettingsSection>
-      )}
-
-      {canManageAdmin && (
-        <SettingsSection
-          title="Unificar pedidos"
-          description="Roles con permiso para generar pedidos unificados."
-          icon={<NotificationsActiveOutlined color="primary" />}
-        >
-          <Stack spacing={1.5}>
-            <Stack direction="row" spacing={1} alignItems="center">
-              <NotificationsActiveOutlined color="primary" />
-              <Typography variant="subtitle2">Permiso para unificar pedidos por rol</Typography>
-            </Stack>
-            <Typography variant="body2" color="text.secondary">
-              Los roles seleccionados veran habilitado el boton de unificar pedidos en produccion.
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Roles guardados actualmente:{" "}
-              {savedUnifyOrderRoleIds.length ? getRoleNames(savedUnifyOrderRoleIds) : "ninguno"}
-            </Typography>
-            <TextField
-              select
-              fullWidth
-              label="Roles con permiso para unificar pedidos"
-              value={config.unifyOrderRoleIds}
-              onChange={(e) =>
-                setConfig((prev) => ({
-                  ...prev,
-                  unifyOrderRoleIds: normalizeRoleIds(e.target.value),
-                }))
-              }
-              SelectProps={{
-                multiple: true,
-                renderValue: (selected) => {
-                  const ids = normalizeRoleIds(selected);
-                  return getRoleNames(ids);
-                },
-              }}
-              helperText="Se aplica especificamente con el boton de abajo."
-            >
-              {roles.map((role) => (
-                <MenuItem key={role.id} value={role.id}>
-                  <Checkbox checked={config.unifyOrderRoleIds.includes(role.id)} />
-                  {role.nombre}
-                </MenuItem>
-              ))}
-            </TextField>
-            <Stack direction="row" justifyContent="flex-end">
-              <Button variant="contained" onClick={guardarRolesUnificarPedidos} disabled={loading}>
-                Aplicar permiso de unificar pedidos
               </Button>
             </Stack>
           </Stack>

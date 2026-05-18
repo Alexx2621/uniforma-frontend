@@ -384,7 +384,7 @@ const hasDepartamentoRowData = (row: DepartamentoRow) =>
 
 export default function ReporteDiario() {
   const today = toDateOnly(new Date());
-  const { nombre, primerNombre, primerApellido, usuario, rol, rolId, id: userId } = useAuthStore();
+  const { nombre, primerNombre, primerApellido, usuario, rol, rolId, permisos, id: userId } = useAuthStore();
   const { vendedorDropdownRoleIds, vendedorDropdownBodegaIds, reportesConfig, loaded: configLoaded, fetchConfig } = useSystemConfigStore();
   const { state: routeState } = useLocation();
   const sidebarClickAt = (routeState as any)?.sidebarClickAt;
@@ -414,7 +414,7 @@ export default function ReporteDiario() {
   const [generandoPdf, setGenerandoPdf] = useState(false);
 
   const isAdmin = rol === "ADMIN";
-  const canUseDropdown = canUseVendedorDropdown(rol, rolId, vendedorDropdownRoleIds);
+  const canUseDropdown = canUseVendedorDropdown(rol, rolId, vendedorDropdownRoleIds, permisos);
   const usuariosDropdown = useMemo(
     () => (isAdmin ? usuarios : filterUsuariosByBodega(usuarios, vendedorDropdownBodegaIds)),
     [isAdmin, usuarios, vendedorDropdownBodegaIds]

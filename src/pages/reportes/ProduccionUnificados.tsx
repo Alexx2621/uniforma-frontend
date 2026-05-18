@@ -9,6 +9,7 @@ import {
   TableCell,
   TableContainer,
   TableHead,
+  TablePagination,
   TableRow,
   Typography,
 } from "@mui/material";
@@ -21,6 +22,7 @@ import { hasPermission } from "../../auth/permissions";
 import { useAuthStore } from "../../auth/useAuthStore";
 import UniformaTableLoadingRow from "../../components/UniformaTableLoadingRow";
 import { descargarProduccionUnificadoPdf, ProduccionArticuloUnificadoPdf } from "../../utils/produccionUnificadoPdf";
+import { useTablePagination } from "../../utils/useTablePagination";
 
 interface ProduccionUnificadoRow {
   id: number;
@@ -94,6 +96,7 @@ export default function ProduccionUnificados() {
     () => rows.reduce((sum, row) => sum + (Array.isArray(row.resumen?.articulos) ? row.resumen!.articulos!.length : 0), 0),
     [rows]
   );
+  const { paginatedRows, paginationProps } = useTablePagination(rows, 10);
 
   if (!canView) {
     return <Navigate to="/" replace />;
@@ -153,7 +156,7 @@ export default function ProduccionUnificados() {
           <TableBody>
             {loading ? (
               <UniformaTableLoadingRow colSpan={6} />
-            ) : rows.map((row) => {
+            ) : paginatedRows.map((row) => {
               const articulosGuardados = row.resumen?.articulos;
               const pedidosGuardados = row.resumen?.pedidos;
               const articulos = Array.isArray(articulosGuardados) ? articulosGuardados.length : 0;
@@ -196,6 +199,7 @@ export default function ProduccionUnificados() {
           </TableBody>
         </Table>
       </TableContainer>
+      <TablePagination {...paginationProps} />
     </Paper>
   );
 }

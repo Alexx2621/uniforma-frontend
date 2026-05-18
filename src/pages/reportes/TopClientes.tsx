@@ -13,6 +13,7 @@ import {
   TableRow,
   TableCell,
   TableBody,
+  TablePagination,
   Chip,
 } from "@mui/material";
 import PictureAsPdfOutlined from "@mui/icons-material/PictureAsPdfOutlined";
@@ -22,6 +23,7 @@ import Swal from "sweetalert2";
 import { api } from "../../api/axios";
 import UniformaTableLoadingRow from "../../components/UniformaTableLoadingRow";
 import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../../utils/fontFamily";
+import { useTablePagination } from "../../utils/useTablePagination";
 
 interface Venta {
   id: number;
@@ -157,6 +159,7 @@ export default function TopClientes() {
 
   const totalTickets = filas.reduce((sum, r) => sum + r.tickets, 0);
   const totalMonto = filas.reduce((sum, r) => sum + r.total, 0);
+  const { paginatedRows, paginationProps } = useTablePagination(filas, 10);
 
   return (
     <Paper sx={{ p: 3 }}>
@@ -249,7 +252,7 @@ export default function TopClientes() {
           <TableBody>
             {loading ? (
               <UniformaTableLoadingRow colSpan={4} />
-            ) : filas.map((row) => (
+            ) : paginatedRows.map((row) => (
               <TableRow key={`${row.clienteId ?? "na"}`}>
                 <TableCell>{row.nombre}</TableCell>
                 <TableCell>{row.tickets}</TableCell>
@@ -266,6 +269,7 @@ export default function TopClientes() {
           </TableBody>
         </Table>
       </TableContainer>
+      <TablePagination {...paginationProps} />
     </Paper>
   );
 }

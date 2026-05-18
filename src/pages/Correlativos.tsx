@@ -14,6 +14,7 @@ import {
   TableCell,
   TableContainer,
   TableHead,
+  TablePagination,
   TableRow,
   TextField,
   Typography,
@@ -26,6 +27,7 @@ import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
 import { hasPermission } from "../auth/permissions";
 import UniformaTableLoadingRow from "../components/UniformaTableLoadingRow";
+import { useTablePagination } from "../utils/useTablePagination";
 
 interface CorrelativoRow {
   id: number | string;
@@ -173,6 +175,9 @@ export default function Correlativos() {
     () => usuarioRows.filter((row) => `${row.usuarioId}` === selectedUsuarioId),
     [usuarioRows, selectedUsuarioId]
   );
+  const { paginatedRows: usuarioRowsPaginadas, paginationProps: usuarioPaginationProps } =
+    useTablePagination(usuarioRowsFiltradas, 10);
+  const { paginatedRows: rowsPaginadas, paginationProps: rowsPaginationProps } = useTablePagination(rows, 10);
 
   if (!canView) {
     return <Navigate to="/" replace />;
@@ -333,7 +338,7 @@ export default function Correlativos() {
           <TableBody>
             {loading ? (
               <UniformaTableLoadingRow colSpan={6} />
-            ) : usuarioRowsFiltradas.map((row) => (
+            ) : usuarioRowsPaginadas.map((row) => (
               <TableRow key={`${row.usuarioId}-${row.operacion}`}>
                 <TableCell>
                   <Typography fontWeight={700}>{row.nombreOperacion}</Typography>
@@ -389,6 +394,7 @@ export default function Correlativos() {
           </TableBody>
         </Table>
       </TableContainer>
+      <TablePagination {...usuarioPaginationProps} />
 
       <Typography variant="h6" sx={{ mb: 1 }}>
         Reporte unificado de produccion
@@ -407,7 +413,7 @@ export default function Correlativos() {
           <TableBody>
             {loading ? (
               <UniformaTableLoadingRow colSpan={4} />
-            ) : rows.map((row) => (
+            ) : rowsPaginadas.map((row) => (
               <TableRow key={row.scope}>
                 <TableCell>
                   <Typography fontWeight={700}>{row.nombre}</Typography>
@@ -453,6 +459,7 @@ export default function Correlativos() {
           </TableBody>
         </Table>
       </TableContainer>
+      <TablePagination {...rowsPaginationProps} />
     </Paper>
   );
 }

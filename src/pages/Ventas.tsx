@@ -15,6 +15,7 @@ import PictureAsPdfOutlined from "@mui/icons-material/PictureAsPdfOutlined";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { useNavigate } from "react-router-dom";
+import { hasPermission } from "../auth/permissions";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import LOGO_URL from "../assets/3-logos.png";
@@ -63,10 +64,10 @@ export default function Ventas() {
   const [fechaDesde, setFechaDesde] = useState(() => toDateOnly(new Date().toISOString()));
   const [fechaHasta, setFechaHasta] = useState(() => toDateOnly(new Date().toISOString()));
   const [cierreFecha, setCierreFecha] = useState(() => toDateOnly(new Date().toISOString()));
-  const { usuario, rol, rolId, bodegaId: userBodegaId } = useAuthStore();
-  const { crossStoreRoleIds, fetchConfig } = useSystemConfigStore();
+  const { usuario, rol, permisos, bodegaId: userBodegaId } = useAuthStore();
+  const { fetchConfig } = useSystemConfigStore();
   const navigate = useNavigate();
-  const canAccessAllBodegas = rol === "ADMIN" || crossStoreRoleIds.includes(Number(rolId));
+  const canAccessAllBodegas = hasPermission(rol, permisos, "sistema.multi-tienda");
   const clienteMap = useMemo(
     () => new Map(clientes.map((c) => [c.id, c.nombre])),
     [clientes]
@@ -226,6 +227,11 @@ export default function Ventas() {
             cantidad: Number(item.cantidad || 0),
             precio: Number(item.precioUnit || 0),
             bordado: Number(item.bordado || 0),
+            bordadoColor: item.bordadoColor || null,
+            bordadoTamano: item.bordadoTamano || null,
+            bordadoPosicion: item.bordadoPosicion || null,
+            bordadoObservaciones: item.bordadoObservaciones || null,
+            bordadoFechaEntrega: item.bordadoFechaEntrega ? new Date(item.bordadoFechaEntrega).toLocaleDateString("es-GT") : null,
             descuento: Number(item.descuento || 0),
             subtotal: Number(item.subtotal || 0),
           };

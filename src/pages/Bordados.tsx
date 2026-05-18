@@ -28,9 +28,11 @@ import SaveOutlined from "@mui/icons-material/SaveOutlined";
 import { useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
+import { hasPermission } from "../auth/permissions";
 import { useAuthStore } from "../auth/useAuthStore";
 
 interface ProductoBordado {
+  id?: number | null;
   codigo?: string | null;
   nombre?: string | null;
   tela?: { nombre?: string | null } | null;
@@ -56,10 +58,13 @@ interface DetalleBordado {
 
 interface PedidoBordado {
   id: number;
+  origen?: "pedido" | "venta";
+  ventaId?: number | null;
   folio?: string | null;
   fecha: string;
   estado: string;
   clienteNombre?: string | null;
+  clienteTelefono?: string | null;
   cliente?: { nombre?: string | null } | null;
   bodega?: { nombre?: string | null } | null;
   usuario?: { nombre?: string | null; usuario?: string | null } | null;
@@ -118,7 +123,6 @@ const toDateInputValue = (value?: string | null) => {
   if (Number.isNaN(date.getTime())) return "";
   return date.toISOString().slice(0, 10);
 };
-
 export default function Bordados() {
   const [pedidos, setPedidos] = useState<PedidoBordado[]>([]);
   const [usuarios, setUsuarios] = useState<UsuarioOption[]>([]);
@@ -129,10 +133,10 @@ export default function Bordados() {
   const [selected, setSelected] = useState<PedidoBordado | null>(null);
   const [drafts, setDrafts] = useState<Record<number, DetalleDraft>>({});
   const [saving, setSaving] = useState(false);
-  const { rol, id: currentUserId, nombre: currentNombre, usuario: currentUsuario } = useAuthStore();
+  const { rol, id: currentUserId, nombre: currentNombre, usuario: currentUsuario, permisos } = useAuthStore();
   const isAdmin = `${rol || ""}`.toUpperCase() === "ADMIN";
-  const canEditSeguimiento = ["ADMIN", "BORDADOR"].includes(`${rol || ""}`.toUpperCase());
-  const canFilterUsuarios = ["ADMIN", "BORDADOR"].includes(`${rol || ""}`.toUpperCase());
+  const canEditSeguimiento = ["ADMIN", "BORDADOR"].includes(`${rol || ""}`.toUpperCase()) || hasPermission(rol, permisos, "bordados.manage");
+  const canFilterUsuarios = ["ADMIN", "BORDADOR"].includes(`${rol || ""}`.toUpperCase()) || hasPermission(rol, permisos, "sistema.multi-tienda");
   const navigate = useNavigate();
 
   const cargar = useCallback(async () => {
@@ -206,7 +210,12 @@ export default function Bordados() {
       setSaving(true);
       await Promise.all(
         (selected.detalle || []).map((detalle) =>
-          api.post(`/produccion/bordados/detalle/${detalle.id}`, drafts[detalle.id] || {})
+          api.post(
+            selected.origen === "venta"
+              ? `/produccion/bordados/venta/detalle/${detalle.id}`
+              : `/produccion/bordados/detalle/${detalle.id}`,
+            drafts[detalle.id] || {}
+          )
         )
       );
       Swal.fire("Guardado", "Seguimiento de bordado actualizado", "success");
@@ -223,8 +232,11 @@ export default function Bordados() {
     () =>
       pedidos.map((pedido) => ({
         ...pedido,
+        rowId: `${pedido.origen || "pedido"}-${pedido.id}`,
+        origenDisplay: pedido.origen === "venta" ? "Venta" : "Pedido",
         folioDisplay: getFolio(pedido),
         clienteDisplay: getCliente(pedido),
+        referenciaClienteDisplay: pedido.clienteTelefono || getCliente(pedido),
         bodegaDisplay: pedido.bodega?.nombre || "N/D",
         usuarioDisplay: getUsuario(pedido),
         totalPrendasBordado: (pedido.detalle || []).reduce((sum, item) => sum + Number(item.cantidad || 0), 0),
@@ -239,6 +251,19 @@ export default function Bordados() {
   );
 
   const columns: GridColDef[] = [
+    {
+      field: "origenDisplay",
+      headerName: "Origen",
+      minWidth: 110,
+      renderCell: (params) => (
+        <Chip
+          size="small"
+          label={params.row.origenDisplay}
+          color={params.row.origen === "venta" ? "success" : "default"}
+          variant={params.row.origen === "venta" ? "filled" : "outlined"}
+        />
+      ),
+    },
     { field: "folioDisplay", headerName: "Folio", minWidth: 120 },
     {
       field: "fecha",
@@ -247,6 +272,7 @@ export default function Bordados() {
       valueFormatter: (value) => (value ? new Date(`${value}`).toLocaleDateString() : "N/D"),
     },
     { field: "clienteDisplay", headerName: "Cliente", minWidth: 190, flex: 1 },
+    { field: "referenciaClienteDisplay", headerName: "Referencia cliente", minWidth: 170, flex: 0.7 },
     { field: "bodegaDisplay", headerName: "Tienda", minWidth: 170, flex: 0.8 },
     { field: "usuarioDisplay", headerName: "Registrado por", minWidth: 170, flex: 0.8 },
     {
@@ -283,9 +309,11 @@ export default function Bordados() {
           <Button size="small" variant="outlined" startIcon={<VisibilityOutlined />} onClick={() => abrirPedido(params.row)}>
             Ver
           </Button>
-          <Button size="small" endIcon={<OpenInNewOutlined />} onClick={() => navigate(`/produccion/${params.row.id}`)}>
-            Pedido
-          </Button>
+          {params.row.origen !== "venta" && (
+            <Button size="small" endIcon={<OpenInNewOutlined />} onClick={() => navigate(`/produccion/${params.row.id}`)}>
+              Pedido
+            </Button>
+          )}
         </Stack>
       ),
     },
@@ -297,7 +325,7 @@ export default function Bordados() {
         <Box>
           <Typography variant="h4">Bordados</Typography>
           <Typography variant="body2" color="text.secondary">
-            Pedidos de produccion que incluyen prendas con bordado.
+            Bordados provenientes de pedidos de produccion y ventas directas.
           </Typography>
         </Box>
         <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ xs: "stretch", sm: "center" }}>
@@ -366,6 +394,7 @@ export default function Bordados() {
         <DataGrid
           rows={rows}
           columns={columns}
+          getRowId={(row) => row.rowId}
           loading={loading}
           disableRowSelectionOnClick
           pageSizeOptions={[10, 25, 50, 100]}

@@ -23,6 +23,7 @@ import {
   TableBody,
   TableCell,
   TableHead,
+  TablePagination,
   TableRow,
   ToggleButton,
   ToggleButtonGroup,
@@ -40,9 +41,11 @@ import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/axios";
+import { hasPermission } from "../auth/permissions";
 import { useAuthStore } from "../auth/useAuthStore";
 import { whatsappFeatureEnabled } from "../config/features";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
+import { useTablePagination } from "../utils/useTablePagination";
 
 interface Venta {
   id: number;
@@ -243,9 +246,9 @@ export default function Dashboard() {
   const [bodegaFiltro, setBodegaFiltro] = useState<"all" | number>("all");
   const [saldoModalOpen, setSaldoModalOpen] = useState(false);
   const navigate = useNavigate();
-  const { rol, rolId, bodegaId: userBodegaId } = useAuthStore();
-  const { crossStoreRoleIds, fetchConfig } = useSystemConfigStore();
-  const canAccessAllBodegas = rol === "ADMIN" || crossStoreRoleIds.includes(Number(rolId));
+  const { rol, permisos, bodegaId: userBodegaId } = useAuthStore();
+  const { fetchConfig } = useSystemConfigStore();
+  const canAccessAllBodegas = hasPermission(rol, permisos, "sistema.multi-tienda");
   const canManageWhatsapp = rol === "ADMIN";
 
   const cargarWhatsapp = useCallback(async () => {
@@ -408,6 +411,8 @@ export default function Dashboard() {
       stockTotal: inventarioFiltrado.reduce((sum, row) => sum + Number(row.stock || 0), 0),
     };
   }, [ventas, pedidos, postventa, documentos, inventario, productos, rango, bodegaFiltro]);
+  const { paginatedRows: pedidosSaldoPaginados, paginationProps: pedidosSaldoPaginationProps } =
+    useTablePagination(stats.pedidosSaldo, 10);
 
   return (
     <Box sx={{ p: 3, minHeight: "100%", bgcolor: "background.default" }}>
@@ -511,7 +516,7 @@ export default function Dashboard() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {stats.pedidosSaldo.map((pedido) => (
+                  {pedidosSaldoPaginados.map((pedido) => (
                     <TableRow key={pedido.id} hover>
                       <TableCell>{getPedidoFolio(pedido)}</TableCell>
                       <TableCell>{pedido.fecha ? new Date(pedido.fecha).toLocaleDateString() : "N/D"}</TableCell>
@@ -540,6 +545,7 @@ export default function Dashboard() {
                   ))}
                 </TableBody>
               </Table>
+              <TablePagination {...pedidosSaldoPaginationProps} />
             </Box>
           )}
         </DialogContent>

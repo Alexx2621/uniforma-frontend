@@ -1,9 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate } from "react-router-dom";
 import {
   Box,
   Checkbox,
-  FormControlLabel,
+  Chip,
+  Divider,
+  Grid,
+  InputAdornment,
+  LinearProgress,
   Paper,
   Typography,
   Stack,
@@ -14,23 +18,30 @@ import {
   TableRow,
   TableCell,
   TableBody,
+  TablePagination,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
   TextField,
+  Tooltip,
 } from "@mui/material";
 import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import DeleteOutline from "@mui/icons-material/DeleteOutline";
 import AdminPanelSettingsOutlined from "@mui/icons-material/AdminPanelSettingsOutlined";
+import SearchOutlined from "@mui/icons-material/SearchOutlined";
+import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
+import ConstructionOutlined from "@mui/icons-material/ConstructionOutlined";
+import SelectAllOutlined from "@mui/icons-material/SelectAllOutlined";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
 import { getRequiredPermission, hasPermission } from "../auth/permissions";
 import UniformaTableLoadingRow from "../components/UniformaTableLoadingRow";
 import { menuPathItems } from "../layout/menuItems";
+import { useTablePagination } from "../utils/useTablePagination";
 
 interface Rol {
   id: number;
@@ -97,6 +108,68 @@ const getCatalogWithMenuModules = (catalog: PermissionDefinition[]) => {
   return Array.from(byKey.values());
 };
 
+interface PermissionGroup {
+  category: string;
+  permissions: PermissionDefinition[];
+}
+
+const actionPriority: Record<string, number> = {
+  view: 1,
+  manage: 2,
+};
+
+const getPermissionAction = (key: string) => {
+  const parts = key.split(".");
+  return parts[parts.length - 1] || "access";
+};
+
+const getViewPermissionFor = (key: string) => {
+  const parts = key.split(".");
+  if (parts.length < 2 || parts[parts.length - 1] === "view") return key;
+  return [...parts.slice(0, -1), "view"].join(".");
+};
+
+const getActionLabel = (key: string) => {
+  const action = getPermissionAction(key);
+  if (action === "view") return "Ver";
+  if (action === "manage") return "Gestionar";
+  return "Especial";
+};
+
+const getActionIcon = (key: string) =>
+  getPermissionAction(key) === "view" ? <VisibilityOutlined fontSize="small" /> : <ConstructionOutlined fontSize="small" />;
+
+const permissionMatchesSearch = (permission: PermissionDefinition, search: string) => {
+  const term = search.trim().toLowerCase();
+  if (!term) return true;
+  return [permission.key, permission.label, permission.description, permission.category]
+    .join(" ")
+    .toLowerCase()
+    .includes(term);
+};
+
+const groupPermissions = (catalog: PermissionDefinition[], search: string): PermissionGroup[] => {
+  const grouped = catalog
+    .filter((permission) => permissionMatchesSearch(permission, search))
+    .reduce((acc, permission) => {
+      const list = acc.get(permission.category) || [];
+      list.push(permission);
+      acc.set(permission.category, list);
+      return acc;
+    }, new Map<string, PermissionDefinition[]>());
+
+  return Array.from(grouped.entries())
+    .map(([category, permissions]) => ({
+      category,
+      permissions: permissions.sort((a, b) => {
+        const actionA = actionPriority[getPermissionAction(a.key)] || 99;
+        const actionB = actionPriority[getPermissionAction(b.key)] || 99;
+        return a.label.localeCompare(b.label) || actionA - actionB;
+      }),
+    }))
+    .sort((a, b) => a.category.localeCompare(b.category));
+};
+
 export default function Roles() {
   const [roles, setRoles] = useState<Rol[]>([]);
   const [catalogo, setCatalogo] = useState<PermissionDefinition[]>([]);
@@ -106,10 +179,20 @@ export default function Roles() {
   const [nombre, setNombre] = useState("");
   const [descripcion, setDescripcion] = useState("");
   const [permisosSeleccionados, setPermisosSeleccionados] = useState<string[]>([]);
+  const [permissionSearch, setPermissionSearch] = useState("");
   const denyAlertShown = useRef(false);
   const { rol, permisos } = useAuthStore();
   const canView = hasPermission(rol, permisos, "roles.view");
   const canManage = hasPermission(rol, permisos, "roles.manage");
+  const permissionGroups = useMemo(
+    () => groupPermissions(catalogo, permissionSearch),
+    [catalogo, permissionSearch]
+  );
+  const selectedPermissionSet = useMemo(() => new Set(permisosSeleccionados), [permisosSeleccionados]);
+  const catalogKeys = useMemo(() => new Set(catalogo.map((permission) => permission.key)), [catalogo]);
+  const totalPermissions = catalogo.length;
+  const selectedCount = permisosSeleccionados.length;
+  const { paginatedRows, paginationProps } = useTablePagination(roles, 10);
 
   const cargar = async () => {
     try {
@@ -147,6 +230,7 @@ export default function Roles() {
     setNombre("");
     setDescripcion("");
     setPermisosSeleccionados([]);
+    setPermissionSearch("");
     setOpenForm(true);
   };
 
@@ -155,7 +239,43 @@ export default function Roles() {
     setNombre(item.nombre);
     setDescripcion(item.descripcion || "");
     setPermisosSeleccionados(item.permisos?.map((permiso) => permiso.permiso.nombre) || []);
+    setPermissionSearch("");
     setOpenForm(true);
+  };
+
+  const togglePermission = (permissionKey: string, checked: boolean) => {
+    const viewKey = getViewPermissionFor(permissionKey);
+    const impliedKeys = catalogKeys.has(viewKey) ? [permissionKey, viewKey] : [permissionKey];
+    setPermisosSeleccionados((current) =>
+      checked
+        ? Array.from(new Set([...current, ...impliedKeys]))
+        : current.filter((item) => item !== permissionKey)
+    );
+  };
+
+  const setGroupPermissions = (permissions: PermissionDefinition[], checked: boolean) => {
+    const keys = permissions.map((permission) => permission.key);
+    setPermisosSeleccionados((current) => {
+      if (checked) {
+        return Array.from(new Set([...current, ...keys]));
+      }
+      return current.filter((item) => !keys.includes(item));
+    });
+  };
+
+  const setActionPermissions = (action: "view" | "manage", checked: boolean) => {
+    const keys = catalogo
+      .filter((permission) => getPermissionAction(permission.key) === action)
+      .flatMap((permission) => {
+        const viewKey = getViewPermissionFor(permission.key);
+        return action === "manage" && catalogKeys.has(viewKey) ? [permission.key, viewKey] : [permission.key];
+      });
+    setPermisosSeleccionados((current) => {
+      if (checked) {
+        return Array.from(new Set([...current, ...keys]));
+      }
+      return current.filter((item) => !keys.includes(item));
+    });
   };
 
   const guardar = async () => {
@@ -167,7 +287,7 @@ export default function Roles() {
     const payload = {
       descripcion: descripcion.trim() || null,
       permisos: permisosSeleccionados,
-    } as { nombre?: string; descripcion: string | null };
+    } as { nombre?: string; descripcion: string | null; permisos: string[] };
 
     if (!editing) {
       payload.nombre = nombre.trim();
@@ -232,7 +352,7 @@ export default function Roles() {
       </Stack>
 
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-        Administra los roles disponibles para asignarlos a los usuarios.
+        Administra desde aqui el acceso a modulos y las acciones permitidas para cada rol.
       </Typography>
 
       <TableContainer>
@@ -242,17 +362,26 @@ export default function Roles() {
               <TableCell>ID</TableCell>
               <TableCell>Nombre</TableCell>
               <TableCell>Descripcion</TableCell>
+              <TableCell>Permisos</TableCell>
               <TableCell align="right">Acciones</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {loading ? (
-              <UniformaTableLoadingRow colSpan={4} />
-            ) : roles.map((item) => (
+              <UniformaTableLoadingRow colSpan={5} />
+            ) : paginatedRows.map((item) => (
               <TableRow key={item.id}>
                 <TableCell>{item.id}</TableCell>
                 <TableCell>{item.nombre}</TableCell>
                 <TableCell>{item.descripcion || "N/D"}</TableCell>
+                <TableCell>
+                  <Chip
+                    size="small"
+                    label={`${item.permisos?.length || 0} permisos`}
+                    color={(item.permisos?.length || 0) ? "primary" : "default"}
+                    variant={(item.permisos?.length || 0) ? "filled" : "outlined"}
+                  />
+                </TableCell>
                 <TableCell align="right">
                   <Stack direction="row" spacing={1} justifyContent="flex-end">
                     <Button
@@ -280,7 +409,7 @@ export default function Roles() {
             ))}
             {!loading && !roles.length && (
               <TableRow>
-                <TableCell colSpan={4} align="center">
+                <TableCell colSpan={5} align="center">
                   No hay roles registrados.
                 </TableCell>
               </TableRow>
@@ -288,68 +417,188 @@ export default function Roles() {
           </TableBody>
         </Table>
       </TableContainer>
+      <TablePagination {...paginationProps} />
 
-      <Dialog open={openForm} onClose={() => setOpenForm(false)} fullWidth maxWidth="sm">
+      <Dialog open={openForm} onClose={() => setOpenForm(false)} fullWidth maxWidth="lg">
         <DialogTitle>{editing ? "Editar rol" : "Nuevo rol"}</DialogTitle>
         <DialogContent sx={{ pt: 2 }}>
           <Stack spacing={2}>
-            <TextField
-              label="Nombre"
-              value={nombre}
-              onChange={(e) => setNombre(e.target.value)}
-              fullWidth
-              disabled={Boolean(editing)}
-              helperText={editing ? "El nombre del rol no se puede modificar" : undefined}
-            />
-            <TextField
-              label="Descripcion"
-              value={descripcion}
-              onChange={(e) => setDescripcion(e.target.value)}
-              fullWidth
-              multiline
-              minRows={2}
-            />
-            <Box>
-              <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                Permisos del rol
-              </Typography>
-              <Stack spacing={1}>
-                {Array.from(
-                  catalogo.reduce((acc, permission) => {
-                    const list = acc.get(permission.category) || [];
-                    list.push(permission);
-                    acc.set(permission.category, list);
-                    return acc;
-                  }, new Map<string, PermissionDefinition[]>())
-                ).map(([category, permissionsGroup]) => (
-                  <Paper key={category} variant="outlined" sx={{ p: 1.5 }}>
-                    <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                      {category}
+            <Grid container spacing={2}>
+              <Grid size={{ xs: 12, md: 4 }}>
+                <TextField
+                  label="Nombre"
+                  value={nombre}
+                  onChange={(e) => setNombre(e.target.value)}
+                  fullWidth
+                  disabled={Boolean(editing)}
+                  helperText={editing ? "El nombre del rol no se puede modificar" : undefined}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 8 }}>
+                <TextField
+                  label="Descripcion"
+                  value={descripcion}
+                  onChange={(e) => setDescripcion(e.target.value)}
+                  fullWidth
+                />
+              </Grid>
+            </Grid>
+
+            <Paper variant="outlined" sx={{ p: 2 }}>
+              <Stack spacing={1.5}>
+                <Stack
+                  direction={{ xs: "column", md: "row" }}
+                  justifyContent="space-between"
+                  alignItems={{ xs: "stretch", md: "center" }}
+                  spacing={1.5}
+                >
+                  <Box>
+                    <Typography variant="subtitle1" fontWeight={700}>
+                      Acceso y acciones por modulo
                     </Typography>
-                    <Stack>
-                      {permissionsGroup.map((permission) => (
-                        <FormControlLabel
-                          key={permission.key}
-                          control={
-                            <Checkbox
-                              checked={permisosSeleccionados.includes(permission.key)}
-                              onChange={(e) =>
-                                setPermisosSeleccionados((current) =>
-                                  e.target.checked
-                                    ? [...current, permission.key]
-                                    : current.filter((item) => item !== permission.key)
-                                )
-                              }
-                            />
-                          }
-                          label={`${permission.label} - ${permission.description}`}
-                        />
-                      ))}
-                    </Stack>
-                  </Paper>
-                ))}
+                    <Typography variant="body2" color="text.secondary">
+                      Marca Ver para mostrar el modulo, Gestionar para editar/operar y Especial para accesos como filtros multi-tienda.
+                    </Typography>
+                  </Box>
+                  <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                    <Chip size="small" color="primary" label={`${selectedCount}/${totalPermissions} permisos`} />
+                    <Button size="small" variant="outlined" startIcon={<VisibilityOutlined />} onClick={() => setActionPermissions("view", true)}>
+                      Ver todos
+                    </Button>
+                    <Button size="small" variant="outlined" startIcon={<ConstructionOutlined />} onClick={() => setActionPermissions("manage", true)}>
+                      Acciones
+                    </Button>
+                    <Button size="small" variant="text" onClick={() => setPermisosSeleccionados([])}>
+                      Limpiar
+                    </Button>
+                  </Stack>
+                </Stack>
+
+                <LinearProgress
+                  variant="determinate"
+                  value={totalPermissions ? Math.min(100, (selectedCount / totalPermissions) * 100) : 0}
+                  sx={{ height: 6, borderRadius: 1 }}
+                />
+
+                <TextField
+                  size="small"
+                  label="Buscar modulo o permiso"
+                  value={permissionSearch}
+                  onChange={(e) => setPermissionSearch(e.target.value)}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchOutlined fontSize="small" />
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+
+                <Stack spacing={1.5} sx={{ maxHeight: "52vh", overflow: "auto", pr: 0.5 }}>
+                  {permissionGroups.map((group) => {
+                    const groupKeys = group.permissions.map((permission) => permission.key);
+                    const checkedCount = groupKeys.filter((key) => selectedPermissionSet.has(key)).length;
+                    const allChecked = checkedCount === groupKeys.length && groupKeys.length > 0;
+                    const partialChecked = checkedCount > 0 && !allChecked;
+
+                    return (
+                      <Paper key={group.category} variant="outlined" sx={{ p: 1.5 }}>
+                        <Stack spacing={1}>
+                          <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
+                            <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+                              <Checkbox
+                                size="small"
+                                checked={allChecked}
+                                indeterminate={partialChecked}
+                                onChange={(e) => setGroupPermissions(group.permissions, e.target.checked)}
+                              />
+                              <Box sx={{ minWidth: 0 }}>
+                                <Typography variant="subtitle2" noWrap>
+                                  {group.category}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                  {checkedCount} de {group.permissions.length} permisos activos
+                                </Typography>
+                              </Box>
+                            </Stack>
+                            <Tooltip title="Seleccionar todos los permisos de este modulo">
+                              <Button
+                                size="small"
+                                variant="text"
+                                startIcon={<SelectAllOutlined />}
+                                onClick={() => setGroupPermissions(group.permissions, true)}
+                              >
+                                Todo
+                              </Button>
+                            </Tooltip>
+                          </Stack>
+                          <Divider />
+                          <Grid container spacing={1}>
+                            {group.permissions.map((permission) => {
+                              const checked = selectedPermissionSet.has(permission.key);
+                              return (
+                                <Grid key={permission.key} size={{ xs: 12, md: 6 }}>
+                                  <Paper
+                                    variant="outlined"
+                                    sx={{
+                                      p: 1,
+                                      height: "100%",
+                                      borderColor: checked ? "primary.main" : "divider",
+                                      bgcolor: checked ? "action.selected" : "background.paper",
+                                    }}
+                                  >
+                                    <Stack direction="row" spacing={1} alignItems="flex-start">
+                                      <Checkbox
+                                        size="small"
+                                        checked={checked}
+                                        onChange={(e) => togglePermission(permission.key, e.target.checked)}
+                                      />
+                                      <Box sx={{ minWidth: 0, flex: 1 }}>
+                                        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }} flexWrap="wrap" useFlexGap>
+                                          <Chip
+                                            size="small"
+                                            icon={getActionIcon(permission.key)}
+                                            label={getActionLabel(permission.key)}
+                                            color={
+                                              getPermissionAction(permission.key) === "view"
+                                                ? "info"
+                                                : getPermissionAction(permission.key) === "manage"
+                                                  ? "warning"
+                                                  : "success"
+                                            }
+                                            variant={checked ? "filled" : "outlined"}
+                                          />
+                                          <Typography variant="body2" fontWeight={700}>
+                                            {permission.label}
+                                          </Typography>
+                                        </Stack>
+                                        <Typography variant="caption" color="text.secondary" display="block">
+                                          {permission.description}
+                                        </Typography>
+                                        <Typography variant="caption" color="text.disabled" display="block">
+                                          {permission.key}
+                                        </Typography>
+                                      </Box>
+                                    </Stack>
+                                  </Paper>
+                                </Grid>
+                              );
+                            })}
+                          </Grid>
+                        </Stack>
+                      </Paper>
+                    );
+                  })}
+                  {!permissionGroups.length && (
+                    <Paper variant="outlined" sx={{ p: 3, textAlign: "center" }}>
+                      <Typography variant="body2" color="text.secondary">
+                        No hay permisos que coincidan con la busqueda.
+                      </Typography>
+                    </Paper>
+                  )}
+                </Stack>
               </Stack>
-            </Box>
+            </Paper>
           </Stack>
         </DialogContent>
         <DialogActions>

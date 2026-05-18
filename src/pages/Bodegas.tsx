@@ -11,6 +11,7 @@ import {
   TableRow,
   TableCell,
   TableBody,
+  TablePagination,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -27,6 +28,7 @@ import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
 import { hasPermission } from "../auth/permissions";
 import UniformaTableLoadingRow from "../components/UniformaTableLoadingRow";
+import { useTablePagination } from "../utils/useTablePagination";
 
 interface Bodega {
   id: number;
@@ -45,6 +47,7 @@ export default function Bodegas() {
   const denyAlertShown = useRef(false);
   const canView = hasPermission(rol, permisos, "bodegas.view");
   const canManage = hasPermission(rol, permisos, "bodegas.manage");
+  const { paginatedRows, paginationProps } = useTablePagination(bodegas, 10);
 
   const cargar = async () => {
     try {
@@ -187,7 +190,7 @@ export default function Bodegas() {
           <TableBody>
             {loading ? (
               <UniformaTableLoadingRow colSpan={4} />
-            ) : bodegas.map((b) => (
+            ) : paginatedRows.map((b) => (
               <TableRow key={b.id}>
                 <TableCell>{b.id}</TableCell>
                 <TableCell>{b.nombre}</TableCell>
@@ -227,6 +230,7 @@ export default function Bodegas() {
           </TableBody>
         </Table>
       </TableContainer>
+      <TablePagination {...paginationProps} />
 
       <Dialog open={openForm} onClose={() => setOpenForm(false)} fullWidth maxWidth="sm">
         <DialogTitle>{editing ? "Editar bodega" : "Nueva bodega"}</DialogTitle>

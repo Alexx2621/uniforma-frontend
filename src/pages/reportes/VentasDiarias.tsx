@@ -13,6 +13,7 @@ import {
   TableRow,
   TableCell,
   TableBody,
+  TablePagination,
   Chip,
 } from "@mui/material";
 import PictureAsPdfOutlined from "@mui/icons-material/PictureAsPdfOutlined";
@@ -22,6 +23,7 @@ import Swal from "sweetalert2";
 import { api } from "../../api/axios";
 import UniformaTableLoadingRow from "../../components/UniformaTableLoadingRow";
 import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../../utils/fontFamily";
+import { useTablePagination } from "../../utils/useTablePagination";
 
 interface Venta {
   id: number;
@@ -175,6 +177,7 @@ export default function VentasDiarias() {
     }),
     { tickets: 0, total: 0, efectivo: 0, tarjeta: 0, transferencia: 0 }
   );
+  const { paginatedRows, paginationProps } = useTablePagination(filas, 10);
 
   return (
     <Paper sx={{ p: 3 }}>
@@ -260,7 +263,7 @@ export default function VentasDiarias() {
           <TableBody>
             {loading ? (
               <UniformaTableLoadingRow colSpan={6} />
-            ) : filas.map((row) => (
+            ) : paginatedRows.map((row) => (
               <TableRow key={row.fecha}>
                 <TableCell>{row.fecha}</TableCell>
                 <TableCell>{row.tickets}</TableCell>
@@ -281,6 +284,7 @@ export default function VentasDiarias() {
           </TableBody>
         </Table>
       </TableContainer>
+      <TablePagination {...paginationProps} />
     </Paper>
   );
 }

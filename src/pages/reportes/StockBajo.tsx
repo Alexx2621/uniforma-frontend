@@ -13,6 +13,7 @@ import {
   TableRow,
   TableCell,
   TableBody,
+  TablePagination,
   Chip,
   FormControl,
   InputLabel,
@@ -26,6 +27,7 @@ import Swal from "sweetalert2";
 import { api } from "../../api/axios";
 import UniformaTableLoadingRow from "../../components/UniformaTableLoadingRow";
 import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../../utils/fontFamily";
+import { useTablePagination } from "../../utils/useTablePagination";
 
 interface RowInv {
   productoId: number;
@@ -139,6 +141,7 @@ export default function StockBajo() {
   }, [inventario, bodega, umbral]);
 
   const totalFaltantes = filas.reduce((sum, r) => sum + r.faltan, 0);
+  const { paginatedRows, paginationProps } = useTablePagination(filas, 10);
 
   return (
     <Paper sx={{ p: 3 }}>
@@ -229,7 +232,7 @@ export default function StockBajo() {
           <TableBody>
             {loading ? (
               <UniformaTableLoadingRow colSpan={6} />
-            ) : filas.map((row) => (
+            ) : paginatedRows.map((row) => (
               <TableRow key={`${row.productoId}-${row.bodegaId}`}>
                 <TableCell>{row.codigo}</TableCell>
                 <TableCell>{row.producto}</TableCell>
@@ -250,6 +253,7 @@ export default function StockBajo() {
           </TableBody>
         </Table>
       </TableContainer>
+      <TablePagination {...paginationProps} />
     </Paper>
   );
 }

@@ -37,6 +37,7 @@ import KeyboardArrowDownOutlined from "@mui/icons-material/KeyboardArrowDownOutl
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { useNavigate } from "react-router-dom";
+import { hasPermission } from "../auth/permissions";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import uniformaLogo from "../assets/3-logos.png";
@@ -235,7 +236,34 @@ const bordadoTextFieldSx = {
 const fileToDataUrl = (file: File) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(`${reader.result || ""}`);
+    reader.onload = () => {
+      const original = `${reader.result || ""}`;
+      const image = new Image();
+      image.onload = () => {
+        try {
+          const maxSide = 1200;
+          const ratio = Math.min(1, maxSide / Math.max(image.width, image.height));
+          const width = Math.max(1, Math.round(image.width * ratio));
+          const height = Math.max(1, Math.round(image.height * ratio));
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            resolve(original);
+            return;
+          }
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, width, height);
+          ctx.drawImage(image, 0, 0, width, height);
+          resolve(canvas.toDataURL("image/jpeg", 0.82));
+        } catch {
+          resolve(original);
+        }
+      };
+      image.onerror = () => resolve(original);
+      image.src = original;
+    };
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(file);
   });
@@ -423,7 +451,7 @@ export default function PedidoNuevo() {
     primerApellido,
     bodegaNombre: authBodegaNombre,
     rol,
-    rolId,
+    permisos,
     bodegaId: userBodegaId,
     id: userId,
   } = useAuthStore();
@@ -433,9 +461,9 @@ export default function PedidoNuevo() {
     usuario?.trim() ||
     authBodegaNombre?.trim() ||
     "usuario";
-  const { crossStoreRoleIds, fetchConfig } = useSystemConfigStore();
+  const { fetchConfig } = useSystemConfigStore();
   const navigate = useNavigate();
-  const canAccessAllBodegas = rol === "ADMIN" || crossStoreRoleIds.includes(Number(rolId));
+  const canAccessAllBodegas = hasPermission(rol, permisos, "sistema.multi-tienda");
   const metodoUsaRecargo = metodoPago === "tarjeta" || metodoPago === "visalink";
   const metodoRequiereReferencia = metodoPago !== "efectivo";
   const metodoRequiereBanco = metodoPago === "deposito_bancario";

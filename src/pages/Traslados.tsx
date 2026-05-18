@@ -26,6 +26,7 @@ import EditOutlined from "@mui/icons-material/EditOutlined";
 import SwapHorizIcon from "@mui/icons-material/SwapHoriz";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
+import { hasPermission } from "../auth/permissions";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import LOGO_URL from "../assets/3-logos.png";
@@ -128,9 +129,9 @@ export default function Traslados() {
   const [filtroTalla, setFiltroTalla] = useState("");
   const [filtroColor, setFiltroColor] = useState("");
 
-  const { rol, rolId, bodegaId: userBodegaId, usuario } = useAuthStore();
-  const { crossStoreRoleIds, fetchConfig } = useSystemConfigStore();
-  const canAccessAllBodegas = rol === "ADMIN" || crossStoreRoleIds.includes(Number(rolId));
+  const { rol, permisos, bodegaId: userBodegaId, usuario } = useAuthStore();
+  const { fetchConfig } = useSystemConfigStore();
+  const canAccessAllBodegas = hasPermission(rol, permisos, "sistema.multi-tienda");
   const mismaBodegaSeleccionada =
     desdeBodegaId !== "" && haciaBodegaId !== "" && Number(desdeBodegaId) === Number(haciaBodegaId);
 

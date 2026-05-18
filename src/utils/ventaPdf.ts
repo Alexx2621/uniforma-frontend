@@ -6,6 +6,11 @@ export interface VentaPdfItem {
   cantidad: number;
   precio: number;
   bordado: number;
+  bordadoColor?: string | null;
+  bordadoTamano?: string | null;
+  bordadoPosicion?: string | null;
+  bordadoObservaciones?: string | null;
+  bordadoFechaEntrega?: string | null;
   estiloEspecial?: boolean;
   estiloEspecialMonto?: number;
   descuento: number;
@@ -85,19 +90,29 @@ export const buildVentaPdfHtml = ({
 
   const filasHtml =
     items
-      .map(
-        (item, idx) => `<tr>
+      .map((item, idx) => {
+        const detalleBordado = [
+          item.bordadoColor ? `Color: ${item.bordadoColor}` : "",
+          item.bordadoTamano ? `Tamano: ${item.bordadoTamano}` : "",
+          item.bordadoPosicion ? `Posicion: ${item.bordadoPosicion}` : "",
+          item.bordadoFechaEntrega ? `Entrega: ${item.bordadoFechaEntrega}` : "",
+          item.bordadoObservaciones || "",
+        ].filter(Boolean).join(" | ");
+        return `<tr>
           <td class="cell-center">${idx + 1}</td>
           <td class="cell-center">${escapeHtml(item.codigo)}</td>
-          <td>${escapeHtml(item.nombre)}</td>
+          <td>
+            ${escapeHtml(item.nombre)}
+            ${detalleBordado ? `<div style="font-size:9px;color:#475569;margin-top:3px;">${escapeHtml(detalleBordado)}</div>` : ""}
+          </td>
           <td class="cell-center">${escapeHtml(item.cantidad)}</td>
           <td class="cell-right">${formatMoney(item.precio)}</td>
           <td class="cell-right">${formatMoney(item.bordado)}</td>
           <td class="cell-right">${item.estiloEspecial ? formatMoney(Number(item.estiloEspecialMonto || 0)) : "No"}</td>
           <td class="cell-center">${Number(item.descuento || 0).toFixed(2)}%</td>
           <td class="cell-right">${formatMoney(item.subtotal)}</td>
-        </tr>`,
-      )
+        </tr>`;
+      })
       .join("") ||
     `<tr><td colspan="9" class="empty-row">No hay articulos registrados en esta venta.</td></tr>`;
 

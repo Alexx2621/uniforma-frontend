@@ -13,6 +13,7 @@ import {
   TableRow,
   TableCell,
   TableBody,
+  TablePagination,
   Chip,
 } from "@mui/material";
 import PictureAsPdfOutlined from "@mui/icons-material/PictureAsPdfOutlined";
@@ -22,6 +23,7 @@ import Swal from "sweetalert2";
 import { api } from "../../api/axios";
 import UniformaTableLoadingRow from "../../components/UniformaTableLoadingRow";
 import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../../utils/fontFamily";
+import { useTablePagination } from "../../utils/useTablePagination";
 
 interface VentaDetalle {
   productoId: number;
@@ -184,6 +186,7 @@ export default function VentasProducto() {
 
   const totalUnidades = filas.reduce((sum, r) => sum + r.unidades, 0);
   const totalIngresos = filas.reduce((sum, r) => sum + r.ingresos, 0);
+  const { paginatedRows, paginationProps } = useTablePagination(filas, 10);
 
   return (
     <Paper sx={{ p: 3 }}>
@@ -276,7 +279,7 @@ export default function VentasProducto() {
           <TableBody>
             {loading ? (
               <UniformaTableLoadingRow colSpan={4} />
-            ) : filas.map((row) => (
+            ) : paginatedRows.map((row) => (
               <TableRow key={row.productoId}>
                 <TableCell>{row.codigo}</TableCell>
                 <TableCell>{row.nombre}</TableCell>
@@ -293,6 +296,7 @@ export default function VentasProducto() {
           </TableBody>
         </Table>
       </TableContainer>
+      <TablePagination {...paginationProps} />
     </Paper>
   );
 }

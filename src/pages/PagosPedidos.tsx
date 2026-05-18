@@ -61,9 +61,9 @@ const metodoRequiereReferencia = (metodo: string) => metodo !== "efectivo";
 const getPagoAplicado = (pago: Pago) => Number(pago.monto || 0) + Number(pago.recargo || 0);
 
 export default function PagosPedidos() {
-  const { rol, rolId } = useAuthStore();
+  const { rol, rolId, permisos } = useAuthStore();
   const { vendedorDropdownRoleIds, fetchConfig } = useSystemConfigStore();
-  const canUseDropdown = canUseVendedorDropdown(rol, rolId, vendedorDropdownRoleIds);
+  const canUseDropdown = canUseVendedorDropdown(rol, rolId, vendedorDropdownRoleIds, permisos);
   const [pedidos, setPedidos] = useState<PedidoPago[]>([]);
   const [forms, setForms] = useState<Record<number, PagoForm>>({});
   const [filtroDesde, setFiltroDesde] = useState("");

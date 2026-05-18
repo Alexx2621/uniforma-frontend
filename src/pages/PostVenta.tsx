@@ -19,6 +19,7 @@ import {
   TableCell,
   TableContainer,
   TableHead,
+  TablePagination,
   TableRow,
   TextField,
   Typography,
@@ -40,6 +41,7 @@ import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import uniformaLogo from "../assets/3-logos.png";
 import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../utils/fontFamily";
 import { canUseVendedorDropdown, filterUsuariosByBodega } from "../utils/vendedorDropdownAccess";
+import { useTablePagination } from "../utils/useTablePagination";
 
 type PostventaTipo = "cambio" | "devolucion";
 type Vista = "lista" | "form";
@@ -257,7 +259,7 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
   const { rol, rolId, permisos } = useAuthStore();
   const { vendedorDropdownRoleIds, vendedorDropdownBodegaIds, fetchConfig } = useSystemConfigStore();
   const isAdmin = `${rol || ""}`.toUpperCase() === "ADMIN";
-  const canUseDropdown = canUseVendedorDropdown(rol, rolId, vendedorDropdownRoleIds);
+  const canUseDropdown = canUseVendedorDropdown(rol, rolId, vendedorDropdownRoleIds, permisos);
   const canManage = hasPermission(rol, permisos, "postventa.manage");
 
   const [vista, setVista] = useState<Vista>("lista");
@@ -512,6 +514,7 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
       ),
     );
   }, [rows, busqueda]);
+  const { paginatedRows, paginationProps } = useTablePagination(filtrados, 10);
 
   const limpiarArticulo = () => {
     setArticuloActual(capturaInicial());
@@ -1044,7 +1047,7 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
             </TableRow>
           </TableHead>
           <TableBody>
-            {filtrados.map((row) => (
+            {paginatedRows.map((row) => (
               <TableRow key={row.id}>
                 <TableCell>{row.folio}</TableCell>
                 <TableCell>{new Date(row.fecha).toLocaleDateString("es-GT")}</TableCell>
@@ -1078,6 +1081,7 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
           </TableBody>
         </Table>
       </TableContainer>
+      <TablePagination {...paginationProps} />
     </Paper>
   );
 }

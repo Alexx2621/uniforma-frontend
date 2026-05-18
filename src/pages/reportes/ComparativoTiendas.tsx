@@ -13,6 +13,7 @@ import {
   TableCell,
   TableContainer,
   TableHead,
+  TablePagination,
   TableRow,
   TextField,
   Typography,
@@ -25,6 +26,7 @@ import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 import Swal from "sweetalert2";
 import { api } from "../../api/axios";
 import UniformaTableLoadingRow from "../../components/UniformaTableLoadingRow";
+import { useTablePagination } from "../../utils/useTablePagination";
 
 interface Bodega {
   id: number;
@@ -275,6 +277,7 @@ export default function ComparativoTiendas() {
   );
 
   const lider = rows[0];
+  const { page, rowsPerPage, paginatedRows, paginationProps } = useTablePagination(rows, 10);
   const postventaAbierta = postventa.filter((row) => ["pendiente", "en_revision"].includes(`${row.estado || ""}`.toLowerCase())).length;
 
   return (
@@ -352,15 +355,15 @@ export default function ComparativoTiendas() {
           <TableBody>
             {loading ? (
               <UniformaTableLoadingRow colSpan={10} />
-            ) : rows.map((row, index) => (
+            ) : paginatedRows.map((row, index) => (
               <TableRow key={row.bodegaId} hover>
-                <TableCell>{index + 1}</TableCell>
+                <TableCell>{page * rowsPerPage + index + 1}</TableCell>
                 <TableCell>
                   <Stack direction="row" spacing={1} alignItems="center">
                     <Typography variant="body2" sx={{ fontWeight: 600 }}>
                       {row.bodega}
                     </Typography>
-                    {index === 0 && row.ventasTotal > 0 && <Chip label="Lider" size="small" color="success" />}
+                    {page === 0 && index === 0 && row.ventasTotal > 0 && <Chip label="Lider" size="small" color="success" />}
                   </Stack>
                 </TableCell>
                 <TableCell>{money(row.ventasTotal)}</TableCell>
@@ -383,6 +386,7 @@ export default function ComparativoTiendas() {
           </TableBody>
         </Table>
       </TableContainer>
+      <TablePagination {...paginationProps} />
     </Paper>
   );
 }

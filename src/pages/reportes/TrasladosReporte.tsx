@@ -13,6 +13,7 @@ import {
   TableRow,
   TableCell,
   TableBody,
+  TablePagination,
   FormControl,
   InputLabel,
   Select,
@@ -28,6 +29,7 @@ import { api } from "../../api/axios";
 import LOGO_URL from "../../assets/3-logos.png";
 import UniformaTableLoadingRow from "../../components/UniformaTableLoadingRow";
 import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../../utils/fontFamily";
+import { useTablePagination } from "../../utils/useTablePagination";
 import { buildTrasladoPdfHtml } from "../../utils/trasladoPdf";
 
 interface DetalleTraslado {
@@ -271,6 +273,7 @@ export default function TrasladosReporte() {
   };
 
   const totalItems = filas.reduce((sum, r) => sum + r.items, 0);
+  const { paginatedRows, paginationProps } = useTablePagination(filas, 10);
 
   return (
     <Paper sx={{ p: 3 }}>
@@ -389,7 +392,7 @@ export default function TrasladosReporte() {
           <TableBody>
             {loading ? (
               <UniformaTableLoadingRow colSpan={7} />
-            ) : filas.map((row) => (
+            ) : paginatedRows.map((row) => (
               <TableRow key={row.folio}>
                 <TableCell>{row.folio}</TableCell>
                 <TableCell>{row.fecha}</TableCell>
@@ -416,6 +419,7 @@ export default function TrasladosReporte() {
           </TableBody>
         </Table>
       </TableContainer>
+      <TablePagination {...paginationProps} />
     </Paper>
   );
 }

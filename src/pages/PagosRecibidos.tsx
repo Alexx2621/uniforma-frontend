@@ -13,6 +13,7 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  TablePagination,
   TextField,
   Typography,
   FormControl,
@@ -30,6 +31,7 @@ import { useAuthStore } from "../auth/useAuthStore";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import UniformaTableLoadingRow from "../components/UniformaTableLoadingRow";
 import { canUseVendedorDropdown } from "../utils/vendedorDropdownAccess";
+import { useTablePagination } from "../utils/useTablePagination";
 
 interface PagoRecibido {
   id: number;
@@ -52,10 +54,10 @@ const money = (value: number) =>
   `Q ${Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function PagosRecibidos() {
-  const { usuario, usuarioCorrelativo, rol, rolId } = useAuthStore();
+  const { usuario, usuarioCorrelativo, rol, rolId, permisos } = useAuthStore();
   const { vendedorDropdownRoleIds, vendedorDropdownBodegaIds, fetchConfig } = useSystemConfigStore();
   const isAdmin = Boolean(rol?.toLowerCase().includes("admin"));
-  const canUseDropdown = canUseVendedorDropdown(rol, rolId, vendedorDropdownRoleIds);
+  const canUseDropdown = canUseVendedorDropdown(rol, rolId, vendedorDropdownRoleIds, permisos);
   const currentUser = `${usuario || ""}`.trim().toLowerCase();
   const currentUserAlt = `${usuarioCorrelativo || ""}`.trim().toLowerCase();
   const [pagos, setPagos] = useState<PagoRecibido[]>([]);
@@ -158,6 +160,7 @@ export default function PagosRecibidos() {
         }),
     [pagosPermitidos, pedidoFiltro, filtroDesde, filtroHasta, canUseDropdown, selectedVendedor, currentUser, isMatchingCurrentUser]
   );
+  const { paginatedRows, paginationProps } = useTablePagination(pagosFiltrados, 10);
 
   return (
     <Paper sx={{ p: 3 }}>
@@ -226,7 +229,7 @@ export default function PagosRecibidos() {
           <TableBody>
             {loading ? (
               <UniformaTableLoadingRow colSpan={9} />
-            ) : pagosFiltrados.map((pago) => (
+            ) : paginatedRows.map((pago) => (
               <TableRow key={`${pago.pedidoId}-${pago.id}`} hover>
                 <TableCell>{pago.fecha ? new Date(pago.fecha).toLocaleString() : "-"}</TableCell>
                 <TableCell>#{pago.id}</TableCell>
@@ -245,6 +248,7 @@ export default function PagosRecibidos() {
             ))}
           </TableBody>
         </Table>
+        <TablePagination {...paginationProps} />
       </TableContainer>
 
       {!loading && !pagosFiltrados.length && (

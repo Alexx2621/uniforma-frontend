@@ -44,6 +44,7 @@ import TrasladosReporte from "./pages/reportes/TrasladosReporte";
 import StockBajo from "./pages/reportes/StockBajo";
 import ProduccionUnificados from "./pages/reportes/ProduccionUnificados";
 import ComparativoTiendas from "./pages/reportes/ComparativoTiendas";
+import NotFound from "./pages/NotFound";
 import { useTextInputStandards } from "./utils/useTextInputStandards";
 import { whatsappFeatureEnabled } from "./config/features";
 
@@ -105,6 +106,7 @@ export default function App() {
           <Route path="/catalogos/telas" element={<Telas />} />
           <Route path="/catalogos/colores" element={<Colores />} />
           <Route path="/catalogos/tallas" element={<Tallas />} />
+          <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>
     </BrowserRouter>

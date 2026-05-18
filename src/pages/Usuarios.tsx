@@ -16,6 +16,7 @@ import {
   TableCell,
   TableContainer,
   TableHead,
+  TablePagination,
   TableRow,
   TextField,
   Typography,
@@ -33,6 +34,7 @@ import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
 import { hasPermission } from "../auth/permissions";
 import UniformaTableLoadingRow from "../components/UniformaTableLoadingRow";
+import { useTablePagination } from "../utils/useTablePagination";
 
 interface Usuario {
   id: number;
@@ -104,6 +106,7 @@ export default function Usuarios() {
   const denyAlertShown = useRef(false);
   const canView = hasPermission(rol, permisos, "usuarios.view");
   const canManage = hasPermission(rol, permisos, "usuarios.manage");
+  const { paginatedRows, paginationProps } = useTablePagination(usuarios, 10);
   const canViewRoles = hasPermission(rol, permisos, "roles.view");
 
   const nombreCompleto = useMemo(
@@ -381,7 +384,7 @@ export default function Usuarios() {
           <TableBody>
             {loading ? (
               <UniformaTableLoadingRow colSpan={12} />
-            ) : usuarios.map((u) => (
+            ) : paginatedRows.map((u) => (
               <TableRow key={u.id}>
                 <TableCell>{u.id}</TableCell>
                 <TableCell>
@@ -432,6 +435,7 @@ export default function Usuarios() {
           </TableBody>
         </Table>
       </TableContainer>
+      <TablePagination {...paginationProps} />
 
       <Dialog open={openForm} onClose={() => setOpenForm(false)} fullWidth maxWidth="md">
         <DialogTitle>{editing ? "Editar usuario" : "Nuevo usuario"}</DialogTitle>

@@ -18,6 +18,7 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  TablePagination,
   TextField,
   Typography,
 } from "@mui/material";
@@ -29,6 +30,7 @@ import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
 import { hasPermission } from "../auth/permissions";
+import { useTablePagination } from "../utils/useTablePagination";
 
 interface DocumentoCorreccion {
   id: number;
@@ -122,6 +124,7 @@ export default function Correcciones() {
 
   const fields = useMemo(() => getCorrectionFields(selected), [selected]);
   const currentValue = selected && campo ? getFieldValue(selected, campo) : undefined;
+  const { paginatedRows: historialPaginado, paginationProps: historialPaginationProps } = useTablePagination(historial, 10);
 
   const cargarHistorial = useCallback(async (documentoId?: number) => {
     const { data } = await api.get("/correcciones/historial", { params: documentoId ? { documentoId } : {} });
@@ -319,7 +322,7 @@ export default function Correcciones() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {historial.map((row) => (
+              {historialPaginado.map((row) => (
                 <TableRow key={row.id}>
                   <TableCell>{new Date(row.creadoEn).toLocaleString("es-GT")}</TableCell>
                   <TableCell>{row.documento?.correlativo || selected?.correlativo || row.id}</TableCell>
@@ -340,6 +343,7 @@ export default function Correcciones() {
             </TableBody>
           </Table>
         </TableContainer>
+        <TablePagination {...historialPaginationProps} />
       </Stack>
     </Paper>
   );
