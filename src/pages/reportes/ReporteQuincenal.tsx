@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import {
   Box,
+  Alert,
   Paper,
   Typography,
   Stack,
@@ -57,6 +58,7 @@ interface Usuario {
   nombre: string;
   usuario: string;
   bodegaId?: number | string | null;
+  bodega?: { id: number; nombre: string } | null;
 }
 
 const monthNames = [
@@ -376,7 +378,7 @@ export default function ReporteQuincenal() {
   const currentDate = useMemo(() => new Date(), []);
   const today = toDateKey(currentDate.getFullYear(), currentDate.getMonth() + 1, currentDate.getDate());
   const currentQuincena = currentDate.getDate() <= 15 ? "1" : "2";
-  const { bodegaNombre, usuario, nombre, primerNombre, primerApellido, rol, rolId, permisos, id: userId } = useAuthStore();
+  const { bodegaId, bodegaNombre, usuario, nombre, primerNombre, primerApellido, rol, rolId, permisos, id: userId } = useAuthStore();
   const { vendedorDropdownRoleIds, vendedorDropdownBodegaIds, loaded: configLoaded, fetchConfig } = useSystemConfigStore();
   const { state: routeState } = useLocation();
   const sidebarClickAt = (routeState as any)?.sidebarClickAt;
@@ -387,14 +389,15 @@ export default function ReporteQuincenal() {
   const [showForm, setShowForm] = useState(false);
   const [filtroDesde, setFiltroDesde] = useState(today);
   const [filtroHasta, setFiltroHasta] = useState(today);
-  const tienda = `${bodegaNombre || "TIENDA"}`.trim().toUpperCase();
   const vendedor = `${usuario || nombre || [primerNombre, primerApellido].filter(Boolean).join(" ") || "USUARIO"}`
     .trim()
     .toUpperCase();
   const [month, setMonth] = useState(currentDate.getMonth() + 1);
   const [year, setYear] = useState(() => currentDate.getFullYear());
-  const [metaMes, setMetaMes] = useState(130000);
-  const [promedioDiario, setPromedioDiario] = useState(9000);
+  const [metaMes, setMetaMes] = useState(0);
+  const [promedioDiario, setPromedioDiario] = useState(0);
+  const [metaSource, setMetaSource] = useState<"vendedor" | "tienda" | "global" | "none">("none");
+  const [metaLoading, setMetaLoading] = useState(false);
   const [quincena, setQuincena] = useState<"1" | "2">(currentQuincena);
   const [reporteNo, setReporteNo] = useState("Pendiente");
   const [ventasPorDia, setVentasPorDia] = useState<Record<number, number>>({});
@@ -408,6 +411,20 @@ export default function ReporteQuincenal() {
     () => (isAdmin ? usuarios : filterUsuariosByBodega(usuarios, vendedorDropdownBodegaIds)),
     [isAdmin, usuarios, vendedorDropdownBodegaIds]
   );
+  const usuarioSeleccionado = useMemo(
+    () => usuarios.find((u) => Number(u.id) === Number(filtroUsuarioSeleccionadoId)),
+    [usuarios, filtroUsuarioSeleccionadoId]
+  );
+  const vendedorReporte = `${usuarioSeleccionado?.nombre || usuarioSeleccionado?.usuario || vendedor}`.trim().toUpperCase();
+  const tiendaReporte = `${usuarioSeleccionado?.bodega?.nombre || bodegaNombre || "TIENDA"}`.trim().toUpperCase();
+  const metaSourceLabel =
+    metaSource === "vendedor"
+      ? "Meta de vendedor"
+      : metaSource === "tienda"
+        ? "Meta de tienda"
+        : metaSource === "global"
+          ? "Meta global"
+          : "Sin meta configurada";
 
   const cargarSiguienteReporte = async () => {
     try {
@@ -417,6 +434,34 @@ export default function ReporteQuincenal() {
       setReporteNo("Pendiente");
     }
   };
+
+  const cargarMetaMensual = useCallback(async () => {
+    if (!showForm) return;
+    const usuarioMetaId = filtroUsuarioSeleccionadoId || userId;
+    const bodegaMetaId = usuarioSeleccionado?.bodegaId || bodegaId || undefined;
+
+    try {
+      setMetaLoading(true);
+      const resp = await api.get("/metas/mensuales/actual", {
+        params: {
+          year,
+          month,
+          usuarioId: usuarioMetaId,
+          bodegaId: bodegaMetaId,
+          _ts: Date.now(),
+        },
+      });
+      setMetaMes(Number(resp.data?.metaMes || 0));
+      setPromedioDiario(Number(resp.data?.promedioDiario || 0));
+      setMetaSource(resp.data?.source || "none");
+    } catch {
+      setMetaMes(0);
+      setPromedioDiario(0);
+      setMetaSource("none");
+    } finally {
+      setMetaLoading(false);
+    }
+  }, [showForm, filtroUsuarioSeleccionadoId, userId, usuarioSeleccionado?.bodegaId, bodegaId, year, month]);
 
   const cargarDocumentos = useCallback(async () => {
     try {
@@ -450,6 +495,10 @@ export default function ReporteQuincenal() {
   useEffect(() => {
     void cargarDocumentos();
   }, [cargarDocumentos]);
+
+  useEffect(() => {
+    void cargarMetaMensual();
+  }, [cargarMetaMensual]);
 
   useEffect(() => {
     if (sidebarClickAt) {
@@ -494,8 +543,9 @@ export default function ReporteQuincenal() {
     await cargarSiguienteReporte();
     setMonth(currentDate.getMonth() + 1);
     setYear(currentDate.getFullYear());
-    setMetaMes(130000);
-    setPromedioDiario(9000);
+    setMetaMes(0);
+    setPromedioDiario(0);
+    setMetaSource("none");
     setQuincena(currentQuincena);
     setVentasPorDia({});
     setShowForm(true);
@@ -503,8 +553,8 @@ export default function ReporteQuincenal() {
 
 
   const getPayload = () => ({
-    tienda,
-    vendedor,
+    tienda: tiendaReporte,
+    vendedor: vendedorReporte,
     generadoPor: vendedor,
     month,
     year,
@@ -576,6 +626,8 @@ export default function ReporteQuincenal() {
         if (userId) params.usuarioId = userId;
       } else if (filtroUsuarioSeleccionadoId) {
         params.usuarioId = filtroUsuarioSeleccionadoId;
+      } else if (userId) {
+        params.usuarioId = userId;
       }
       const resp = await api.get("/documentos", { params });
       const reportesDiarios = Array.isArray(resp.data) ? resp.data : [];
@@ -767,7 +819,7 @@ export default function ReporteQuincenal() {
 
       <Grid container spacing={2} sx={{ mb: 2 }}>
         <Grid size={{ xs: 12, sm: 3 }}>
-          <TextField label="Tienda" fullWidth size="small" value={tienda} disabled />
+          <TextField label="Tienda" fullWidth size="small" value={tiendaReporte} disabled />
         </Grid>
         <Grid size={{ xs: 12, sm: 3 }}>
           <TextField select label="Mes" fullWidth size="small" value={month} onChange={(e) => setMonth(Number(e.target.value))}>
@@ -788,16 +840,50 @@ export default function ReporteQuincenal() {
           </TextField>
         </Grid>
         <Grid size={{ xs: 12, sm: 2 }}>
-          <TextField label="Vendedor" fullWidth size="small" value={vendedor} disabled />
+          {canUseDropdown ? (
+            <TextField
+              select
+              label="Vendedor"
+              fullWidth
+              size="small"
+              value={filtroUsuarioId}
+              onChange={(e) => setFiltroUsuarioId(e.target.value as number | null | "")}
+            >
+              <MenuItem value="">Mi usuario</MenuItem>
+              {usuariosDropdown.map((u) => (
+                <MenuItem key={u.id} value={u.id}>
+                  {u.nombre || u.usuario}
+                </MenuItem>
+              ))}
+            </TextField>
+          ) : (
+            <TextField label="Vendedor" fullWidth size="small" value={vendedorReporte} disabled />
+          )}
         </Grid>
         <Grid size={{ xs: 12, sm: 3 }}>
           <TextField label="Reporte No." fullWidth size="small" value={reporteNo} disabled />
         </Grid>
         <Grid size={{ xs: 12, sm: 3 }}>
-          <TextField label="Meta mes" type="number" fullWidth size="small" value={metaMes} onChange={(e) => setMetaMes(Number(e.target.value) || 0)} />
+          <TextField
+            label="Meta mes"
+            type="number"
+            fullWidth
+            size="small"
+            value={metaMes}
+            disabled
+            helperText={metaLoading ? "Consultando meta..." : metaSourceLabel}
+          />
         </Grid>
         <Grid size={{ xs: 12, sm: 3 }}>
-          <TextField label="Promedio diario" type="number" fullWidth size="small" value={promedioDiario} onChange={(e) => setPromedioDiario(Number(e.target.value) || 0)} />
+          <TextField
+            label="Promedio diario"
+            type="number"
+            fullWidth
+            size="small"
+            value={promedioDiario}
+            disabled
+            helperText="Tomado de metas mensuales"
+          />
         </Grid>
         <Grid size={{ xs: 12, sm: 6 }}>
           <Stack direction="row" spacing={2} alignItems="center" sx={{ height: "100%" }}>
@@ -808,8 +894,14 @@ export default function ReporteQuincenal() {
       </Grid>
 
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        Este reporte no se guarda. Completa las ventas de la quincena y luego imprímelo o guárdalo como PDF.
+        Completa las ventas de la quincena y luego imprímelo o guárdalo como PDF.
       </Typography>
+
+      {metaSource === "none" && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          No hay meta configurada para {monthNames[month - 1]} {year}. Configurala en Metas mensuales para que este reporte calcule porcentajes correctamente.
+        </Alert>
+      )}
 
       <Divider sx={{ mb: 2 }} />
 

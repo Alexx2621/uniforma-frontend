@@ -119,6 +119,7 @@ export const menuSections: MenuSection[] = [
       ...(whatsappFeatureEnabled ? [{ label: "WhatsApp Business", icon: <WhatsAppIcon />, path: "/whatsapp/config" }] : []),
       { label: "Auditoria", icon: <ManageSearchOutlined />, path: "/auditoria" },
       { label: "Correcciones", icon: <FactCheckOutlined />, path: "/correcciones" },
+      { label: "Metas mensuales", icon: <TrendingUpOutlined />, path: "/metas-mensuales" },
     ],
   },
   {

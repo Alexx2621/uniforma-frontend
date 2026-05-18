@@ -44,6 +44,7 @@ import TrasladosReporte from "./pages/reportes/TrasladosReporte";
 import StockBajo from "./pages/reportes/StockBajo";
 import ProduccionUnificados from "./pages/reportes/ProduccionUnificados";
 import ComparativoTiendas from "./pages/reportes/ComparativoTiendas";
+import MetasMensuales from "./pages/MetasMensuales";
 import NotFound from "./pages/NotFound";
 import { useTextInputStandards } from "./utils/useTextInputStandards";
 import { whatsappFeatureEnabled } from "./config/features";
@@ -82,6 +83,7 @@ export default function App() {
           <Route path="/admin" element={<Admin />} />
           <Route path="/auditoria" element={<Auditoria />} />
           <Route path="/correcciones" element={<Correcciones />} />
+          <Route path="/metas-mensuales" element={<MetasMensuales />} />
           {whatsappFeatureEnabled && <Route path="/whatsapp/config" element={<WhatsappConfig />} />}
           <Route path="/correlativos" element={<Correlativos />} />
           <Route path="/produccion/correlativos" element={<Correlativos />} />

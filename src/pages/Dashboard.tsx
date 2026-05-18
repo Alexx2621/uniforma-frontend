@@ -90,8 +90,15 @@ interface DocumentoRow {
   tipo: string;
   correlativo: string;
   titulo?: string | null;
+  data?: any;
   creadoEn: string;
   usuario?: { nombre?: string | null; usuario?: string | null } | null;
+}
+
+interface MetaMensualResumen {
+  metaMes: number;
+  promedioDiario: number;
+  source: "vendedor" | "tienda" | "global" | "none";
 }
 
 interface ProductoResumen {
@@ -149,6 +156,42 @@ const toDateOnly = (value: string | Date) => {
 };
 
 const formatCurrency = (value: number) => `Q ${Number(value || 0).toFixed(2)}`;
+
+const asArray = (value: unknown): any[] => (Array.isArray(value) ? value : []);
+
+const metodoCuentaComoTarjeta = (metodo?: string | null) => {
+  const normalized = `${metodo || ""}`.trim().toLowerCase();
+  return normalized === "tarjeta" || normalized === "visalink";
+};
+
+const getTiendaRowTotal = (row: any) =>
+  Number(row?.total || 0) ||
+  Number(row?.transferencia || 0) + Number(row?.tarjeta || 0) + Number(row?.efectivo || 0);
+
+const getReporteDiarioTotal = (data: any) => {
+  const capital = asArray(data?.capitalRows).reduce(
+    (sum, row) =>
+      sum + Number(row?.transferencia || 0) + Number(row?.deposito || 0) + Number(row?.efectivo || 0),
+    0,
+  );
+  const departamento = asArray(data?.departamentoRows).reduce(
+    (sum, row) => sum + Number(row?.transferencia || 0) + Number(row?.deposito || 0),
+    0,
+  );
+  const ventasSnapshotRows = asArray(data?.ventasSnapshot).map((venta) => {
+    const total = Number(venta?.total || 0);
+    const metodo = `${venta?.metodoPago || ""}`.trim().toLowerCase();
+    return {
+      transferencia: metodo === "transferencia" ? total : 0,
+      tarjeta: metodoCuentaComoTarjeta(metodo) ? total : 0,
+      efectivo: metodo === "efectivo" ? total : 0,
+      total,
+    };
+  });
+  const tiendaRows = [...ventasSnapshotRows, ...asArray(data?.tiendaManualRows)];
+  const tienda = tiendaRows.reduce((sum, row) => sum + getTiendaRowTotal(row), 0);
+  return capital + departamento + tienda;
+};
 
 const estadoLabel = (estado?: string | null) =>
   `${estado || "N/D"}`
@@ -236,6 +279,8 @@ export default function Dashboard() {
   const [pedidos, setPedidos] = useState<PedidoProduccion[]>([]);
   const [postventa, setPostventa] = useState<PostventaRow[]>([]);
   const [documentos, setDocumentos] = useState<DocumentoRow[]>([]);
+  const [reportesDiariosUsuario, setReportesDiariosUsuario] = useState<DocumentoRow[]>([]);
+  const [metaMensual, setMetaMensual] = useState<MetaMensualResumen>({ metaMes: 0, promedioDiario: 0, source: "none" });
   const [inventario, setInventario] = useState<InventarioRow[]>([]);
   const [productos, setProductos] = useState<ProductoResumen[]>([]);
   const [bodegas, setBodegas] = useState<Bodega[]>([]);
@@ -246,7 +291,7 @@ export default function Dashboard() {
   const [bodegaFiltro, setBodegaFiltro] = useState<"all" | number>("all");
   const [saldoModalOpen, setSaldoModalOpen] = useState(false);
   const navigate = useNavigate();
-  const { rol, permisos, bodegaId: userBodegaId } = useAuthStore();
+  const { rol, permisos, bodegaId: userBodegaId, id: userId } = useAuthStore();
   const { fetchConfig } = useSystemConfigStore();
   const canAccessAllBodegas = hasPermission(rol, permisos, "sistema.multi-tienda");
   const canManageWhatsapp = rol === "ADMIN";
@@ -266,11 +311,28 @@ export default function Dashboard() {
       setLoading(true);
       setLoadError("");
       try {
-        const [respVentas, respPedidos, respPostventa, respDocumentos, respInv, respProd, respBod, respWhatsapp] = await Promise.all([
+        const currentDate = new Date();
+        const currentYear = currentDate.getFullYear();
+        const currentMonth = currentDate.getMonth() + 1;
+        const [respVentas, respPedidos, respPostventa, respDocumentos, respReportesDiarios, respMeta, respInv, respProd, respBod, respWhatsapp] = await Promise.all([
           api.get("/ventas").catch(() => ({ data: [] })),
           api.get("/produccion").catch(() => ({ data: [] })),
           api.get("/postventa").catch(() => ({ data: [] })),
           api.get("/documentos").catch(() => ({ data: [] })),
+          userId
+            ? api.get("/documentos", { params: { tipo: "reporteDiario", usuarioId: userId, _ts: Date.now() } }).catch(() => ({ data: [] }))
+            : Promise.resolve({ data: [] }),
+          api
+            .get("/metas/mensuales/actual", {
+              params: {
+                year: currentYear,
+                month: currentMonth,
+                usuarioId: userId || undefined,
+                bodegaId: userBodegaId || undefined,
+                _ts: Date.now(),
+              },
+            })
+            .catch(() => ({ data: { metaMes: 0, promedioDiario: 0, source: "none" } })),
           api.get("/inventario/reporte").catch(() => ({ data: [] })),
           api.get("/productos").catch(() => ({ data: [] })),
           api.get("/bodegas").catch(() => ({ data: [] })),
@@ -280,6 +342,12 @@ export default function Dashboard() {
         setPedidos(respPedidos.data || []);
         setPostventa(respPostventa.data || []);
         setDocumentos(respDocumentos.data || []);
+        setReportesDiariosUsuario(respReportesDiarios.data || []);
+        setMetaMensual({
+          metaMes: Number(respMeta.data?.metaMes || 0),
+          promedioDiario: Number(respMeta.data?.promedioDiario || 0),
+          source: respMeta.data?.source || "none",
+        });
         setInventario(respInv.data || []);
         setProductos(respProd.data || []);
         setBodegas(respBod.data || []);
@@ -292,7 +360,7 @@ export default function Dashboard() {
     };
     void load();
     void fetchConfig();
-  }, [cargarWhatsapp, fetchConfig]);
+  }, [cargarWhatsapp, fetchConfig, userBodegaId, userId]);
 
   const marcarWhatsappLeidos = async (vendedorId?: number) => {
     if (!whatsappFeatureEnabled) return;
@@ -373,6 +441,32 @@ export default function Dashboard() {
       .sort((a, b) => Number(b.total || 0) - Number(a.total || 0))
       .slice(0, 5);
 
+    const mesActual = new Date();
+    const currentYear = mesActual.getFullYear();
+    const currentMonth = mesActual.getMonth() + 1;
+    const reportesDiariosMes = reportesDiariosUsuario.filter((doc) => {
+      const fechaReporte = `${doc?.data?.fecha || doc.creadoEn || ""}`.slice(0, 10);
+      if (!fechaReporte) return false;
+      const [yearValue, monthValue] = fechaReporte.split("-").map(Number);
+      return yearValue === currentYear && monthValue === currentMonth;
+    });
+    const acumuladoReportesDiarios = reportesDiariosMes.reduce(
+      (sum, doc) => sum + getReporteDiarioTotal(doc.data || {}),
+      0,
+    );
+    const metaMes = Number(metaMensual.metaMes || 0);
+    const avanceMeta = metaMes > 0 ? Math.min((acumuladoReportesDiarios / metaMes) * 100, 100) : 0;
+    const excedenteMeta = metaMes > 0 ? Math.max(acumuladoReportesDiarios - metaMes, 0) : 0;
+    const restanteMeta = metaMes > 0 ? Math.max(metaMes - acumuladoReportesDiarios, 0) : 0;
+    const metaSourceLabel =
+      metaMensual.source === "vendedor"
+        ? "Meta de vendedor"
+        : metaMensual.source === "tienda"
+          ? "Meta de tienda"
+          : metaMensual.source === "global"
+            ? "Meta global"
+            : "Sin meta configurada";
+
     const actividad = [
       ...pedidosProduccion.slice(0, 4).map((pedido) => ({
         key: `pedido-${pedido.id}`,
@@ -406,11 +500,21 @@ export default function Dashboard() {
         value,
       })),
       topVentas,
+      metaMensual: {
+        metaMes,
+        promedioDiario: Number(metaMensual.promedioDiario || 0),
+        acumuladoReportesDiarios,
+        reportesDiariosMes: reportesDiariosMes.length,
+        avanceMeta,
+        restanteMeta,
+        excedenteMeta,
+        sourceLabel: metaSourceLabel,
+      },
       actividad,
       productosActivos: productos.length,
       stockTotal: inventarioFiltrado.reduce((sum, row) => sum + Number(row.stock || 0), 0),
     };
-  }, [ventas, pedidos, postventa, documentos, inventario, productos, rango, bodegaFiltro]);
+  }, [ventas, pedidos, postventa, documentos, reportesDiariosUsuario, metaMensual, inventario, productos, rango, bodegaFiltro]);
   const { paginatedRows: pedidosSaldoPaginados, paginationProps: pedidosSaldoPaginationProps } =
     useTablePagination(stats.pedidosSaldo, 10);
 
@@ -447,6 +551,56 @@ export default function Dashboard() {
 
       {loading && <LinearProgress sx={{ mb: 2 }} />}
       {loadError && <Alert severity="warning" sx={{ mb: 2 }}>{loadError}</Alert>}
+
+      <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 1 }}>
+        <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={2} sx={{ mb: 1.5 }}>
+          <Stack spacing={0.5}>
+            <Typography variant="h6">Meta mensual del vendedor</Typography>
+            <Typography variant="body2" color="text.secondary">
+              Acumulado desde reportes diarios del mes actual.
+            </Typography>
+          </Stack>
+          <Stack direction="row" spacing={1} flexWrap="wrap" justifyContent={{ xs: "flex-start", md: "flex-end" }}>
+            <Chip label={stats.metaMensual.sourceLabel} color={stats.metaMensual.metaMes > 0 ? "primary" : "warning"} />
+            <Chip variant="outlined" label={`${stats.metaMensual.reportesDiariosMes} reporte(s) diarios`} />
+          </Stack>
+        </Stack>
+        <Grid container spacing={2} alignItems="center">
+          <Grid size={{ xs: 12, md: 4 }}>
+            <Typography variant="caption" color="text.secondary">Meta mes</Typography>
+            <Typography variant="h5" fontWeight={700}>{formatCurrency(stats.metaMensual.metaMes)}</Typography>
+            <Typography variant="caption" color="text.secondary">
+              Promedio diario: {formatCurrency(stats.metaMensual.promedioDiario)}
+            </Typography>
+          </Grid>
+          <Grid size={{ xs: 12, md: 4 }}>
+            <Typography variant="caption" color="text.secondary">Acumulado reportes diarios</Typography>
+            <Typography variant="h5" fontWeight={700}>{formatCurrency(stats.metaMensual.acumuladoReportesDiarios)}</Typography>
+            <Typography variant="caption" color={stats.metaMensual.excedenteMeta > 0 ? "success.main" : "text.secondary"}>
+              {stats.metaMensual.excedenteMeta > 0
+                ? `Sobre meta: ${formatCurrency(stats.metaMensual.excedenteMeta)}`
+                : `Restante: ${formatCurrency(stats.metaMensual.restanteMeta)}`}
+            </Typography>
+          </Grid>
+          <Grid size={{ xs: 12, md: 4 }}>
+            <Stack direction="row" justifyContent="space-between" sx={{ mb: 0.75 }}>
+              <Typography variant="caption" color="text.secondary">Avance</Typography>
+              <Typography variant="caption" fontWeight={700}>{stats.metaMensual.avanceMeta.toFixed(2)}%</Typography>
+            </Stack>
+            <LinearProgress
+              variant="determinate"
+              value={stats.metaMensual.avanceMeta}
+              color={stats.metaMensual.metaMes <= 0 ? "warning" : stats.metaMensual.avanceMeta >= 100 ? "success" : "primary"}
+              sx={{ height: 10, borderRadius: 1 }}
+            />
+            {stats.metaMensual.metaMes <= 0 && (
+              <Typography variant="caption" color="warning.main" sx={{ display: "block", mt: 0.75 }}>
+                Configura una meta mensual para ver el avance real.
+              </Typography>
+            )}
+          </Grid>
+        </Grid>
+      </Paper>
 
       <Grid container spacing={2} sx={{ mb: 2 }}>
         <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
