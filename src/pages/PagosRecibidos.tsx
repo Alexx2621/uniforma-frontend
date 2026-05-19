@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
 import {
   Button,
   Dialog,
@@ -20,18 +20,22 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  Menu,
+  ListItemIcon,
 } from "@mui/material";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
 import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
+import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
 import Swal from "sweetalert2";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import UniformaTableLoadingRow from "../components/UniformaTableLoadingRow";
 import { canUseVendedorDropdown } from "../utils/vendedorDropdownAccess";
 import { useTablePagination } from "../utils/useTablePagination";
+import TransactionRelationMap, { RelationEdge, RelationNode } from "../components/TransactionRelationMap";
 
 interface PagoRecibido {
   id: number;
@@ -40,6 +44,10 @@ interface PagoRecibido {
   tipo?: string | null;
   metodo?: string | null;
   referenciaPago?: string | null;
+  numeroEnvio?: string | null;
+  numeroRecibo?: string | null;
+  referenciaDocumento?: string | null;
+  observacionesPago?: string | null;
   fecha?: string | null;
   pedidoId: number;
   pedidoFolio: string;
@@ -63,10 +71,16 @@ export default function PagosRecibidos() {
   const [pagos, setPagos] = useState<PagoRecibido[]>([]);
   const [selectedPago, setSelectedPago] = useState<PagoRecibido | null>(null);
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [filtroDesde, setFiltroDesde] = useState("");
   const [filtroHasta, setFiltroHasta] = useState("");
   const [selectedVendedor, setSelectedVendedor] = useState("all");
+  const [contextMenuAnchor, setContextMenuAnchor] = useState<{ mouseX: number; mouseY: number } | null>(null);
+  const [contextMenuPago, setContextMenuPago] = useState<PagoRecibido | null>(null);
+  const [relationModalOpen, setRelationModalOpen] = useState(false);
+  const [relationModalTitle, setRelationModalTitle] = useState("Relaciones de pago");
+  const [relationModalData, setRelationModalData] = useState<{ nodes: RelationNode[]; edges: RelationEdge[] } | null>(null);
 
   const cargarPagos = async () => {
     try {
@@ -86,7 +100,11 @@ export default function PagosRecibidos() {
               recargo: Number(pago?.recargo || 0),
               tipo: pago?.tipo || null,
               metodo: pago?.metodo || null,
-              referenciaPago: pago?.referenciaPago || null,
+              referenciaPago: pago?.referenciaPago || pago?.referencia || null,
+              numeroEnvio: pago?.numeroEnvio || null,
+              numeroRecibo: pago?.numeroRecibo || null,
+              referenciaDocumento: pago?.referenciaDocumento || null,
+              observacionesPago: pago?.observacionesPago || null,
               fecha: pago?.fecha || pedido?.fecha || null,
               pedidoId: Number(pedido?.id || 0),
               pedidoFolio,
@@ -162,6 +180,39 @@ export default function PagosRecibidos() {
   );
   const { paginatedRows, paginationProps } = useTablePagination(pagosFiltrados, 10);
 
+  const handleRowContextMenu = (pago: PagoRecibido) => (event: MouseEvent<HTMLTableRowElement>) => {
+    event.preventDefault();
+    setContextMenuPago(pago);
+    setContextMenuAnchor({ mouseX: event.clientX - 2, mouseY: event.clientY - 4 });
+  };
+
+  const closeContextMenu = () => {
+    setContextMenuAnchor(null);
+    setContextMenuPago(null);
+  };
+
+  const openRelationModal = async (pago: PagoRecibido) => {
+    try {
+      const resp = await api.get(`/relaciones/pagoPedido/${pago.id}`);
+      setRelationModalTitle(`Relaciones de pago #${pago.id}`);
+      setRelationModalData(resp.data || { nodes: [], edges: [] });
+      setRelationModalOpen(true);
+    } catch (error: any) {
+      Swal.fire("Error", error?.response?.data?.message || "No se pudieron cargar las relaciones", "error");
+    }
+  };
+
+  const handleContextMenuAction = (action: "relations" | "detail" | "pedido") => {
+    if (!contextMenuPago) {
+      closeContextMenu();
+      return;
+    }
+    if (action === "relations") void openRelationModal(contextMenuPago);
+    if (action === "detail") setSelectedPago(contextMenuPago);
+    if (action === "pedido") navigate(`/produccion/${contextMenuPago.pedidoId}`);
+    closeContextMenu();
+  };
+
   return (
     <Paper sx={{ p: 3 }}>
       <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" alignItems="center" spacing={2} sx={{ mb: 2 }}>
@@ -230,7 +281,7 @@ export default function PagosRecibidos() {
             {loading ? (
               <UniformaTableLoadingRow colSpan={9} />
             ) : paginatedRows.map((pago) => (
-              <TableRow key={`${pago.pedidoId}-${pago.id}`} hover>
+              <TableRow key={`${pago.pedidoId}-${pago.id}`} hover onContextMenu={handleRowContextMenu(pago)}>
                 <TableCell>{pago.fecha ? new Date(pago.fecha).toLocaleString() : "-"}</TableCell>
                 <TableCell>#{pago.id}</TableCell>
                 <TableCell>{pago.pedidoFolio}</TableCell>
@@ -256,6 +307,32 @@ export default function PagosRecibidos() {
           <Typography color="text.secondary">No se encontraron pagos recibidos.</Typography>
         </Paper>
       )}
+
+      <Menu
+        open={Boolean(contextMenuAnchor)}
+        onClose={closeContextMenu}
+        anchorReference="anchorPosition"
+        anchorPosition={contextMenuAnchor ? { top: contextMenuAnchor.mouseY, left: contextMenuAnchor.mouseX } : undefined}
+      >
+        <MenuItem onClick={() => handleContextMenuAction("relations")}>
+          <ListItemIcon>
+            <VisibilityOutlined fontSize="small" />
+          </ListItemIcon>
+          Ver relaciones
+        </MenuItem>
+        <MenuItem onClick={() => handleContextMenuAction("detail")}>
+          <ListItemIcon>
+            <ReceiptLongOutlined fontSize="small" />
+          </ListItemIcon>
+          Ver pago
+        </MenuItem>
+        <MenuItem onClick={() => handleContextMenuAction("pedido")}>
+          <ListItemIcon>
+            <OpenInNewOutlined fontSize="small" />
+          </ListItemIcon>
+          Abrir pedido
+        </MenuItem>
+      </Menu>
 
       <Dialog open={Boolean(selectedPago)} onClose={() => setSelectedPago(null)} fullWidth maxWidth="sm">
         <DialogTitle>Detalle de pago</DialogTitle>
@@ -299,6 +376,18 @@ export default function PagosRecibidos() {
                 <strong>Referencia:</strong> {selectedPago.referenciaPago || "N/D"}
               </Typography>
               <Typography>
+                <strong>Numero de envio/guia:</strong> {selectedPago.numeroEnvio || "N/D"}
+              </Typography>
+              <Typography>
+                <strong>Numero de recibo:</strong> {selectedPago.numeroRecibo || "N/D"}
+              </Typography>
+              <Typography>
+                <strong>Documento externo:</strong> {selectedPago.referenciaDocumento || "N/D"}
+              </Typography>
+              <Typography>
+                <strong>Observaciones pago:</strong> {selectedPago.observacionesPago || "N/D"}
+              </Typography>
+              <Typography>
                 <strong>Estado pedido:</strong> {selectedPago.estado || "N/D"}
               </Typography>
             </Stack>
@@ -308,6 +397,17 @@ export default function PagosRecibidos() {
           <Button onClick={() => setSelectedPago(null)}>Cerrar</Button>
         </DialogActions>
       </Dialog>
+
+      <TransactionRelationMap
+        open={relationModalOpen}
+        title={relationModalTitle}
+        nodes={relationModalData?.nodes || []}
+        edges={relationModalData?.edges || []}
+        onClose={() => setRelationModalOpen(false)}
+        onCardClick={(node) => {
+          if (node.path) navigate(node.path);
+        }}
+      />
     </Paper>
   );
 }

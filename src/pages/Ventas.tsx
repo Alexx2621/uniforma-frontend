@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import {
   Paper,
   Typography,
@@ -7,11 +7,16 @@ import {
   TextField,
   Stack,
   Chip,
+  Menu,
+  MenuItem,
+  ListItemIcon,
 } from "@mui/material";
 import { DataGrid, GridColDef } from "@mui/x-data-grid";
 import AddIcon from "@mui/icons-material/Add";
 import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
 import PictureAsPdfOutlined from "@mui/icons-material/PictureAsPdfOutlined";
+import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
+import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { useNavigate } from "react-router-dom";
@@ -21,6 +26,7 @@ import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import LOGO_URL from "../assets/3-logos.png";
 import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../utils/fontFamily";
 import { buildVentaPdfHtml } from "../utils/ventaPdf";
+import TransactionRelationMap, { RelationEdge, RelationNode } from "../components/TransactionRelationMap";
 
 interface VentaRow {
   id: number;
@@ -64,6 +70,11 @@ export default function Ventas() {
   const [fechaDesde, setFechaDesde] = useState(() => toDateOnly(new Date().toISOString()));
   const [fechaHasta, setFechaHasta] = useState(() => toDateOnly(new Date().toISOString()));
   const [cierreFecha, setCierreFecha] = useState(() => toDateOnly(new Date().toISOString()));
+  const [contextMenuAnchor, setContextMenuAnchor] = useState<{ mouseX: number; mouseY: number } | null>(null);
+  const [contextMenuVenta, setContextMenuVenta] = useState<VentaRow | null>(null);
+  const [relationModalOpen, setRelationModalOpen] = useState(false);
+  const [relationModalTitle, setRelationModalTitle] = useState("Relaciones de venta");
+  const [relationModalData, setRelationModalData] = useState<{ nodes: RelationNode[]; edges: RelationEdge[] } | null>(null);
   const { usuario, rol, permisos, bodegaId: userBodegaId } = useAuthStore();
   const { fetchConfig } = useSystemConfigStore();
   const navigate = useNavigate();
@@ -185,6 +196,53 @@ export default function Ventas() {
   );
 
   const formatter = (v: number) => `Q ${v.toFixed(2)}`;
+
+  const getVentaRowId = (row: VentaRow) => {
+    const idVal = row.id ?? (row as any).ventaId ?? (row as any).venta_id;
+    if (idVal && idVal !== 0) return idVal;
+    if (row.folio && `${row.folio}`.trim() !== "") return row.folio;
+    if (row.displayFolio) return row.displayFolio;
+    return `tmp-${row.fecha}-${row.total}`;
+  };
+
+  const handleGridContextMenu = (event: MouseEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement | null;
+    const rowElement = target?.closest("[data-id]") as HTMLElement | null;
+    const rowId = rowElement?.getAttribute("data-id");
+    if (!rowId) return;
+    const row = filtered.find((item) => String(getVentaRowId(item)) === rowId);
+    if (!row) return;
+    event.preventDefault();
+    setContextMenuVenta(row);
+    setContextMenuAnchor({ mouseX: event.clientX - 2, mouseY: event.clientY - 4 });
+  };
+
+  const closeContextMenu = () => {
+    setContextMenuAnchor(null);
+    setContextMenuVenta(null);
+  };
+
+  const openRelationModal = async (row: VentaRow) => {
+    try {
+      const resp = await api.get(`/relaciones/venta/${row.id}`);
+      setRelationModalTitle(`Relaciones de ${row.displayFolio || row.folio || `V-${row.id}`}`);
+      setRelationModalData(resp.data || { nodes: [], edges: [] });
+      setRelationModalOpen(true);
+    } catch (error: any) {
+      Swal.fire("Error", error?.response?.data?.message || "No se pudieron cargar las relaciones", "error");
+    }
+  };
+
+  const handleContextMenuAction = (action: "relations" | "open" | "pdf") => {
+    if (!contextMenuVenta) {
+      closeContextMenu();
+      return;
+    }
+    if (action === "relations") void openRelationModal(contextMenuVenta);
+    if (action === "open") verVenta(contextMenuVenta);
+    if (action === "pdf") exportVentaPdf(contextMenuVenta);
+    closeContextMenu();
+  };
 
   const exportVentaPdf = (row: any) => {
     const win = window.open("", "_blank");
@@ -730,22 +788,53 @@ export default function Ventas() {
         </Grid>
       </Grid>
 
-      <div style={{ height: 620, width: "100%" }}>
+      <div style={{ height: 620, width: "100%" }} onContextMenu={handleGridContextMenu}>
         <DataGrid
           loading={loading}
           rows={filtered}
           columns={columns}
-          getRowId={(row) => {
-            const idVal = row.id ?? row.ventaId ?? row.venta_id;
-            if (idVal && idVal !== 0) return idVal;
-            if (row.folio && `${row.folio}`.trim() !== "") return row.folio;
-            if (row.displayFolio) return row.displayFolio;
-            return `tmp-${Math.random()}`;
-          }}
+          getRowId={getVentaRowId}
           pageSizeOptions={[10, 25, 50]}
           initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
         />
       </div>
+
+      <Menu
+        open={Boolean(contextMenuAnchor)}
+        onClose={closeContextMenu}
+        anchorReference="anchorPosition"
+        anchorPosition={contextMenuAnchor ? { top: contextMenuAnchor.mouseY, left: contextMenuAnchor.mouseX } : undefined}
+      >
+        <MenuItem onClick={() => handleContextMenuAction("relations")}>
+          <ListItemIcon>
+            <VisibilityOutlined fontSize="small" />
+          </ListItemIcon>
+          Ver relaciones
+        </MenuItem>
+        <MenuItem onClick={() => handleContextMenuAction("open")}>
+          <ListItemIcon>
+            <OpenInNewOutlined fontSize="small" />
+          </ListItemIcon>
+          Ver venta
+        </MenuItem>
+        <MenuItem onClick={() => handleContextMenuAction("pdf")}>
+          <ListItemIcon>
+            <PictureAsPdfOutlined fontSize="small" />
+          </ListItemIcon>
+          Generar PDF
+        </MenuItem>
+      </Menu>
+
+      <TransactionRelationMap
+        open={relationModalOpen}
+        title={relationModalTitle}
+        nodes={relationModalData?.nodes || []}
+        edges={relationModalData?.edges || []}
+        onClose={() => setRelationModalOpen(false)}
+        onCardClick={(node) => {
+          if (node.path) navigate(node.path);
+        }}
+      />
     </Paper>
   );
 }

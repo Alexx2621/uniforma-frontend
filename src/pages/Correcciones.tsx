@@ -67,6 +67,12 @@ const formatValue = (value: any) => {
 
 const getDocumentoTotal = (doc?: DocumentoCorreccion | null) => {
   if (!doc) return 0;
+  if (doc.tipo === "pagoPedido") {
+    return Number(doc.data?.monto || 0) + Number(doc.data?.recargo || 0);
+  }
+  if (doc.tipo === "pagoVenta") {
+    return Number(doc.data?.monto || 0);
+  }
   if (doc.tipo === "reporteQuincenal") {
     return Object.values(doc.data?.ventasPorDia || {}).reduce((sum: number, value: any) => sum + Number(value || 0), 0);
   }
@@ -89,11 +95,36 @@ const getDocumentoTotal = (doc?: DocumentoCorreccion | null) => {
   return capital + departamento + tienda;
 };
 
+const getTipoLabel = (tipo?: string | null) => {
+  if (tipo === "reporteQuincenal") return "Reporte quincenal";
+  if (tipo === "reporteDiario") return "Reporte diario";
+  if (tipo === "pagoPedido") return "Pago de pedido";
+  if (tipo === "pagoVenta") return "Pago de venta";
+  return tipo || "N/D";
+};
+
 const getFieldValue = (doc: DocumentoCorreccion | null, field: string) =>
   field.split(".").reduce<any>((current, part) => (current == null ? undefined : current[part]), doc?.data || {});
 
 const getCorrectionFields = (doc: DocumentoCorreccion | null) => {
   if (!doc) return [];
+  if (doc.tipo === "pagoPedido" || doc.tipo === "pagoVenta") {
+    const fields = [
+      { value: "monto", label: "Monto ingresado", current: doc.data?.monto },
+      { value: "metodo", label: "Metodo de pago", current: doc.data?.metodo },
+      { value: "referencia", label: "Numero de referencia", current: doc.data?.referencia },
+      { value: "banco", label: "Banco", current: doc.data?.banco },
+    ];
+    if (doc.tipo === "pagoPedido") {
+      fields.push(
+        { value: "numeroEnvio", label: "Numero de envio/guia", current: doc.data?.numeroEnvio },
+        { value: "numeroRecibo", label: "Numero de recibo", current: doc.data?.numeroRecibo },
+        { value: "referenciaDocumento", label: "Referencia de documento externo", current: doc.data?.referenciaDocumento },
+        { value: "observacionesPago", label: "Observaciones del pago", current: doc.data?.observacionesPago },
+      );
+    }
+    return fields;
+  }
   if (doc.tipo === "reporteQuincenal") {
     const ventasPorDia = doc.data?.ventasPorDia || {};
     return Object.keys(ventasPorDia)
@@ -125,16 +156,17 @@ export default function Correcciones() {
   const fields = useMemo(() => getCorrectionFields(selected), [selected]);
   const currentValue = selected && campo ? getFieldValue(selected, campo) : undefined;
   const { paginatedRows: historialPaginado, paginationProps: historialPaginationProps } = useTablePagination(historial, 10);
+  const metodoOptions = ["efectivo", "transferencia", "deposito_bancario", "tarjeta", "visalink", "orden_compra", "sin_cobro", "sin_cobro_stock"];
 
-  const cargarHistorial = useCallback(async (documentoId?: number) => {
-    const { data } = await api.get("/correcciones/historial", { params: documentoId ? { documentoId } : {} });
+  const cargarHistorial = useCallback(async (params: { documentoId?: number; tipo?: string; entidadId?: number } = {}) => {
+    const { data } = await api.get("/correcciones/historial", { params });
     setHistorial(Array.isArray(data) ? data : []);
   }, []);
 
   const buscar = useCallback(async () => {
     try {
       setLoading(true);
-      const { data } = await api.get("/correcciones/documentos", { params: { tipo, q, limit: 50, _ts: Date.now() } });
+      const { data } = await api.get("/correcciones/objetos", { params: { tipo, q, limit: 50, _ts: Date.now() } });
       setDocumentos(Array.isArray(data) ? data : []);
     } catch (error: any) {
       Swal.fire("Error", error?.response?.data?.message || "No se pudieron buscar documentos", "error");
@@ -152,14 +184,18 @@ export default function Correcciones() {
 
   const seleccionarDocumento = async (doc: DocumentoCorreccion) => {
     try {
-      const { data } = await api.get(`/correcciones/documentos/${doc.id}`, { params: { _ts: Date.now() } });
+      const { data } = await api.get(`/correcciones/objetos/${doc.tipo}/${doc.id}`, { params: { _ts: Date.now() } });
       setSelected(data);
       const nextFields = getCorrectionFields(data);
       const firstField = nextFields[0]?.value || "";
       setCampo(firstField);
       setValorNuevo(firstField ? `${getFieldValue(data, firstField) ?? ""}` : "");
       setMotivo("");
-      await cargarHistorial(doc.id);
+      await cargarHistorial(
+        ["pagoPedido", "pagoVenta"].includes(data.tipo)
+          ? { tipo: data.tipo, entidadId: data.id }
+          : { documentoId: data.id }
+      );
     } catch (error: any) {
       Swal.fire("Error", error?.response?.data?.message || "No se pudo cargar el documento", "error");
     }
@@ -173,11 +209,18 @@ export default function Correcciones() {
     }
     try {
       setSaving(true);
-      const resp = await api.patch(`/correcciones/documentos/${selected.id}`, { campo, valorNuevo, motivo });
+      const resp = await api.patch(`/correcciones/objetos/${selected.tipo}/${selected.id}`, { campo, valorNuevo, motivo });
       setSelected(resp.data?.documento || null);
       setValorNuevo(`${getFieldValue(resp.data?.documento || null, campo) ?? ""}`);
       setMotivo("");
-      await Promise.all([buscar(), cargarHistorial(selected.id)]);
+      await Promise.all([
+        buscar(),
+        cargarHistorial(
+          ["pagoPedido", "pagoVenta"].includes(selected.tipo)
+            ? { tipo: selected.tipo, entidadId: selected.id }
+            : { documentoId: selected.id }
+        ),
+      ]);
       Swal.fire("Guardado", "Correccion aplicada y registrada en auditoria", "success");
     } catch (error: any) {
       Swal.fire("Error", error?.response?.data?.message || "No se pudo aplicar la correccion", "error");
@@ -193,7 +236,7 @@ export default function Correcciones() {
       field: "tipo",
       headerName: "Tipo",
       minWidth: 150,
-      renderCell: (params) => <Chip size="small" label={params.row.tipo === "reporteQuincenal" ? "Quincenal" : "Diario"} />,
+      renderCell: (params) => <Chip size="small" label={getTipoLabel(params.row.tipo)} />,
     },
     {
       field: "total",
@@ -224,7 +267,7 @@ export default function Correcciones() {
         <Box>
           <Typography variant="h4">Correcciones controladas</Typography>
           <Typography variant="body2" color="text.secondary">
-            Corrige reportes con motivo obligatorio y registro de auditoria.
+            Corrige reportes y pagos con motivo obligatorio y registro de auditoria.
           </Typography>
         </Box>
 
@@ -232,6 +275,8 @@ export default function Correcciones() {
           <TextField select label="Tipo" size="small" value={tipo} onChange={(e) => setTipo(e.target.value)} sx={{ minWidth: 210 }}>
             <MenuItem value="reporteQuincenal">Reporte quincenal</MenuItem>
             <MenuItem value="reporteDiario">Reporte diario</MenuItem>
+            <MenuItem value="pagoPedido">Pagos de pedidos</MenuItem>
+            <MenuItem value="pagoVenta">Pagos de ventas</MenuItem>
           </TextField>
           <TextField
             label="Buscar por correlativo o titulo"
@@ -282,7 +327,31 @@ export default function Correcciones() {
                   </Select>
                 </FormControl>
                 <TextField label="Valor actual" size="small" value={formatValue(currentValue)} disabled sx={{ minWidth: 190 }} />
-                <TextField label="Nuevo valor" size="small" value={valorNuevo} onChange={(e) => setValorNuevo(e.target.value)} sx={{ minWidth: 190 }} />
+                {campo === "metodo" ? (
+                  <TextField
+                    select
+                    label="Nuevo valor"
+                    size="small"
+                    value={valorNuevo}
+                    onChange={(e) => setValorNuevo(e.target.value)}
+                    sx={{ minWidth: 220 }}
+                  >
+                    {metodoOptions.map((metodo) => (
+                      <MenuItem key={metodo} value={metodo}>
+                        {metodo}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                ) : (
+                  <TextField
+                    label="Nuevo valor"
+                    size="small"
+                    type={campo === "monto" ? "number" : "text"}
+                    value={valorNuevo}
+                    onChange={(e) => setValorNuevo(e.target.value)}
+                    sx={{ minWidth: 190 }}
+                  />
+                )}
               </Stack>
               <TextField
                 label="Motivo de la correccion"

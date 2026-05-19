@@ -5,6 +5,10 @@ import {
   Card,
   CardContent,
   Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Divider,
   FormControl,
   InputLabel,
@@ -16,6 +20,7 @@ import {
   Typography,
 } from "@mui/material";
 import PaidOutlined from "@mui/icons-material/PaidOutlined";
+import NoteAddOutlined from "@mui/icons-material/NoteAddOutlined";
 import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import Swal from "sweetalert2";
@@ -50,6 +55,21 @@ type PagoForm = {
   metodo: string;
   porcentajeRecargo: number;
   referencia: string;
+  numeroEnvio: string;
+  numeroRecibo: string;
+  referenciaDocumento: string;
+  observacionesPago: string;
+};
+
+const emptyPagoForm: PagoForm = {
+  monto: 0,
+  metodo: "efectivo",
+  porcentajeRecargo: 0,
+  referencia: "",
+  numeroEnvio: "",
+  numeroRecibo: "",
+  referenciaDocumento: "",
+  observacionesPago: "",
 };
 
 const money = (value: number) =>
@@ -70,6 +90,7 @@ export default function PagosPedidos() {
   const [filtroHasta, setFiltroHasta] = useState("");
   const [selectedVendedor, setSelectedVendedor] = useState("all");
   const [loading, setLoading] = useState(false);
+  const [extrasPedido, setExtrasPedido] = useState<PedidoPago | null>(null);
 
   const cargar = async () => {
     try {
@@ -94,10 +115,8 @@ export default function PagosPedidos() {
         data.forEach((pedido: PedidoPago) => {
           if (!next[pedido.id]) {
             next[pedido.id] = {
+              ...emptyPagoForm,
               monto: Number(pedido.saldoPendiente || 0),
-              metodo: "efectivo",
-              porcentajeRecargo: 0,
-              referencia: "",
             };
           }
         });
@@ -143,13 +162,23 @@ export default function PagosPedidos() {
     setForms((current) => ({
       ...current,
       [pedidoId]: {
-        ...(current[pedidoId] || { monto: 0, metodo: "efectivo", porcentajeRecargo: 0, referencia: "" }),
+        ...(current[pedidoId] || emptyPagoForm),
         ...patch,
       },
     }));
   };
 
-  const generarPdfPago = (pedido: PedidoPago, monto: number, metodo: string, tipo: string, referencia = "") => {
+  const getForm = (pedido: PedidoPago) => forms[pedido.id] || { ...emptyPagoForm, monto: Number(pedido.saldoPendiente || 0) };
+
+  const hasExtraData = (form: PagoForm) =>
+    Boolean(
+      form.numeroEnvio.trim() ||
+        form.numeroRecibo.trim() ||
+        form.referenciaDocumento.trim() ||
+        form.observacionesPago.trim()
+    );
+
+  const generarPdfPago = (pedido: PedidoPago, monto: number, metodo: string, tipo: string, referencia = "", extras?: PagoForm) => {
     const win = window.open("", "_blank");
     if (!win) {
       Swal.fire("Aviso", "Habilita las ventanas emergentes para ver el comprobante", "info");
@@ -187,6 +216,10 @@ export default function PagosPedidos() {
             <tr><td>Monto</td><td>${money(monto)}</td></tr>
             <tr><td>Metodo</td><td>${metodo}</td></tr>
             ${referencia ? `<tr><td>Referencia</td><td>${referencia}</td></tr>` : ""}
+            ${extras?.numeroEnvio ? `<tr><td>Numero de envio/guia</td><td>${extras.numeroEnvio}</td></tr>` : ""}
+            ${extras?.numeroRecibo ? `<tr><td>Numero de recibo</td><td>${extras.numeroRecibo}</td></tr>` : ""}
+            ${extras?.referenciaDocumento ? `<tr><td>Documento externo</td><td>${extras.referenciaDocumento}</td></tr>` : ""}
+            ${extras?.observacionesPago ? `<tr><td>Observaciones</td><td>${extras.observacionesPago}</td></tr>` : ""}
             <tr><td>Tipo</td><td>${tipo}</td></tr>
           </tbody>
         </table>
@@ -197,7 +230,7 @@ export default function PagosPedidos() {
   };
 
   const pagar = async (pedido: PedidoPago) => {
-    const form = forms[pedido.id] || { monto: 0, metodo: "efectivo", porcentajeRecargo: 0, referencia: "" };
+    const form = getForm(pedido);
     const monto = Number(form.monto || 0);
     const porcRecargo = metodoUsaRecargo(form.metodo) ? Number(form.porcentajeRecargo || 0) : 0;
     const recargo = monto * (porcRecargo / 100);
@@ -217,6 +250,26 @@ export default function PagosPedidos() {
       return;
     }
 
+    const confirm = await Swal.fire({
+      title: "Confirmar pago",
+      html: `
+        <div style="text-align:left">
+          <p><strong>Pedido:</strong> ${pedido.folio || `P-${pedido.id}`}</p>
+          <p><strong>Monto:</strong> ${money(monto)}</p>
+          ${recargo ? `<p><strong>Recargo:</strong> ${money(recargo)}</p>` : ""}
+          <p><strong>Total a aplicar:</strong> ${money(aplicado)}</p>
+          <p><strong>Metodo:</strong> ${form.metodo}</p>
+          ${form.referencia.trim() ? `<p><strong>Referencia:</strong> ${form.referencia.trim()}</p>` : ""}
+          ${hasExtraData(form) ? "<p><strong>Datos adicionales:</strong> registrados</p>" : ""}
+        </div>
+      `,
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "Si, registrar pago",
+      cancelButtonText: "Revisar datos",
+    });
+    if (!confirm.isConfirmed) return;
+
     try {
       await api.post(`/produccion/${pedido.id}/pago`, {
         monto,
@@ -224,8 +277,12 @@ export default function PagosPedidos() {
         tipo: "saldo",
         porcentajeRecargo: porcRecargo,
         referenciaPago: metodoRequiereReferencia(form.metodo) ? form.referencia.trim() : null,
+        numeroEnvio: form.numeroEnvio.trim() || null,
+        numeroRecibo: form.numeroRecibo.trim() || null,
+        referenciaDocumento: form.referenciaDocumento.trim() || null,
+        observacionesPago: form.observacionesPago.trim() || null,
       });
-      generarPdfPago(pedido, aplicado, form.metodo, "saldo", form.referencia.trim());
+      generarPdfPago(pedido, aplicado, form.metodo, "saldo", form.referencia.trim(), form);
       Swal.fire("Pago registrado", "Saldo actualizado", "success");
       await cargar();
     } catch (error: any) {
@@ -286,7 +343,7 @@ export default function PagosPedidos() {
       <Box display="grid" gap={2} gridTemplateColumns={{ xs: "1fr", md: "repeat(2, minmax(0, 1fr))", xl: "repeat(3, minmax(0, 1fr))" }}>
         {pendientes.map((pedido) => {
           const totalPagado = (pedido.pagos || []).reduce((sum, pago) => sum + getPagoAplicado(pago), 0);
-          const form = forms[pedido.id] || { monto: pedido.saldoPendiente, metodo: "efectivo", porcentajeRecargo: 0, referencia: "" };
+          const form = getForm(pedido);
           const usaRecargo = metodoUsaRecargo(form.metodo);
           const requiereReferencia = metodoRequiereReferencia(form.metodo);
           return (
@@ -370,6 +427,14 @@ export default function PagosPedidos() {
                         helperText="Numero de transaccion"
                       />
                     )}
+                    <Button
+                      variant={hasExtraData(form) ? "contained" : "outlined"}
+                      color={hasExtraData(form) ? "secondary" : "primary"}
+                      startIcon={<NoteAddOutlined />}
+                      onClick={() => setExtrasPedido(pedido)}
+                    >
+                      {hasExtraData(form) ? "Datos adicionales agregados" : "Datos adicionales"}
+                    </Button>
                     <Button variant="contained" startIcon={<PaidOutlined />} onClick={() => pagar(pedido)}>
                       Registrar pago
                     </Button>
@@ -387,6 +452,56 @@ export default function PagosPedidos() {
           </Box>
         )}
       </Box>
+
+      <Dialog open={Boolean(extrasPedido)} onClose={() => setExtrasPedido(null)} fullWidth maxWidth="sm">
+        <DialogTitle>Datos adicionales del pago</DialogTitle>
+        <DialogContent dividers>
+          {extrasPedido ? (
+            <Stack spacing={2} sx={{ pt: 0.5 }}>
+              <Typography variant="body2" color="text.secondary">
+                Estos datos son opcionales y ayudan a relacionar el pago con envios, recibos o documentos externos.
+              </Typography>
+              <TextField
+                label="Numero de envio o guia"
+                size="small"
+                value={getForm(extrasPedido).numeroEnvio}
+                onChange={(e) => updateForm(extrasPedido.id, { numeroEnvio: e.target.value })}
+                fullWidth
+              />
+              <TextField
+                label="Numero de recibo"
+                size="small"
+                value={getForm(extrasPedido).numeroRecibo}
+                onChange={(e) => updateForm(extrasPedido.id, { numeroRecibo: e.target.value })}
+                fullWidth
+              />
+              <TextField
+                label="Referencia de otro documento"
+                size="small"
+                value={getForm(extrasPedido).referenciaDocumento}
+                onChange={(e) => updateForm(extrasPedido.id, { referenciaDocumento: e.target.value })}
+                helperText="Ej. numero de factura, deposito, voucher externo, orden o recibo relacionado"
+                fullWidth
+              />
+              <TextField
+                label="Observaciones del pago"
+                size="small"
+                value={getForm(extrasPedido).observacionesPago}
+                onChange={(e) => updateForm(extrasPedido.id, { observacionesPago: e.target.value })}
+                multiline
+                minRows={3}
+                fullWidth
+              />
+            </Stack>
+          ) : null}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setExtrasPedido(null)}>Cerrar</Button>
+          <Button variant="contained" onClick={() => setExtrasPedido(null)}>
+            Guardar datos
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Paper>
   );
 }

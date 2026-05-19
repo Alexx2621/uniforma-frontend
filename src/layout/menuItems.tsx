@@ -56,6 +56,7 @@ export const menuSections: MenuSection[] = [
     items: [
       { label: "Dashboard", icon: <DashboardOutlined />, path: "/" },
       { label: "Ventas", icon: <PointOfSaleOutlined />, path: "/ventas" },
+      { label: "Envios", icon: <LocalShippingOutlined />, path: "/envios" },
       { label: "Cambios", icon: <SwapHorizOutlined />, path: "/cambios" },
       { label: "Devoluciones", icon: <AssignmentReturnOutlined />, path: "/devoluciones" },
     ],

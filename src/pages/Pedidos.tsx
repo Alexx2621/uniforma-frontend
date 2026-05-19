@@ -30,7 +30,6 @@ import { hasPermission } from "../auth/permissions";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import TransactionRelationMap, { RelationEdge, RelationNode } from "../components/TransactionRelationMap";
-import { buildProductionRelationData } from "../utils/productionRelations";
 import { descargarProduccionUnificadoPdf } from "../utils/produccionUnificadoPdf";
 
 interface ProductoCatalogo {
@@ -327,12 +326,19 @@ export default function Pedidos() {
 
   const [relationModalOpen, setRelationModalOpen] = useState(false);
   const [relationModalData, setRelationModalData] = useState<{ nodes: RelationNodeItem[]; edges: RelationEdgeItem[] } | null>(null);
+  const [relationModalTitle, setRelationModalTitle] = useState("Relaciones del pedido");
   const [contextMenuAnchor, setContextMenuAnchor] = useState<{ mouseX: number; mouseY: number } | null>(null);
   const [contextMenuPedido, setContextMenuPedido] = useState<PedidoRow | null>(null);
 
-  const openRelationModal = (pedido: PedidoRow) => {
-    setRelationModalData(buildProductionRelationData(pedido));
-    setRelationModalOpen(true);
+  const openRelationModal = async (pedido: PedidoRow) => {
+    try {
+      const resp = await api.get(`/relaciones/pedido/${pedido.id}`);
+      setRelationModalTitle(`Relaciones de ${pedido.displayFolio || pedido.folio || `P-${pedido.id}`}`);
+      setRelationModalData(resp.data || { nodes: [], edges: [] });
+      setRelationModalOpen(true);
+    } catch (error: any) {
+      Swal.fire("Error", error?.response?.data?.message || "No se pudieron cargar las relaciones", "error");
+    }
   };
 
   const closeRelationModal = () => {
@@ -368,7 +374,7 @@ export default function Pedidos() {
     }
     switch (action) {
       case "relations":
-        openRelationModal(contextMenuPedido);
+        void openRelationModal(contextMenuPedido);
         break;
       case "open":
         navigate(`/produccion/${contextMenuPedido.id}`);
@@ -1054,7 +1060,7 @@ export default function Pedidos() {
 
       <TransactionRelationMap
         open={relationModalOpen}
-        title="Relaciones del pedido"
+        title={relationModalTitle}
         nodes={relationModalData?.nodes || []}
         edges={relationModalData?.edges || []}
         onClose={closeRelationModal}

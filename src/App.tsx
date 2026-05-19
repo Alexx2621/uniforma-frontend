@@ -30,6 +30,8 @@ import Pedidos from "./pages/Pedidos";
 import PedidoNuevo from "./pages/PedidoNuevo";
 import PedidoDetalle from "./pages/PedidoDetalle";
 import Bordados from "./pages/Bordados";
+import Envios from "./pages/Envios";
+import EnvioNuevo from "./pages/EnvioNuevo";
 import TrackingPedidos from "./pages/TrackingPedidos";
 import PagosPedidos from "./pages/PagosPedidos";
 import PagosRecibidos from "./pages/PagosRecibidos";
@@ -91,6 +93,8 @@ export default function App() {
           <Route path="/produccion/nuevo" element={<PedidoNuevo />} />
           <Route path="/produccion/:id" element={<PedidoDetalle />} />
           <Route path="/bordados" element={<Bordados />} />
+          <Route path="/envios" element={<Envios />} />
+          <Route path="/envios/nuevo" element={<EnvioNuevo />} />
           <Route path="/tracking-pedidos" element={<TrackingPedidos />} />
           <Route path="/pagos/pedidos" element={<PagosPedidos />} />
           <Route path="/pagos/recibidos" element={<PagosRecibidos />} />
