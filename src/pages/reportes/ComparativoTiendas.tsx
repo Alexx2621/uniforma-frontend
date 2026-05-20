@@ -27,6 +27,7 @@ import Swal from "sweetalert2";
 import { api } from "../../api/axios";
 import UniformaTableLoadingRow from "../../components/UniformaTableLoadingRow";
 import { useTablePagination } from "../../utils/useTablePagination";
+import { formatCurrency } from "../../utils/currency";
 
 interface Bodega {
   id: number;
@@ -75,7 +76,7 @@ interface TiendaRow {
   stockBajo: number;
 }
 
-const money = (value: number) => `Q ${Number(value || 0).toFixed(2)}`;
+const money = formatCurrency;
 
 const today = () => {
   const date = new Date();

@@ -28,6 +28,7 @@ import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
 import { hasPermission } from "../auth/permissions";
+import { formatCurrency } from "../utils/currency";
 
 interface FormProducto {
   id: number | null;
@@ -213,7 +214,7 @@ export default function Productos() {
         headerName: "Precio",
         flex: 1,
         valueFormatter: (value: number | string | null) =>
-          value != null ? `Q ${Number(value).toFixed(2)}` : "Q 0.00",
+          formatCurrency(value as number),
       },
       ...(canManageProducts
         ? [

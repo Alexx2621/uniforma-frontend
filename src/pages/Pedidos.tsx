@@ -31,6 +31,7 @@ import { useAuthStore } from "../auth/useAuthStore";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import TransactionRelationMap, { RelationEdge, RelationNode } from "../components/TransactionRelationMap";
 import { descargarProduccionUnificadoPdf } from "../utils/produccionUnificadoPdf";
+import { formatCurrency } from "../utils/currency";
 
 interface ProductoCatalogo {
   id: number;
@@ -905,19 +906,19 @@ export default function Pedidos() {
       field: "totalEstimado",
       headerName: "Total",
       width: 120,
-      valueFormatter: (v: number) => `Q ${Number(v || 0).toFixed(2)}`,
+      valueFormatter: (v: number) => formatCurrency(v),
     },
     {
       field: "anticipo",
       headerName: "Anticipo",
       width: 120,
-      valueFormatter: (v: number) => `Q ${Number(v || 0).toFixed(2)}`,
+      valueFormatter: (v: number) => formatCurrency(v),
     },
     {
       field: "saldoPendiente",
       headerName: "Saldo",
       width: 120,
-      valueFormatter: (v: number) => `Q ${Number(v || 0).toFixed(2)}`,
+      valueFormatter: (v: number) => formatCurrency(v),
     },
     {
       field: "acciones",

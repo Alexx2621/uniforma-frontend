@@ -46,6 +46,7 @@ import { useAuthStore } from "../auth/useAuthStore";
 import { whatsappFeatureEnabled } from "../config/features";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import { useTablePagination } from "../utils/useTablePagination";
+import { formatCurrency } from "../utils/currency";
 
 interface Venta {
   id: number;
@@ -155,8 +156,6 @@ const toDateOnly = (value: string | Date) => {
   return date.toISOString().slice(0, 10);
 };
 
-const formatCurrency = (value: number) => `Q ${Number(value || 0).toFixed(2)}`;
-
 const asArray = (value: unknown): any[] => (Array.isArray(value) ? value : []);
 
 const metodoCuentaComoTarjeta = (metodo?: string | null) => {
@@ -231,6 +230,104 @@ const MiniBars = ({ data }: { data: { label: string; value: number }[] }) => {
   );
 };
 
+const MiniLineChart = ({
+  data,
+  target = 0,
+}: {
+  data: { label: string; value: number }[];
+  target?: number;
+}) => {
+  if (!data.length) {
+    return <Typography variant="body2" color="text.secondary">Sin datos para graficar.</Typography>;
+  }
+  const width = 640;
+  const height = 170;
+  const pad = 18;
+  const max = Math.max(...data.map((item) => item.value), target, 1);
+  const step = data.length > 1 ? (width - pad * 2) / (data.length - 1) : 0;
+  const pointFor = (item: { value: number }, index: number) => ({
+    x: pad + index * step,
+    y: height - pad - (Number(item.value || 0) / max) * (height - pad * 2),
+  });
+  const points = data.map(pointFor);
+  const path = points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
+  const targetY = height - pad - (Number(target || 0) / max) * (height - pad * 2);
+
+  return (
+    <Box sx={{ width: "100%", overflowX: "auto" }}>
+      <Box component="svg" viewBox={`0 0 ${width} ${height}`} sx={{ width: "100%", minWidth: 520, display: "block" }}>
+        <line x1={pad} y1={height - pad} x2={width - pad} y2={height - pad} stroke="#cbd5e1" />
+        {target > 0 && (
+          <>
+            <line x1={pad} y1={targetY} x2={width - pad} y2={targetY} stroke="#ef4444" strokeDasharray="5 5" />
+            <text x={width - pad} y={Math.max(12, targetY - 6)} textAnchor="end" fontSize="11" fill="#ef4444">
+              Meta diaria
+            </text>
+          </>
+        )}
+        <path d={path} fill="none" stroke="#2563eb" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+        {points.map((point, index) => (
+          <g key={`${data[index].label}-${index}`}>
+            <circle cx={point.x} cy={point.y} r="4" fill="#2563eb" />
+            {index % Math.ceil(data.length / 8) === 0 || index === data.length - 1 ? (
+              <text x={point.x} y={height - 4} textAnchor="middle" fontSize="10" fill="#64748b">
+                {data[index].label}
+              </text>
+            ) : null}
+          </g>
+        ))}
+      </Box>
+    </Box>
+  );
+};
+
+const MetaTimeline = ({
+  data,
+  target,
+  today,
+}: {
+  data: { day: number; value: number; hasReport: boolean }[];
+  target: number;
+  today: number;
+}) => {
+  const max = Math.max(...data.map((item) => item.value), target, 1);
+  return (
+    <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(24px, 1fr))", gap: 0.75, alignItems: "end" }}>
+      {data.map((item) => {
+        const height = Math.max((item.value / max) * 70, item.hasReport ? 8 : 3);
+        const isToday = item.day === today;
+        return (
+          <TooltipLike key={item.day} title={`Dia ${item.day}: ${item.hasReport ? formatCurrency(item.value) : "Sin reporte"}`}>
+            <Box sx={{ textAlign: "center" }}>
+              <Box
+                sx={{
+                  height,
+                  mx: "auto",
+                  width: "100%",
+                  maxWidth: 18,
+                  borderRadius: "5px 5px 2px 2px",
+                  bgcolor: item.hasReport ? (item.value >= target ? "success.main" : "primary.main") : "action.disabledBackground",
+                  border: isToday ? "2px solid" : "1px solid transparent",
+                  borderColor: isToday ? "warning.main" : "transparent",
+                }}
+              />
+              <Typography variant="caption" color={isToday ? "warning.main" : "text.secondary"} sx={{ display: "block", mt: 0.25, fontWeight: isToday ? 700 : 400 }}>
+                {item.day}
+              </Typography>
+            </Box>
+          </TooltipLike>
+        );
+      })}
+    </Box>
+  );
+};
+
+const TooltipLike = ({ title, children }: { title: string; children: React.ReactElement }) => (
+  <Box title={title} sx={{ minWidth: 0 }}>
+    {children}
+  </Box>
+);
+
 const MetricCard = ({
   title,
   value,
@@ -290,6 +387,7 @@ export default function Dashboard() {
   const [rango, setRango] = useState<"7" | "30" | "90">("30");
   const [bodegaFiltro, setBodegaFiltro] = useState<"all" | number>("all");
   const [saldoModalOpen, setSaldoModalOpen] = useState(false);
+  const [metaModalOpen, setMetaModalOpen] = useState(false);
   const navigate = useNavigate();
   const { rol, permisos, bodegaId: userBodegaId, id: userId } = useAuthStore();
   const { fetchConfig } = useSystemConfigStore();
@@ -444,11 +542,20 @@ export default function Dashboard() {
     const mesActual = new Date();
     const currentYear = mesActual.getFullYear();
     const currentMonth = mesActual.getMonth() + 1;
+    const currentDay = mesActual.getDate();
+    const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
     const reportesDiariosMes = reportesDiariosUsuario.filter((doc) => {
       const fechaReporte = `${doc?.data?.fecha || doc.creadoEn || ""}`.slice(0, 10);
       if (!fechaReporte) return false;
       const [yearValue, monthValue] = fechaReporte.split("-").map(Number);
       return yearValue === currentYear && monthValue === currentMonth;
+    });
+    const ventasReportePorDia = new Map<number, number>();
+    reportesDiariosMes.forEach((doc) => {
+      const fechaReporte = `${doc?.data?.fecha || doc.creadoEn || ""}`.slice(0, 10);
+      const day = Number(fechaReporte.split("-")[2] || 0);
+      if (!Number.isFinite(day) || day <= 0) return;
+      ventasReportePorDia.set(day, (ventasReportePorDia.get(day) || 0) + getReporteDiarioTotal(doc.data || {}));
     });
     const acumuladoReportesDiarios = reportesDiariosMes.reduce(
       (sum, doc) => sum + getReporteDiarioTotal(doc.data || {}),
@@ -458,6 +565,33 @@ export default function Dashboard() {
     const avanceMeta = metaMes > 0 ? Math.min((acumuladoReportesDiarios / metaMes) * 100, 100) : 0;
     const excedenteMeta = metaMes > 0 ? Math.max(acumuladoReportesDiarios - metaMes, 0) : 0;
     const restanteMeta = metaMes > 0 ? Math.max(metaMes - acumuladoReportesDiarios, 0) : 0;
+    const diasConReporte = Array.from(ventasReportePorDia.values()).filter((value) => value > 0).length;
+    const hayReporteHoy = ventasReportePorDia.has(currentDay);
+    const diasRestantesCaptura = Math.max(daysInMonth - currentDay + (hayReporteHoy ? 0 : 1), 0);
+    const diasRestantesCalendario = Math.max(daysInMonth - currentDay, 0);
+    const promedioReportado = diasConReporte > 0 ? acumuladoReportesDiarios / diasConReporte : 0;
+    const promedioCalendario = currentDay > 0 ? acumuladoReportesDiarios / currentDay : 0;
+    const ventaNecesariaDiaria = diasRestantesCaptura > 0 ? restanteMeta / diasRestantesCaptura : restanteMeta;
+    const proyeccionCierre = acumuladoReportesDiarios + promedioCalendario * diasRestantesCalendario;
+    const diferenciaProyectada = proyeccionCierre - metaMes;
+    const metaDiariaObjetivo = Number(metaMensual.promedioDiario || 0) || (daysInMonth > 0 ? metaMes / daysInMonth : 0);
+    const cumplimientoPromedio = metaDiariaObjetivo > 0 ? (promedioCalendario / metaDiariaObjetivo) * 100 : 0;
+    const timelineMeta = Array.from({ length: daysInMonth }, (_, index) => {
+      const day = index + 1;
+      const value = ventasReportePorDia.get(day) || 0;
+      return {
+        day,
+        value,
+        hasReport: ventasReportePorDia.has(day),
+      };
+    });
+    const lineMeta = timelineMeta
+      .filter((item) => item.day <= currentDay || item.hasReport)
+      .map((item) => ({ label: `${item.day}`, value: item.value }));
+    const mejoresDiasMeta = timelineMeta
+      .filter((item) => item.hasReport)
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5);
     const metaSourceLabel =
       metaMensual.source === "vendedor"
         ? "Meta de vendedor"
@@ -509,6 +643,20 @@ export default function Dashboard() {
         restanteMeta,
         excedenteMeta,
         sourceLabel: metaSourceLabel,
+        currentDay,
+        daysInMonth,
+        diasConReporte,
+        diasRestantesCaptura,
+        promedioReportado,
+        promedioCalendario,
+        ventaNecesariaDiaria,
+        proyeccionCierre,
+        diferenciaProyectada,
+        metaDiariaObjetivo,
+        cumplimientoPromedio,
+        timelineMeta,
+        lineMeta,
+        mejoresDiasMeta,
       },
       actividad,
       productosActivos: productos.length,
@@ -552,7 +700,18 @@ export default function Dashboard() {
       {loading && <LinearProgress sx={{ mb: 2 }} />}
       {loadError && <Alert severity="warning" sx={{ mb: 2 }}>{loadError}</Alert>}
 
-      <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 1 }}>
+      <Paper
+        variant="outlined"
+        onClick={() => setMetaModalOpen(true)}
+        sx={{
+          p: 2,
+          mb: 2,
+          borderRadius: 1,
+          cursor: "pointer",
+          transition: "border-color 120ms ease, box-shadow 120ms ease",
+          "&:hover": { borderColor: "primary.main", boxShadow: 2 },
+        }}
+      >
         <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={2} sx={{ mb: 1.5 }}>
           <Stack spacing={0.5}>
             <Typography variant="h6">Meta mensual del vendedor</Typography>
@@ -601,6 +760,200 @@ export default function Dashboard() {
           </Grid>
         </Grid>
       </Paper>
+
+      <Dialog open={metaModalOpen} onClose={() => setMetaModalOpen(false)} maxWidth="lg" fullWidth>
+        <DialogTitle>Proyeccion de meta mensual</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2.5}>
+            <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={1}>
+              <Box>
+                <Typography variant="body2" color="text.secondary">
+                  Avance calculado desde los reportes diarios registrados del mes actual.
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Dia {stats.metaMensual.currentDay} de {stats.metaMensual.daysInMonth} | {stats.metaMensual.sourceLabel}
+                </Typography>
+              </Box>
+              <Stack direction="row" spacing={1} flexWrap="wrap">
+                <Chip color={stats.metaMensual.avanceMeta >= 100 ? "success" : "primary"} label={`Avance ${stats.metaMensual.avanceMeta.toFixed(2)}%`} />
+                <Chip variant="outlined" label={`${stats.metaMensual.diasConReporte} dia(s) con reporte`} />
+              </Stack>
+            </Stack>
+
+            <Grid container spacing={2}>
+              <Grid size={{ xs: 12, md: 3 }}>
+                <MetricCard
+                  title="Meta mensual"
+                  value={formatCurrency(stats.metaMensual.metaMes)}
+                  helper={`Meta diaria: ${formatCurrency(stats.metaMensual.metaDiariaObjetivo)}`}
+                  icon={<TrendingUpIcon />}
+                  tone="primary"
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 3 }}>
+                <MetricCard
+                  title="Acumulado real"
+                  value={formatCurrency(stats.metaMensual.acumuladoReportesDiarios)}
+                  helper={`${stats.metaMensual.reportesDiariosMes} reporte(s) diario(s)`}
+                  icon={<ReceiptLongOutlined />}
+                  tone="success"
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 3 }}>
+                <MetricCard
+                  title="Venta necesaria diaria"
+                  value={formatCurrency(stats.metaMensual.ventaNecesariaDiaria)}
+                  helper={`${stats.metaMensual.diasRestantesCaptura} dia(s) restantes`}
+                  icon={<PaymentsOutlined />}
+                  tone={stats.metaMensual.ventaNecesariaDiaria <= stats.metaMensual.metaDiariaObjetivo ? "success" : "warning"}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 3 }}>
+                <MetricCard
+                  title="Proyeccion de cierre"
+                  value={formatCurrency(stats.metaMensual.proyeccionCierre)}
+                  helper={
+                    stats.metaMensual.metaMes > 0
+                      ? stats.metaMensual.diferenciaProyectada >= 0
+                        ? `Sobre meta: ${formatCurrency(stats.metaMensual.diferenciaProyectada)}`
+                        : `Faltante proyectado: ${formatCurrency(Math.abs(stats.metaMensual.diferenciaProyectada))}`
+                      : "Configura una meta mensual"
+                  }
+                  icon={<TrendingUpIcon />}
+                  tone={stats.metaMensual.diferenciaProyectada >= 0 ? "success" : "error"}
+                />
+              </Grid>
+            </Grid>
+
+            <Grid container spacing={2}>
+              <Grid size={{ xs: 12, md: 4 }}>
+                <Paper variant="outlined" sx={{ p: 2, height: "100%", borderRadius: 1 }}>
+                  <Typography variant="subtitle2" color="text.secondary">Promedio por dia calendario</Typography>
+                  <Typography variant="h5" fontWeight={700}>{formatCurrency(stats.metaMensual.promedioCalendario)}</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Cumplimiento contra meta diaria: {stats.metaMensual.cumplimientoPromedio.toFixed(2)}%
+                  </Typography>
+                  <LinearProgress
+                    variant="determinate"
+                    value={Math.min(stats.metaMensual.cumplimientoPromedio, 100)}
+                    color={stats.metaMensual.cumplimientoPromedio >= 100 ? "success" : "primary"}
+                    sx={{ height: 9, borderRadius: 1, mt: 1.25 }}
+                  />
+                </Paper>
+              </Grid>
+              <Grid size={{ xs: 12, md: 4 }}>
+                <Paper variant="outlined" sx={{ p: 2, height: "100%", borderRadius: 1 }}>
+                  <Typography variant="subtitle2" color="text.secondary">Promedio de dias reportados</Typography>
+                  <Typography variant="h5" fontWeight={700}>{formatCurrency(stats.metaMensual.promedioReportado)}</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Mide solo los dias que tienen reporte diario generado.
+                  </Typography>
+                </Paper>
+              </Grid>
+              <Grid size={{ xs: 12, md: 4 }}>
+                <Paper variant="outlined" sx={{ p: 2, height: "100%", borderRadius: 1 }}>
+                  <Typography variant="subtitle2" color="text.secondary">Restante real</Typography>
+                  <Typography variant="h5" fontWeight={700}>{formatCurrency(stats.metaMensual.restanteMeta)}</Typography>
+                  <Typography variant="caption" color={stats.metaMensual.excedenteMeta > 0 ? "success.main" : "text.secondary"}>
+                    {stats.metaMensual.excedenteMeta > 0
+                      ? `Ya va arriba por ${formatCurrency(stats.metaMensual.excedenteMeta)}`
+                      : "Se reparte entre los dias restantes de captura."}
+                  </Typography>
+                </Paper>
+              </Grid>
+            </Grid>
+
+            <Paper variant="outlined" sx={{ p: 2, borderRadius: 1 }}>
+              <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={1} sx={{ mb: 1 }}>
+                <Box>
+                  <Typography variant="h6">Tendencia diaria</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    La linea azul muestra ventas registradas por reporte diario; la linea roja marca la meta diaria esperada.
+                  </Typography>
+                </Box>
+                <Chip variant="outlined" label={`Objetivo diario ${formatCurrency(stats.metaMensual.metaDiariaObjetivo)}`} />
+              </Stack>
+              <MiniLineChart data={stats.metaMensual.lineMeta} target={stats.metaMensual.metaDiariaObjetivo} />
+            </Paper>
+
+            <Paper variant="outlined" sx={{ p: 2, borderRadius: 1 }}>
+              <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={1} sx={{ mb: 1.5 }}>
+                <Box>
+                  <Typography variant="h6">Linea de tiempo del mes</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Cada barra representa un dia del mes. El borde amarillo marca hoy.
+                  </Typography>
+                </Box>
+                <Stack direction="row" spacing={1}>
+                  <Chip size="small" color="success" label="Cumple meta diaria" />
+                  <Chip size="small" color="primary" label="Con reporte" />
+                </Stack>
+              </Stack>
+              <MetaTimeline
+                data={stats.metaMensual.timelineMeta}
+                target={stats.metaMensual.metaDiariaObjetivo}
+                today={stats.metaMensual.currentDay}
+              />
+            </Paper>
+
+            <Grid container spacing={2}>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <Paper variant="outlined" sx={{ p: 2, height: "100%", borderRadius: 1 }}>
+                  <Typography variant="h6" sx={{ mb: 1 }}>Mejores dias registrados</Typography>
+                  {!stats.metaMensual.mejoresDiasMeta.length ? (
+                    <Typography variant="body2" color="text.secondary">Aun no hay reportes diarios este mes.</Typography>
+                  ) : (
+                    <List dense disablePadding>
+                      {stats.metaMensual.mejoresDiasMeta.map((item, index) => (
+                        <ListItem key={item.day} disableGutters>
+                          <ListItemText
+                            primary={`#${index + 1} | Dia ${item.day}`}
+                            secondary={formatCurrency(item.value)}
+                          />
+                          <Chip
+                            size="small"
+                            color={item.value >= stats.metaMensual.metaDiariaObjetivo ? "success" : "default"}
+                            label={item.value >= stats.metaMensual.metaDiariaObjetivo ? "Arriba" : "Bajo meta"}
+                          />
+                        </ListItem>
+                      ))}
+                    </List>
+                  )}
+                </Paper>
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <Paper variant="outlined" sx={{ p: 2, height: "100%", borderRadius: 1 }}>
+                  <Typography variant="h6" sx={{ mb: 1 }}>Lectura rapida</Typography>
+                  <List dense disablePadding>
+                    <ListItem disableGutters>
+                      <ListItemText
+                        primary="Ritmo actual"
+                        secondary={
+                          stats.metaMensual.diferenciaProyectada >= 0
+                            ? "Si mantiene este promedio, llegaria o superaria la meta."
+                            : "Con el promedio actual, no alcanzaria la meta mensual."
+                        }
+                      />
+                    </ListItem>
+                    <ListItem disableGutters>
+                      <ListItemText
+                        primary="Ajuste diario recomendado"
+                        secondary={`Vender ${formatCurrency(stats.metaMensual.ventaNecesariaDiaria)} por dia restante.`}
+                      />
+                    </ListItem>
+                    <ListItem disableGutters>
+                      <ListItemText
+                        primary="Control de reportes"
+                        secondary={`${stats.metaMensual.diasConReporte} dia(s) tienen reporte; los dias sin reporte aparecen apagados en la linea de tiempo.`}
+                      />
+                    </ListItem>
+                  </List>
+                </Paper>
+              </Grid>
+            </Grid>
+          </Stack>
+        </DialogContent>
+      </Dialog>
 
       <Grid container spacing={2} sx={{ mb: 2 }}>
         <Grid size={{ xs: 12, sm: 6, lg: 3 }}>

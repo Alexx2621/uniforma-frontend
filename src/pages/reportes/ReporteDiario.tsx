@@ -18,6 +18,8 @@ import {
   IconButton,
   Chip,
   FormControl,
+  FormControlLabel,
+  Checkbox,
   InputLabel,
   Select,
   MenuItem,
@@ -35,6 +37,7 @@ import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import Swal from "sweetalert2";
 import { api } from "../../api/axios";
 import { useAuthStore } from "../../auth/useAuthStore";
+import { hasPermission } from "../../auth/permissions";
 import { useSystemConfigStore } from "../../config/useSystemConfigStore";
 import { UniformaLoader } from "../../components/UniformaLoader";
 import { canUseVendedorDropdown, filterUsuariosByBodega } from "../../utils/vendedorDropdownAccess";
@@ -60,6 +63,9 @@ interface Usuario {
   id: number;
   nombre: string;
   usuario: string;
+  primerNombre?: string | null;
+  primerApellido?: string | null;
+  usuarioCorrelativo?: string | null;
   bodegaId?: number | string | null;
 }
 
@@ -72,6 +78,9 @@ interface Venta {
   ubicacion?: string | null;
   metodoPago?: string | null;
   clienteNombre?: string | null;
+  vendedor?: string | null;
+  bodegaId?: number | string | null;
+  bodega?: { id?: number | string | null; nombre?: string | null; ubicacion?: string | null } | null;
   pagos?: PagoVenta[];
 }
 
@@ -84,7 +93,10 @@ interface PedidoReporte {
   ubicacion?: string | null;
   metodoPago?: string | null;
   clienteNombre?: string | null;
+  solicitadoPor?: string | null;
   cliente?: { nombre?: string | null } | null;
+  usuarioId?: number | string | null;
+  usuario?: { id?: number | string | null; nombre?: string | null; usuario?: string | null } | null;
   bodega?: { nombre?: string | null; ubicacion?: string | null } | null;
   pagos?: PagoVenta[];
 }
@@ -143,6 +155,61 @@ const formatDisplayDate = (value: string) => {
   if (!value) return "";
   const [year, month, day] = value.split("-");
   return `${day}/${month}/${year}`;
+};
+
+const normalizeText = (value?: string | null) =>
+  `${value || ""}`
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[._-]+/g, " ")
+    .replace(/\s+/g, " ");
+
+const getUsuarioDisplayName = (usuario?: Usuario | null) =>
+  [usuario?.primerNombre, usuario?.primerApellido].filter(Boolean).join(" ").trim() ||
+  `${usuario?.nombre || ""}`.trim() ||
+  `${usuario?.usuario || ""}`.trim() ||
+  "Usuario";
+
+const getUsuarioMatchValues = (usuario?: Usuario | null) => {
+  if (!usuario) return [];
+  const nombreParts = `${usuario.nombre || ""}`.trim().split(/\s+/).filter(Boolean);
+  return Array.from(
+    new Set(
+      [
+        usuario.usuario,
+        usuario.nombre,
+        usuario.usuarioCorrelativo,
+        [usuario.primerNombre, usuario.primerApellido].filter(Boolean).join(" "),
+        nombreParts.length >= 2 ? `${nombreParts[0]} ${nombreParts[1]}` : null,
+      ]
+        .map((value) => normalizeText(value))
+        .filter(Boolean)
+    )
+  );
+};
+
+const textMatchesUsuario = (value: string | null | undefined, usuario: Usuario | null) => {
+  const normalized = normalizeText(value);
+  if (!normalized) return false;
+  return getUsuarioMatchValues(usuario).some(
+    (userValue) => normalized === userValue || normalized.includes(userValue) || userValue.includes(normalized)
+  );
+};
+
+const ventaPerteneceAUsuario = (venta: Venta, usuario: Usuario | null) => {
+  if (!usuario) return true;
+  const userBodegaId = Number(usuario.bodegaId || 0);
+  const ventaBodegaId = Number(venta.bodegaId || venta.bodega?.id || 0);
+  if (userBodegaId && ventaBodegaId && userBodegaId === ventaBodegaId) return true;
+  return textMatchesUsuario(venta.vendedor, usuario);
+};
+
+const pedidoPerteneceAUsuario = (pedido: PedidoReporte, usuario: Usuario | null) => {
+  if (!usuario) return true;
+  if (Number(pedido.usuarioId || pedido.usuario?.id || 0) === Number(usuario.id)) return true;
+  return textMatchesUsuario(pedido.solicitadoPor, usuario) || textMatchesUsuario(pedido.usuario?.nombre, usuario) || textMatchesUsuario(pedido.usuario?.usuario, usuario);
 };
 
 const metodoCuentaComoTarjeta = (metodo?: string | null) => {
@@ -398,6 +465,8 @@ export default function ReporteDiario() {
   const [ventas, setVentas] = useState<Venta[]>([]);
   const [pedidos, setPedidos] = useState<PedidoReporte[]>([]);
   const [fecha, setFecha] = useState(today);
+  const [reporteUsuarioId, setReporteUsuarioId] = useState<number | "">(userId ?? "");
+  const [omitirCorreoReporte, setOmitirCorreoReporte] = useState(false);
   const [liquidacionNo, setLiquidacionNo] = useState("Pendiente");
   const [capitalRows, setCapitalRows] = useState<CapitalRow[]>(() => [createCapitalRow(today)]);
   const [departamentoRows, setDepartamentoRows] = useState<DepartamentoRow[]>(() => [createDepartamentoRow(today)]);
@@ -414,20 +483,26 @@ export default function ReporteDiario() {
   const [generandoPdf, setGenerandoPdf] = useState(false);
 
   const isAdmin = rol === "ADMIN";
+  const canGenerateForOtherUser = hasPermission(rol, permisos, "reportes.reporte-diario.generar-ajeno");
   const canUseDropdown = canUseVendedorDropdown(rol, rolId, vendedorDropdownRoleIds, permisos);
   const usuariosDropdown = useMemo(
     () => (isAdmin ? usuarios : filterUsuariosByBodega(usuarios, vendedorDropdownBodegaIds)),
     [isAdmin, usuarios, vendedorDropdownBodegaIds]
   );
+  const reporteUsuario = useMemo(
+    () => usuarios.find((item) => Number(item.id) === Number(reporteUsuarioId)) || null,
+    [usuarios, reporteUsuarioId]
+  );
 
-  const cargarSiguienteLiquidacion = async () => {
+  const cargarSiguienteLiquidacion = useCallback(async (targetUsuarioId?: number | "") => {
     try {
-      const resp = await api.get("/correlativos/usuario-operaciones/actual/reporteDiario");
+    const params = canGenerateForOtherUser && targetUsuarioId ? { usuarioId: targetUsuarioId } : undefined;
+      const resp = await api.get("/correlativos/usuario-operaciones/actual/reporteDiario", { params });
       setLiquidacionNo(resp.data?.correlativo || "Pendiente");
     } catch {
       setLiquidacionNo("Pendiente");
     }
-  };
+  }, [canGenerateForOtherUser]);
 
   const cargarDocumentos = useCallback(async () => {
     try {
@@ -488,7 +563,13 @@ export default function ReporteDiario() {
       api.get("/usuarios").then(resp => setUsuarios(resp.data || []));
     }
     setFiltroUsuarioId(canUseDropdown ? "" : userId ?? "");
+    setReporteUsuarioId(userId ?? "");
   }, [canUseDropdown, userId]);
+
+  useEffect(() => {
+    if (!showForm || !canGenerateForOtherUser) return;
+    void cargarSiguienteLiquidacion(reporteUsuarioId || "");
+  }, [showForm, canGenerateForOtherUser, reporteUsuarioId, cargarSiguienteLiquidacion]);
 
   useEffect(() => {
     void cargarDocumentos();
@@ -537,7 +618,7 @@ export default function ReporteDiario() {
   );
 
   const nuevoReporte = async () => {
-    if (!isReportScheduleOpen(dailyReportSchedule)) {
+    if (!canGenerateForOtherUser && !isReportScheduleOpen(dailyReportSchedule)) {
       Swal.fire(
         "Horario no habilitado",
         `El boton se habilitara en este horario: ${formatReportScheduleForDay(dailyReportSchedule)}.`,
@@ -546,10 +627,13 @@ export default function ReporteDiario() {
       return;
     }
     setDocumentoId(null);
-    await cargarSiguienteLiquidacion();
+    const defaultUsuarioId = canGenerateForOtherUser ? Number(reporteUsuarioId || userId || 0) || "" : userId ?? "";
+    setReporteUsuarioId(defaultUsuarioId);
+    await cargarSiguienteLiquidacion(defaultUsuarioId);
     setVentas([]);
     setPedidos([]);
     setFecha(today);
+    setOmitirCorreoReporte(false);
     setCapitalRows([createCapitalRow(today)]);
     setDepartamentoRows([createDepartamentoRow(today)]);
     setTiendaManualRows([createTiendaRow(today)]);
@@ -565,13 +649,23 @@ export default function ReporteDiario() {
   };
 
   const ventasDelDia = useMemo(
-    () => ventas.filter((venta) => toDateOnly(venta.fecha) === fecha),
-    [ventas, fecha]
+    () =>
+      ventas.filter((venta) => {
+        if (toDateOnly(venta.fecha) !== fecha) return false;
+        if (canGenerateForOtherUser && reporteUsuarioId) return ventaPerteneceAUsuario(venta, reporteUsuario);
+        return true;
+      }),
+    [ventas, fecha, canGenerateForOtherUser, reporteUsuarioId, reporteUsuario]
   );
 
   const pedidosDelDia = useMemo(
-    () => pedidos.filter((pedido) => toDateOnly(pedido.fecha) === fecha),
-    [pedidos, fecha]
+    () =>
+      pedidos.filter((pedido) => {
+        if (toDateOnly(pedido.fecha) !== fecha) return false;
+        if (canGenerateForOtherUser && reporteUsuarioId) return pedidoPerteneceAUsuario(pedido, reporteUsuario);
+        return true;
+      }),
+    [pedidos, fecha, canGenerateForOtherUser, reporteUsuarioId, reporteUsuario]
   );
 
   const capitalAutoRows = useMemo<CapitalRow[]>(
@@ -720,6 +814,7 @@ export default function ReporteDiario() {
   };
 
   const getGeneradoPor = () =>
+    (canGenerateForOtherUser && reporteUsuario ? getUsuarioDisplayName(reporteUsuario) : "") ||
     [primerNombre?.trim(), primerApellido?.trim()].filter(Boolean).join(" ") ||
     nombre?.trim() ||
     usuario?.trim() ||
@@ -728,6 +823,9 @@ export default function ReporteDiario() {
   const getPayload = () => ({
     fecha,
     generadoPor: getGeneradoPor(),
+    usuarioId: canGenerateForOtherUser && reporteUsuarioId ? Number(reporteUsuarioId) : userId,
+    usuarioNombre: getGeneradoPor(),
+    omitirCorreoReporte,
     capitalRows: [...capitalAutoRows, ...capitalRows.filter(hasCapitalRowData)],
     departamentoRows: [...departamentoAutoRows, ...departamentoRows.filter(hasDepartamentoRowData)],
     tiendaAutoRows,
@@ -740,12 +838,17 @@ export default function ReporteDiario() {
     const payload = {
       titulo: `Reporte diario ${fecha}`,
       data: getPayload(),
+      omitirCorreo: omitirCorreoReporte,
     };
     if (documentoId) {
       const resp = await api.patch(`/documentos/${documentoId}`, payload);
       return resp.data as DocumentoGenerado;
     }
-    const resp = await api.post("/documentos", { tipo: "reporteDiario", ...payload });
+    const resp = await api.post("/documentos", {
+      tipo: "reporteDiario",
+      usuarioId: canGenerateForOtherUser && reporteUsuarioId ? Number(reporteUsuarioId) : undefined,
+      ...payload,
+    });
     const doc = resp.data as DocumentoGenerado;
     setDocumentoId(doc.id);
     setLiquidacionNo(doc.correlativo);
@@ -780,6 +883,10 @@ export default function ReporteDiario() {
 
   const imprimir = async () => {
     if (generandoPdf) return;
+    if (canGenerateForOtherUser && !reporteUsuarioId) {
+      Swal.fire("Vendedor requerido", "Selecciona el vendedor al que pertenece este cierre diario.", "info");
+      return;
+    }
     setGenerandoPdf(true);
     let docGenerado: DocumentoGenerado;
     try {
@@ -945,7 +1052,38 @@ export default function ReporteDiario() {
       </Stack>
 
       <Grid container spacing={2} sx={{ mb: 2 }}>
-        <Grid size={{ xs: 12, sm: 3 }}>
+        {canGenerateForOtherUser && (
+          <Grid size={{ xs: 12, md: 4 }}>
+            <FormControl fullWidth size="small" disabled={generandoPdf}>
+              <InputLabel>Vendedor del cierre</InputLabel>
+              <Select
+                label="Vendedor del cierre"
+                value={reporteUsuarioId}
+                onChange={(e) => {
+                  const value = e.target.value as number | "";
+                  setReporteUsuarioId(value);
+                  setDocumentoId(null);
+                  setVentas([]);
+                  setPedidos([]);
+                  setCapitalAutoEnvios({});
+                  setDepartamentoAutoEnvios({});
+                  setCapitalAutoObservaciones({});
+                  setDepartamentoAutoObservaciones({});
+                  setTiendaAutoObservaciones({});
+                }}
+              >
+                <MenuItem value="">Selecciona vendedor</MenuItem>
+                {usuariosDropdown.map((u) => (
+                  <MenuItem key={u.id} value={u.id}>
+                    {getUsuarioDisplayName(u)}
+                    {u.bodegaId ? ` - Tienda ${u.bodegaId}` : ""}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+        )}
+        <Grid size={{ xs: 12, sm: canGenerateForOtherUser ? 4 : 3, md: canGenerateForOtherUser ? 2 : 3 }}>
           <TextField
             label="Fecha"
             type="date"
@@ -957,7 +1095,7 @@ export default function ReporteDiario() {
             onChange={(e) => setFecha(e.target.value)}
           />
         </Grid>
-        <Grid size={{ xs: 12, sm: 3 }}>
+        <Grid size={{ xs: 12, sm: canGenerateForOtherUser ? 4 : 3, md: canGenerateForOtherUser ? 2 : 3 }}>
           <TextField
             label="Liquidación No."
             fullWidth
@@ -966,7 +1104,22 @@ export default function ReporteDiario() {
             disabled
           />
         </Grid>
-        <Grid size={{ xs: 12, sm: 6 }}>
+        {canGenerateForOtherUser && (
+          <Grid size={{ xs: 12, md: 4 }}>
+            <FormControlLabel
+              sx={{ height: "100%", alignItems: "center", m: 0 }}
+              control={
+                <Checkbox
+                  checked={omitirCorreoReporte}
+                  disabled={generandoPdf}
+                  onChange={(e) => setOmitirCorreoReporte(e.target.checked)}
+                />
+              }
+              label="No enviar correo para este cierre"
+            />
+          </Grid>
+        )}
+        <Grid size={{ xs: 12, sm: 6, md: canGenerateForOtherUser ? 12 : 6 }}>
           <Stack direction="row" spacing={1} alignItems="center" sx={{ height: "100%", flexWrap: "wrap" }}>
             <Chip label={`${ventasDelDia.length + pedidosDelDia.length} registros del dia`} />
             <Chip label={`Capital ${money(subtotalCapital)}`} color="primary" variant="outlined" />
@@ -977,7 +1130,7 @@ export default function ReporteDiario() {
       </Grid>
 
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        Este reporte no se guarda. Puedes completar los bloques manuales, revisar las ventas y pedidos del dia y luego imprimirlo o guardarlo como PDF.
+        Completa los bloques manuales, revisa las ventas y pedidos del dia y luego genera el PDF para guardar el cierre diario.
       </Typography>
 
       <Divider sx={{ mb: 2 }} />

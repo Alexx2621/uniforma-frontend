@@ -1,4 +1,5 @@
 import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "./fontFamily";
+import { formatCurrency } from "./currency";
 
 export interface VentaPdfItem {
   codigo: string;
@@ -43,7 +44,7 @@ const escapeHtml = (value: unknown) =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 
-const formatMoney = (value: number) => `Q ${Number(value || 0).toFixed(2)}`;
+const formatMoney = formatCurrency;
 
 const formatVendedorNombre = (value: string) => {
   const limpio = `${value || ""}`.trim();

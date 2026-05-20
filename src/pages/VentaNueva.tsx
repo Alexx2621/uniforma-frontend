@@ -38,6 +38,7 @@ import { useAuthStore } from "../auth/useAuthStore";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import LOGO_URL from "../assets/3-logos.png";
 import { buildVentaPdfHtml } from "../utils/ventaPdf";
+import { formatCurrency } from "../utils/currency";
 
 interface Cliente {
   id: number;
@@ -1530,20 +1531,20 @@ export default function VentaNueva() {
                   <TableCell align="center">{obtenerTalla(producto)}</TableCell>
                   <TableCell align="center">{obtenerColor(producto)}</TableCell>
                   <TableCell align="center">{row.cantidad}</TableCell>
-                  <TableCell align="center">{`Q ${row.precio.toFixed(2)}`}</TableCell>
-                  <TableCell align="center">{`Q ${row.bordado.toFixed(2)}`}</TableCell>
+                  <TableCell align="center">{formatCurrency(row.precio)}</TableCell>
+                  <TableCell align="center">{formatCurrency(row.bordado)}</TableCell>
                   <TableCell align="center">
                     {[row.bordadoColor, row.bordadoTamano, row.bordadoPosicion]
                       .filter(Boolean)
                       .join(" | ") || "-"}
                   </TableCell>
                   <TableCell align="center">
-                    {row.estiloEspecial ? `Q ${Number(row.estiloEspecialMonto || 0).toFixed(2)}` : "No"}
+                    {row.estiloEspecial ? formatCurrency(row.estiloEspecialMonto || 0) : "No"}
                   </TableCell>
                   <TableCell align="center">{`${row.descuento.toFixed(2)}%`}</TableCell>
                   {salesInventoryEnabled && <TableCell align="center">{row.stock ?? "N/D"}</TableCell>}
                   <TableCell align="center">{row.descripcion || "-"}</TableCell>
-                  <TableCell align="center">{`Q ${calcularSubtotal(row).toFixed(2)}`}</TableCell>
+                  <TableCell align="center">{formatCurrency(calcularSubtotal(row))}</TableCell>
                   <TableCell align="center">
                     <Stack direction="row" spacing={1} justifyContent="center">
                       <Button size="small" variant="text" startIcon={<EditOutlined />} onClick={() => editarArticulo(row)}>
@@ -1572,14 +1573,14 @@ export default function VentaNueva() {
                   {detalleTableTotals.cantidad}
                 </TableCell>
                 <TableCell align="center" sx={{ fontWeight: 700 }}>
-                  {`Q ${detalleTableTotals.precio.toFixed(2)}`}
+                  {formatCurrency(detalleTableTotals.precio)}
                 </TableCell>
                 <TableCell align="center" sx={{ fontWeight: 700 }}>
-                  {`Q ${detalleTableTotals.bordado.toFixed(2)}`}
+                  {formatCurrency(detalleTableTotals.bordado)}
                 </TableCell>
                 <TableCell align="center">-</TableCell>
                 <TableCell align="center" sx={{ fontWeight: 700 }}>
-                  {`Q ${detalleTableTotals.estiloEspecial.toFixed(2)}`}
+                  {formatCurrency(detalleTableTotals.estiloEspecial)}
                 </TableCell>
                 <TableCell align="center">-</TableCell>
                 {salesInventoryEnabled && <TableCell align="center">-</TableCell>}
@@ -1607,21 +1608,21 @@ export default function VentaNueva() {
             <Stack spacing={1}>
               <Stack direction="row" justifyContent="space-between">
                 <Typography>Subtotal</Typography>
-                <Typography>{`Q ${totals.subtotal.toFixed(2)}`}</Typography>
+                <Typography>{formatCurrency(totals.subtotal)}</Typography>
               </Stack>
               {metodoUsaRecargo && (
                 <Stack direction="row" justifyContent="space-between">
                   <Typography>Recargo</Typography>
-                  <Typography>{`Q ${totals.recargo.toFixed(2)}`}</Typography>
+                  <Typography>{formatCurrency(totals.recargo)}</Typography>
                 </Stack>
               )}
               <Stack direction="row" justifyContent="space-between">
                 <Typography>Envio</Typography>
-                <Typography>{`Q ${totals.envio.toFixed(2)}`}</Typography>
+                <Typography>{formatCurrency(totals.envio)}</Typography>
               </Stack>
               <Stack direction="row" justifyContent="space-between">
                 <Typography fontWeight={700}>Total</Typography>
-                <Typography fontWeight={700}>{`Q ${totals.total.toFixed(2)}`}</Typography>
+                <Typography fontWeight={700}>{formatCurrency(totals.total)}</Typography>
               </Stack>
             </Stack>
           </Paper>

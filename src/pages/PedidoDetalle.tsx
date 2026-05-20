@@ -32,6 +32,7 @@ import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../utils/fontFamily";
 import uniformaLogo from "../assets/3-logos.png";
 import { ActivityLog, getActivityLogActionLabel } from "../utils/activityLog";
+import { formatCurrency } from "../utils/currency";
 
 interface Detalle {
   producto: {
@@ -458,11 +459,11 @@ export default function PedidoDetalle() {
           <td class="wrap">${escapeHtml(d.producto?.nombre || "Producto")}</td>
           <td class="text-left wrap">${escapeHtml((d as any).descripcion || "")}</td>
           <td class="nowrap">${escapeHtml(d.cantidad)}</td>
-          <td class="money">Q ${escapeHtml((d.precioUnit || 0).toFixed(2))}</td>
-          <td class="money">Q ${escapeHtml(bordado.toFixed(2))}</td>
-          <td class="money">Q ${escapeHtml(estiloEspecialMonto.toFixed(2))}</td>
+          <td class="money">${escapeHtml(formatCurrency(d.precioUnit || 0))}</td>
+          <td class="money">${escapeHtml(formatCurrency(bordado))}</td>
+          <td class="money">${escapeHtml(formatCurrency(estiloEspecialMonto))}</td>
           <td class="nowrap">${escapeHtml(desc.toFixed(2))}%</td>
-          <td class="money">Q ${escapeHtml(sub.toFixed(2))}</td>
+          <td class="money">${escapeHtml(formatCurrency(sub))}</td>
         </tr>`;
       })
       .join("");
@@ -538,11 +539,11 @@ export default function PedidoDetalle() {
           </table>
 
           <div class="totals">
-            <div class="totals-row"><span>Subtotal</span><span>Q ${escapeHtml(subtotal.toFixed(2))}</span></div>
-            ${recargo ? `<div class="totals-row"><span>Recargo</span><span>Q ${escapeHtml(recargo.toFixed(2))}</span></div>` : ""}
-            <div class="totals-row"><span>Envio</span><span>Q ${escapeHtml(envio.toFixed(2))}</span></div>
-            <div class="totals-row"><span>Anticipo</span><span>Q ${escapeHtml(anticipo.toFixed(2))}</span></div>
-            <div class="totals-row total"><span>Total</span><span>Q ${escapeHtml(total.toFixed(2))}</span></div>
+            <div class="totals-row"><span>Subtotal</span><span>${escapeHtml(formatCurrency(subtotal))}</span></div>
+            ${recargo ? `<div class="totals-row"><span>Recargo</span><span>${escapeHtml(formatCurrency(recargo))}</span></div>` : ""}
+            <div class="totals-row"><span>Envio</span><span>${escapeHtml(formatCurrency(envio))}</span></div>
+            <div class="totals-row"><span>Anticipo</span><span>${escapeHtml(formatCurrency(anticipo))}</span></div>
+            <div class="totals-row total"><span>Total</span><span>${escapeHtml(formatCurrency(total))}</span></div>
           </div>
         </div>
         <script>window.onload = function(){ window.print(); }</script>
@@ -726,13 +727,13 @@ export default function PedidoDetalle() {
                 <TableCell>{obtenerTalla(d.producto)}</TableCell>
                 <TableCell>{obtenerColor(d.producto)}</TableCell>
                 <TableCell>{d.cantidad}</TableCell>
-                <TableCell>{`Q ${Number(d.precioUnit || 0).toFixed(2)}`}</TableCell>
-                <TableCell>{`Q ${Number(d.bordado || 0).toFixed(2)}`}</TableCell>
+                <TableCell>{formatCurrency(d.precioUnit || 0)}</TableCell>
+                <TableCell>{formatCurrency(d.bordado || 0)}</TableCell>
                 <TableCell>
-                  {d.estiloEspecial ? `Q ${Number(d.estiloEspecialMonto || 0).toFixed(2)}` : "No"}
+                  {d.estiloEspecial ? formatCurrency(d.estiloEspecialMonto || 0) : "No"}
                 </TableCell>
                 <TableCell>{`${Number(d.descuento || 0).toFixed(2)}%`}</TableCell>
-                <TableCell>{`Q ${getDetalleSubtotal(d).toFixed(2)}`}</TableCell>
+                <TableCell>{formatCurrency(getDetalleSubtotal(d))}</TableCell>
                 <TableCell>{d.descripcion?.trim() ? d.descripcion : "-"}</TableCell>
               </TableRow>
             ))}

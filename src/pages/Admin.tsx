@@ -34,6 +34,7 @@ import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import { useAuthStore } from "../auth/useAuthStore";
 import { hasPermission } from "../auth/permissions";
 import { UniformaLoader } from "../components/UniformaLoader";
+import { formatCurrency } from "../utils/currency";
 import {
   DEFAULT_DAILY_REPORT_SCHEDULE_RULES,
   DAY_LABELS,
@@ -763,7 +764,7 @@ export default function Admin() {
                           <td style="border-bottom:1px solid #eef2f6;padding:6px;font-family:Consolas,monospace;">${item.codigo || ""}</td>
                           <td style="border-bottom:1px solid #eef2f6;padding:6px;">${item.tipo || ""}</td>
                           <td style="border-bottom:1px solid #eef2f6;padding:6px;">${[item.genero, item.tela, item.talla, item.color].filter(Boolean).join(" / ")}</td>
-                          <td style="border-bottom:1px solid #eef2f6;padding:6px;text-align:right;">Q ${Number(item.precioActual || 0).toFixed(2)} -> Q ${Number(item.precioNuevo || 0).toFixed(2)}</td>
+                          <td style="border-bottom:1px solid #eef2f6;padding:6px;text-align:right;">${formatCurrency(item.precioActual)} -> ${formatCurrency(item.precioNuevo)}</td>
                           <td style="border-bottom:1px solid #eef2f6;padding:6px;text-align:right;">${item.stockMaxActual ?? 0} -> ${item.stockMaxNuevo ?? 0}</td>
                           <td style="border-bottom:1px solid #eef2f6;padding:6px;text-align:right;">${Number(item.mermaPorcentajeActual || 0).toFixed(2)}% -> ${Number(item.mermaPorcentajeNuevo || 0).toFixed(2)}%</td>
                         </tr>
@@ -872,7 +873,7 @@ export default function Admin() {
                           <td style="border-bottom:1px solid #eef2f6;padding:6px;font-family:Consolas,monospace;">${item.codigo || ""}</td>
                           <td style="border-bottom:1px solid #eef2f6;padding:6px;">${item.tipo || ""} ${item.genero || ""}</td>
                           <td style="border-bottom:1px solid #eef2f6;padding:6px;">${[item.tela, item.talla, item.color].filter(Boolean).join(" / ")}</td>
-                          <td style="border-bottom:1px solid #eef2f6;padding:6px;text-align:right;">Q ${Number(item.precio || 0).toFixed(2)}</td>
+                          <td style="border-bottom:1px solid #eef2f6;padding:6px;text-align:right;">${formatCurrency(item.precio)}</td>
                           <td style="border-bottom:1px solid #eef2f6;padding:6px;text-align:right;">${item.stockMax ?? 0}</td>
                           <td style="border-bottom:1px solid #eef2f6;padding:6px;text-align:center;">${item.existe ? "Existente" : "Nuevo"}</td>
                         </tr>

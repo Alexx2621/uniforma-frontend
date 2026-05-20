@@ -28,6 +28,7 @@ import SaveOutlined from "@mui/icons-material/SaveOutlined";
 import { useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
+import { formatCurrency } from "../utils/currency";
 import { hasPermission } from "../auth/permissions";
 import { useAuthStore } from "../auth/useAuthStore";
 
@@ -99,7 +100,7 @@ const getProducto = (detalle: DetalleBordado) => detalle.producto?.nombre || det
 const getEstadoBordado = (detalle: DetalleBordado) => detalle.bordadoEstado || "EN PRODUCCION";
 const isPedidoAnulado = (pedido?: Pick<PedidoBordado, "estado"> | null) =>
   `${pedido?.estado || ""}`.trim().toLowerCase() === "anulado";
-const money = (value: number) => `Q ${Number(value || 0).toFixed(2)}`;
+const money = formatCurrency;
 const safeText = (value?: string | null) => `${value || ""}`.trim() || "N/D";
 const getTodayInputValue = () => {
   const date = new Date();

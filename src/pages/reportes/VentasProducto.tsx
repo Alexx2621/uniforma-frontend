@@ -24,6 +24,7 @@ import { api } from "../../api/axios";
 import UniformaTableLoadingRow from "../../components/UniformaTableLoadingRow";
 import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../../utils/fontFamily";
 import { useTablePagination } from "../../utils/useTablePagination";
+import { formatCurrency } from "../../utils/currency";
 
 interface VentaDetalle {
   productoId: number;
@@ -92,7 +93,7 @@ const exportPdf = (rows: RowProducto[]) => {
         <td>${r.codigo}</td>
         <td>${r.nombre}</td>
         <td>${r.unidades}</td>
-        <td>Q ${r.ingresos.toFixed(2)}</td>
+        <td>${formatCurrency(r.ingresos)}</td>
       </tr>`
     )
     .join("");
@@ -259,7 +260,7 @@ export default function VentasProducto() {
         <Grid size={{ xs: 12, sm: 2 }}>
           <Stack direction="row" spacing={1} alignItems="center" sx={{ height: "100%" }}>
             <Chip label={`${filas.length} productos`} />
-            <Chip label={`Q ${totalIngresos.toFixed(2)}`} color="success" />
+            <Chip label={formatCurrency(totalIngresos)} color="success" />
           </Stack>
         </Grid>
       </Grid>
@@ -284,14 +285,14 @@ export default function VentasProducto() {
                 <TableCell>{row.codigo}</TableCell>
                 <TableCell>{row.nombre}</TableCell>
                 <TableCell>{row.unidades}</TableCell>
-                <TableCell>{`Q ${row.ingresos.toFixed(2)}`}</TableCell>
+                <TableCell>{formatCurrency(row.ingresos)}</TableCell>
               </TableRow>
             ))}
             {!loading && <TableRow>
               <TableCell sx={{ fontWeight: 700 }}>Totales</TableCell>
               <TableCell />
               <TableCell sx={{ fontWeight: 700 }}>{totalUnidades}</TableCell>
-              <TableCell sx={{ fontWeight: 700 }}>{`Q ${totalIngresos.toFixed(2)}`}</TableCell>
+              <TableCell sx={{ fontWeight: 700 }}>{formatCurrency(totalIngresos)}</TableCell>
             </TableRow>}
           </TableBody>
         </Table>

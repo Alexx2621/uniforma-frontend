@@ -1,5 +1,5 @@
 // src/layout/Navbar.tsx
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AppBar,
   Toolbar,
@@ -46,6 +46,66 @@ interface AlertaInterna {
   } | null;
 }
 
+type ServerState = "checking" | "online" | "degraded" | "offline" | "unknown";
+
+interface ServerStatus {
+  status: ServerState;
+  checkedAt?: string;
+  api?: {
+    ok?: boolean;
+    state?: ServerState;
+    uptimeSeconds?: number;
+    environment?: string;
+  };
+  database?: {
+    ok?: boolean;
+    state?: ServerState;
+    latencyMs?: number;
+    message?: string;
+  };
+  railway?: {
+    ok?: boolean;
+    reachable?: boolean;
+    state?: ServerState;
+    severity?: string;
+    label?: string;
+    latencyMs?: number;
+    statusPageUrl?: string;
+    message?: string;
+  };
+  message?: string;
+}
+
+const initialServerStatus: ServerStatus = {
+  status: "checking",
+  message: "Revisando estado del servidor",
+};
+
+const getServerStatusLabel = (status: ServerStatus) => {
+  if (status.status === "checking") return "Revisando";
+  if (status.status === "online") return "Servidor activo";
+  if (status.status === "degraded") return "Servidor inestable";
+  if (status.status === "offline") return "Servidor caido";
+  return "Estado desconocido";
+};
+
+const getServerStatusColor = (status: ServerStatus) => {
+  if (status.status === "online") return "#16a34a";
+  if (status.status === "degraded") return "#f59e0b";
+  if (status.status === "offline") return "#dc2626";
+  return "#9ca3af";
+};
+
+const formatUptime = (seconds?: number) => {
+  if (!seconds || seconds < 0) return "N/D";
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+};
+
 export default function Navbar() {
   const { isDarkMode, toggleMode } = useThemeMode();
   const {
@@ -56,6 +116,7 @@ export default function Navbar() {
     segundoApellido,
     fotoUrl,
     bodegaNombre,
+    rol,
     logout,
     syncSession,
   } = useAuthStore();
@@ -74,6 +135,8 @@ export default function Navbar() {
   const [alertPanelTab, setAlertPanelTab] = useState<"alertas" | "log">("alertas");
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
+  const [serverStatus, setServerStatus] = useState<ServerStatus>(initialServerStatus);
+  const [serverStatusAnchorEl, setServerStatusAnchorEl] = useState<null | HTMLElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastUnreadCountRef = useRef<number | null>(null);
   const alertasSocketRef = useRef<Socket | null>(null);
@@ -134,6 +197,38 @@ export default function Navbar() {
     logout();
     window.location.href = "/login";
   };
+
+  const cargarServerStatus = useCallback(async () => {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 7000);
+
+    try {
+      const { data } = await api.get("/status", { signal: controller.signal });
+      setServerStatus({
+        ...data,
+        status: data?.status || "online",
+      });
+    } catch (error) {
+      setServerStatus({
+        status: "offline",
+        checkedAt: new Date().toISOString(),
+        message: error instanceof Error ? error.message : "No se pudo contactar el backend",
+      });
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
+  }, []);
+
+  useEffect(() => {
+    void cargarServerStatus();
+    const intervalId = window.setInterval(() => {
+      void cargarServerStatus();
+    }, 60000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [cargarServerStatus]);
 
   useEffect(() => {
     let active = true;
@@ -295,6 +390,12 @@ export default function Navbar() {
       : `${api.defaults.baseURL || ""}${sourceFotoUrl}`
     : "";
   const alertasNoLeidas = alertas.filter((alerta) => !alerta.leida).length;
+  const isAdmin = `${rol || ""}`.toUpperCase() === "ADMIN";
+  const serverStatusLabel = getServerStatusLabel(serverStatus);
+  const serverStatusColor = getServerStatusColor(serverStatus);
+  const serverStatusTooltip = isAdmin
+    ? `${serverStatusLabel}. Click para ver detalles`
+    : serverStatusLabel;
 
   const abrirAlertas = (event: React.MouseEvent<HTMLElement>) => {
     setAlertAnchorEl(event.currentTarget);
@@ -303,6 +404,15 @@ export default function Navbar() {
 
   const cerrarAlertas = () => {
     setAlertAnchorEl(null);
+  };
+
+  const abrirServerStatus = (event: React.MouseEvent<HTMLElement>) => {
+    if (!isAdmin) return;
+    setServerStatusAnchorEl(event.currentTarget);
+  };
+
+  const cerrarServerStatus = () => {
+    setServerStatusAnchorEl(null);
   };
 
   const marcarLeida = async (alertaId: number) => {
@@ -347,7 +457,7 @@ export default function Navbar() {
       position="fixed"
       elevation={0}
       sx={{
-        zIndex: 2000,
+        zIndex: (theme) => theme.zIndex.drawer + 1,
         background: isDarkMode ? "#111827" : "#ffffff",
         color: isDarkMode ? "#f9fafb" : "#1f2937",
         borderBottom: "1px solid",
@@ -371,6 +481,166 @@ export default function Navbar() {
         </Stack>
 
         <Stack direction="row" spacing={{ xs: 1, sm: 2 }} alignItems="center">
+          <Tooltip title={serverStatusTooltip}>
+            <Box
+              component="button"
+              type="button"
+              aria-label={serverStatusTooltip}
+              onClick={abrirServerStatus}
+              sx={{
+                height: 36,
+                px: { xs: 1, sm: 1.25 },
+                border: "1px solid",
+                borderColor: isDarkMode ? "rgba(255,255,255,0.18)" : "#e5e7eb",
+                borderRadius: 999,
+                backgroundColor: isDarkMode ? "rgba(255,255,255,0.06)" : "#f8fafc",
+                color: "inherit",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 1,
+                cursor: isAdmin ? "pointer" : "default",
+                flexShrink: 0,
+                transition: "border-color 160ms ease, background-color 160ms ease",
+                "&:hover": {
+                  borderColor: isAdmin ? serverStatusColor : isDarkMode ? "rgba(255,255,255,0.18)" : "#e5e7eb",
+                  backgroundColor: isAdmin
+                    ? isDarkMode
+                      ? "rgba(255,255,255,0.1)"
+                      : "#eef2ff"
+                    : isDarkMode
+                      ? "rgba(255,255,255,0.06)"
+                      : "#f8fafc",
+                },
+                "&:focus-visible": {
+                  outline: "3px solid",
+                  outlineColor: serverStatusColor,
+                  outlineOffset: 2,
+                },
+              }}
+            >
+              <Box
+                sx={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: "50%",
+                  backgroundColor: serverStatusColor,
+                  boxShadow:
+                    serverStatus.status === "checking"
+                      ? "none"
+                      : `0 0 0 4px ${serverStatusColor}22`,
+                }}
+              />
+              <Typography
+                variant="caption"
+                sx={{
+                  display: { xs: "none", md: "block" },
+                  fontWeight: 700,
+                  lineHeight: 1,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {serverStatus.status === "checking" ? "Servidor" : serverStatus.status === "online" ? "Online" : "Alerta"}
+              </Typography>
+            </Box>
+          </Tooltip>
+
+          <Menu
+            anchorEl={serverStatusAnchorEl}
+            open={Boolean(serverStatusAnchorEl)}
+            onClose={cerrarServerStatus}
+            anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+            transformOrigin={{ vertical: "top", horizontal: "right" }}
+            PaperProps={{ sx: { width: 360, maxWidth: "calc(100vw - 32px)" } }}
+          >
+            <Box sx={{ px: 2, py: 1.5 }}>
+              <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
+                <Stack direction="row" alignItems="center" spacing={1}>
+                  <Box
+                    sx={{
+                      width: 12,
+                      height: 12,
+                      borderRadius: "50%",
+                      backgroundColor: serverStatusColor,
+                      boxShadow: `0 0 0 4px ${serverStatusColor}22`,
+                    }}
+                  />
+                  <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+                    {serverStatusLabel}
+                  </Typography>
+                </Stack>
+                <Button size="small" onClick={() => void cargarServerStatus()}>
+                  Revisar
+                </Button>
+              </Stack>
+              <Typography variant="caption" color="text.secondary">
+                {serverStatus.checkedAt
+                  ? `Ultima revision: ${new Date(serverStatus.checkedAt).toLocaleString("es-GT")}`
+                  : "Sin revision registrada"}
+              </Typography>
+            </Box>
+            <Divider />
+            <Box sx={{ px: 2, py: 1.5 }}>
+              <Stack spacing={1.25}>
+                <Stack direction="row" justifyContent="space-between" spacing={2}>
+                  <Typography variant="body2" color="text.secondary">
+                    API
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                    {serverStatus.api?.state || (serverStatus.status === "offline" ? "offline" : "N/D")}
+                  </Typography>
+                </Stack>
+                <Stack direction="row" justifyContent="space-between" spacing={2}>
+                  <Typography variant="body2" color="text.secondary">
+                    Base de datos
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                    {serverStatus.database?.state || "N/D"}
+                    {serverStatus.database?.latencyMs != null ? ` (${serverStatus.database.latencyMs} ms)` : ""}
+                  </Typography>
+                </Stack>
+                <Stack direction="row" justifyContent="space-between" spacing={2}>
+                  <Typography variant="body2" color="text.secondary">
+                    Railway
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 700, textAlign: "right" }}>
+                    {serverStatus.railway?.label || "N/D"}
+                  </Typography>
+                </Stack>
+                <Stack direction="row" justifyContent="space-between" spacing={2}>
+                  <Typography variant="body2" color="text.secondary">
+                    Uptime backend
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                    {formatUptime(serverStatus.api?.uptimeSeconds)}
+                  </Typography>
+                </Stack>
+              </Stack>
+              {(serverStatus.message || serverStatus.database?.message || serverStatus.railway?.message) && (
+                <Box
+                  sx={{
+                    mt: 1.5,
+                    p: 1.25,
+                    borderRadius: 1,
+                    backgroundColor: "action.hover",
+                  }}
+                >
+                  <Typography variant="caption" color="text.secondary">
+                    {serverStatus.message || serverStatus.database?.message || serverStatus.railway?.message}
+                  </Typography>
+                </Box>
+              )}
+            </Box>
+            <Divider />
+            <Box sx={{ px: 2, py: 1.25, display: "flex", justifyContent: "flex-end", gap: 1 }}>
+              <Button
+                size="small"
+                onClick={() => window.open(serverStatus.railway?.statusPageUrl || "https://status.railway.com", "_blank")}
+              >
+                Abrir Railway
+              </Button>
+            </Box>
+          </Menu>
+
           <Tooltip title={isDarkMode ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}>
             <Box
               component="button"

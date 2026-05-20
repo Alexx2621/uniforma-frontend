@@ -43,6 +43,7 @@ import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import uniformaLogo from "../assets/3-logos.png";
 import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../utils/fontFamily";
 import { findPotentialMisspellings } from "../utils/spellcheck";
+import { formatCurrency } from "../utils/currency";
 
 interface Cliente {
   id: number;
@@ -1338,11 +1339,11 @@ export default function PedidoNuevo() {
           <td class="wrap">${escapeHtml(prod?.nombre || "Producto")}</td>
           <td class="text-left wrap">${escapeHtml(d.descripcion || "")}</td>
           <td class="nowrap">${escapeHtml(d.cantidad)}</td>
-          <td class="money">Q ${escapeHtml((d.precioUnit || 0).toFixed(2))}</td>
-          <td class="money">Q ${escapeHtml((Number(d.bordado) || 0).toFixed(2))}</td>
-          <td class="money">Q ${escapeHtml(estiloEspecialMonto.toFixed(2))}</td>
+          <td class="money">${escapeHtml(formatCurrency(d.precioUnit || 0))}</td>
+          <td class="money">${escapeHtml(formatCurrency(Number(d.bordado) || 0))}</td>
+          <td class="money">${escapeHtml(formatCurrency(estiloEspecialMonto))}</td>
           <td class="nowrap">${escapeHtml((d.descuento || 0).toFixed(2))}%</td>
-          <td class="money">Q ${escapeHtml(subtotal.toFixed(2))}</td>
+          <td class="money">${escapeHtml(formatCurrency(subtotal))}</td>
         </tr>`;
       })
       .join("");
@@ -1446,14 +1447,14 @@ export default function PedidoNuevo() {
               : ""
           }
           <div class="totals">
-            <div class="totals-row"><span>Subtotal</span><span>Q ${escapeHtml(totalsPedido.subtotal.toFixed(2))}</span></div>
+            <div class="totals-row"><span>Subtotal</span><span>${escapeHtml(formatCurrency(totalsPedido.subtotal))}</span></div>
             ${!pedidoSinCobro && metodoUsaRecargo
-              ? `<div class="totals-row"><span>Recargo (${porcentajeRecargo || 0}%)</span><span>Q ${totalsPedido.recargo.toFixed(2)}</span></div>`
+              ? `<div class="totals-row"><span>Recargo (${porcentajeRecargo || 0}%)</span><span>${formatCurrency(totalsPedido.recargo)}</span></div>`
               : ""
             }
-            <div class="totals-row"><span>Envio</span><span>Q ${escapeHtml(totalsPedido.envio.toFixed(2))}</span></div>
-            <div class="totals-row"><span>Anticipo</span><span>Q ${escapeHtml((pedidoSinCobro ? 0 : Number(anticipo) || 0).toFixed(2))}</span></div>
-            <div class="totals-row total"><span>Total</span><span>Q ${escapeHtml(totalsPedido.total.toFixed(2))}</span></div>
+            <div class="totals-row"><span>Envio</span><span>${escapeHtml(formatCurrency(totalsPedido.envio))}</span></div>
+            <div class="totals-row"><span>Anticipo</span><span>${escapeHtml(formatCurrency(pedidoSinCobro ? 0 : Number(anticipo) || 0))}</span></div>
+            <div class="totals-row total"><span>Total</span><span>${escapeHtml(formatCurrency(totalsPedido.total))}</span></div>
           </div>
         </div>
         <script>window.onload = function(){ window.print(); }</script>
@@ -2175,10 +2176,10 @@ export default function PedidoNuevo() {
                   <TableCell align="center">{row.cantidad}</TableCell>
                   {!pedidoParaStock && (
                     <>
-                      <TableCell align="center">{`Q ${Number(row.precioUnit || 0).toFixed(2)}`}</TableCell>
-                      <TableCell align="center">{`Q ${Number(row.bordado || 0).toFixed(2)}`}</TableCell>
+                      <TableCell align="center">{formatCurrency(row.precioUnit || 0)}</TableCell>
+                      <TableCell align="center">{formatCurrency(row.bordado || 0)}</TableCell>
                       <TableCell align="center">
-                        {row.estiloEspecial ? `Q ${Number(row.estiloEspecialMonto || 0).toFixed(2)}` : "No"}
+                        {row.estiloEspecial ? formatCurrency(row.estiloEspecialMonto || 0) : "No"}
                       </TableCell>
                       <TableCell align="center">{`${Number(row.descuento || 0).toFixed(2)}%`}</TableCell>
                     </>
@@ -2219,13 +2220,13 @@ export default function PedidoNuevo() {
                 {!pedidoParaStock && (
                   <>
                     <TableCell align="center" sx={{ fontWeight: 700 }}>
-                      {`Q ${detalleTableTotals.precio.toFixed(2)}`}
+                      {formatCurrency(detalleTableTotals.precio)}
                     </TableCell>
                     <TableCell align="center" sx={{ fontWeight: 700 }}>
-                      {`Q ${detalleTableTotals.bordado.toFixed(2)}`}
+                      {formatCurrency(detalleTableTotals.bordado)}
                     </TableCell>
                     <TableCell align="center" sx={{ fontWeight: 700 }}>
-                      {`Q ${detalleTableTotals.estiloEspecial.toFixed(2)}`}
+                      {formatCurrency(detalleTableTotals.estiloEspecial)}
                     </TableCell>
                     <TableCell align="center">-</TableCell>
                   </>
@@ -2348,29 +2349,29 @@ export default function PedidoNuevo() {
             <Stack spacing={1}>
               <Stack direction="row" justifyContent="space-between">
                 <Typography>Subtotal</Typography>
-                <Typography>{`Q ${totalsPedido.subtotal.toFixed(2)}`}</Typography>
+                <Typography>{formatCurrency(totalsPedido.subtotal)}</Typography>
               </Stack>
               {!pedidoSinCobro && metodoUsaRecargo && (
                 <Stack direction="row" justifyContent="space-between">
                   <Typography>Recargo</Typography>
-                  <Typography>{`Q ${totalsPedido.recargo.toFixed(2)}`}</Typography>
+                  <Typography>{formatCurrency(totalsPedido.recargo)}</Typography>
                 </Stack>
               )}
               <Stack direction="row" justifyContent="space-between">
                 <Typography>Envio</Typography>
-                <Typography>{`Q ${totalsPedido.envio.toFixed(2)}`}</Typography>
+                <Typography>{formatCurrency(totalsPedido.envio)}</Typography>
               </Stack>
               <Stack direction="row" justifyContent="space-between">
                 <Typography fontWeight={700}>Total</Typography>
-                <Typography fontWeight={700}>{`Q ${totalsPedido.total.toFixed(2)}`}</Typography>
+                <Typography fontWeight={700}>{formatCurrency(totalsPedido.total)}</Typography>
               </Stack>
               <Stack direction="row" justifyContent="space-between">
                 <Typography>Anticipo</Typography>
-                <Typography>{`Q ${(pedidoSinCobro ? 0 : Number(anticipo) || 0).toFixed(2)}`}</Typography>
+                <Typography>{formatCurrency(pedidoSinCobro ? 0 : Number(anticipo) || 0)}</Typography>
               </Stack>
               <Stack direction="row" justifyContent="space-between">
                 <Typography fontWeight={700}>Saldo estimado</Typography>
-                <Typography fontWeight={700}>{`Q ${totalsPedido.saldoPendiente.toFixed(2)}`}</Typography>
+                <Typography fontWeight={700}>{formatCurrency(totalsPedido.saldoPendiente)}</Typography>
               </Stack>
             </Stack>
           </Paper>

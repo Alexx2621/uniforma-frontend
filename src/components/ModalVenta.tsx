@@ -11,6 +11,7 @@ import {
 import { useState, useEffect } from "react";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
+import { formatCurrency } from "../utils/currency";
 
 interface Props {
   open: boolean;
@@ -202,7 +203,7 @@ export default function ModalVenta({ open, onClose, onSaved }: Props) {
             {detalle.map((r) => (
               <tr key={r.productoId}>
                 <td>{r.nombre}</td>
-                <td>Q {r.precio}</td>
+                <td>{formatCurrency(r.precio)}</td>
                 <td>
                   <input
                     type="number"
@@ -214,7 +215,7 @@ export default function ModalVenta({ open, onClose, onSaved }: Props) {
                     style={{ width: 60 }}
                   />
                 </td>
-                <td>Q {r.subtotal}</td>
+                <td>{formatCurrency(r.subtotal)}</td>
                 <td>
                   <Button color="error" onClick={() => eliminarItem(r.productoId)}>
                     X
@@ -227,7 +228,7 @@ export default function ModalVenta({ open, onClose, onSaved }: Props) {
 
         {/* Total */}
         <h3 style={{ textAlign: "right" }}>
-          Total: <b>Q {total.toFixed(2)}</b>
+          Total: <b>{formatCurrency(total)}</b>
         </h3>
       </DialogContent>
 

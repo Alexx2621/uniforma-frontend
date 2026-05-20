@@ -27,6 +27,7 @@ import LOGO_URL from "../assets/3-logos.png";
 import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../utils/fontFamily";
 import { buildVentaPdfHtml } from "../utils/ventaPdf";
 import TransactionRelationMap, { RelationEdge, RelationNode } from "../components/TransactionRelationMap";
+import { formatCurrency } from "../utils/currency";
 
 interface VentaRow {
   id: number;
@@ -195,7 +196,7 @@ export default function Ventas() {
     [ventas, cierreFecha, canAccessAllBodegas, userBodegaId]
   );
 
-  const formatter = (v: number) => `Q ${v.toFixed(2)}`;
+  const formatter = formatCurrency;
 
   const getVentaRowId = (row: VentaRow) => {
     const idVal = row.id ?? (row as any).ventaId ?? (row as any).venta_id;
@@ -684,7 +685,7 @@ export default function Ventas() {
       field: "total",
       headerName: "Total",
       width: 130,
-      valueFormatter: (value: number) => `Q ${Number(value || 0).toFixed(2)}`,
+      valueFormatter: (value: number) => formatCurrency(value),
     },
     {
       field: "acciones",

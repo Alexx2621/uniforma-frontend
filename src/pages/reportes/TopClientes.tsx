@@ -24,6 +24,7 @@ import { api } from "../../api/axios";
 import UniformaTableLoadingRow from "../../components/UniformaTableLoadingRow";
 import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../../utils/fontFamily";
 import { useTablePagination } from "../../utils/useTablePagination";
+import { formatCurrency } from "../../utils/currency";
 
 interface Venta {
   id: number;
@@ -72,8 +73,8 @@ const exportPdf = (rows: RowCliente[]) => {
       (r) => `<tr>
         <td>${r.nombre}</td>
         <td>${r.tickets}</td>
-        <td>Q ${r.total.toFixed(2)}</td>
-        <td>Q ${r.promedio.toFixed(2)}</td>
+        <td>${formatCurrency(r.total)}</td>
+        <td>${formatCurrency(r.promedio)}</td>
       </tr>`
     )
     .join("");
@@ -232,7 +233,7 @@ export default function TopClientes() {
         <Grid size={{ xs: 12, sm: 2 }}>
           <Stack direction="row" spacing={1} alignItems="center" sx={{ height: "100%" }}>
             <Chip label={`${filas.length} clientes`} />
-            <Chip label={`Q ${totalMonto.toFixed(2)}`} color="success" />
+            <Chip label={formatCurrency(totalMonto)} color="success" />
           </Stack>
         </Grid>
       </Grid>
@@ -256,14 +257,14 @@ export default function TopClientes() {
               <TableRow key={`${row.clienteId ?? "na"}`}>
                 <TableCell>{row.nombre}</TableCell>
                 <TableCell>{row.tickets}</TableCell>
-                <TableCell>{`Q ${row.total.toFixed(2)}`}</TableCell>
-                <TableCell>{`Q ${row.promedio.toFixed(2)}`}</TableCell>
+                <TableCell>{formatCurrency(row.total)}</TableCell>
+                <TableCell>{formatCurrency(row.promedio)}</TableCell>
               </TableRow>
             ))}
             {!loading && <TableRow>
               <TableCell sx={{ fontWeight: 700 }}>Totales</TableCell>
               <TableCell sx={{ fontWeight: 700 }}>{totalTickets}</TableCell>
-              <TableCell sx={{ fontWeight: 700 }}>{`Q ${totalMonto.toFixed(2)}`}</TableCell>
+              <TableCell sx={{ fontWeight: 700 }}>{formatCurrency(totalMonto)}</TableCell>
               <TableCell />
             </TableRow>}
           </TableBody>

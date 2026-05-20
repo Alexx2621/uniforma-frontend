@@ -24,6 +24,7 @@ import ShoppingBagOutlined from "@mui/icons-material/ShoppingBagOutlined";
 import StarBorderOutlined from "@mui/icons-material/StarBorderOutlined";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
+import { formatCurrency } from "../utils/currency";
 
 interface ClienteFichaData {
   cliente: {
@@ -65,7 +66,7 @@ interface ClienteFichaData {
   oportunidades: string[];
 }
 
-const money = (value: number) => `Q ${Number(value || 0).toFixed(2)}`;
+const money = formatCurrency;
 const dateLabel = (value?: string | null) => (value ? new Date(value).toLocaleString("es-GT") : "Sin actividad");
 const titleCase = (value?: string | null) =>
   `${value || "N/D"}`.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());

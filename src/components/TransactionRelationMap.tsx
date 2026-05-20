@@ -11,6 +11,7 @@ import {
 } from "@dnd-kit/core";
 import { Dialog, DialogTitle, DialogContent, DialogActions, Button, Box, Card, CardContent, Typography, Stack, Tooltip, IconButton } from "@mui/material";
 import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
+import { formatCurrency } from "../utils/currency";
 
 export type RelationNode = {
   id: string;
@@ -122,7 +123,7 @@ function RelationCard({
         )}
         {node.amount !== undefined && (
           <Typography variant="body1" sx={{ fontWeight: 700, mt: 0.75 }}>
-            Q {Number(node.amount || 0).toFixed(2)}
+            {formatCurrency(node.amount)}
           </Typography>
         )}
         {node.date && (

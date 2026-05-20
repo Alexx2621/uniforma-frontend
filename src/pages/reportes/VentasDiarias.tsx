@@ -24,6 +24,7 @@ import { api } from "../../api/axios";
 import UniformaTableLoadingRow from "../../components/UniformaTableLoadingRow";
 import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../../utils/fontFamily";
 import { useTablePagination } from "../../utils/useTablePagination";
+import { formatCurrency } from "../../utils/currency";
 
 interface Venta {
   id: number;
@@ -80,10 +81,10 @@ const exportPdf = (rows: RowDiaria[]) => {
       (r) => `<tr>
         <td>${r.fecha}</td>
         <td>${r.tickets}</td>
-        <td>Q ${r.total.toFixed(2)}</td>
-        <td>Q ${r.efectivo.toFixed(2)}</td>
-        <td>Q ${r.tarjeta.toFixed(2)}</td>
-        <td>Q ${r.transferencia.toFixed(2)}</td>
+        <td>${formatCurrency(r.total)}</td>
+        <td>${formatCurrency(r.efectivo)}</td>
+        <td>${formatCurrency(r.tarjeta)}</td>
+        <td>${formatCurrency(r.transferencia)}</td>
       </tr>`
     )
     .join("");
@@ -241,7 +242,7 @@ export default function VentasDiarias() {
         <Grid size={{ xs: 12, sm: 3 }}>
           <Stack direction="row" spacing={1} alignItems="center" sx={{ height: "100%" }}>
             <Chip label={`${filas.length} días`} />
-            <Chip label={`Q ${totalGeneral.total.toFixed(2)}`} color="success" />
+            <Chip label={formatCurrency(totalGeneral.total)} color="success" />
           </Stack>
         </Grid>
       </Grid>
@@ -267,19 +268,19 @@ export default function VentasDiarias() {
               <TableRow key={row.fecha}>
                 <TableCell>{row.fecha}</TableCell>
                 <TableCell>{row.tickets}</TableCell>
-                <TableCell>{`Q ${row.total.toFixed(2)}`}</TableCell>
-                <TableCell>{`Q ${row.efectivo.toFixed(2)}`}</TableCell>
-                <TableCell>{`Q ${row.tarjeta.toFixed(2)}`}</TableCell>
-                <TableCell>{`Q ${row.transferencia.toFixed(2)}`}</TableCell>
+                <TableCell>{formatCurrency(row.total)}</TableCell>
+                <TableCell>{formatCurrency(row.efectivo)}</TableCell>
+                <TableCell>{formatCurrency(row.tarjeta)}</TableCell>
+                <TableCell>{formatCurrency(row.transferencia)}</TableCell>
               </TableRow>
             ))}
             {!loading && <TableRow>
               <TableCell sx={{ fontWeight: 700 }}>Totales</TableCell>
               <TableCell sx={{ fontWeight: 700 }}>{totalGeneral.tickets}</TableCell>
-              <TableCell sx={{ fontWeight: 700 }}>{`Q ${totalGeneral.total.toFixed(2)}`}</TableCell>
-              <TableCell sx={{ fontWeight: 700 }}>{`Q ${totalGeneral.efectivo.toFixed(2)}`}</TableCell>
-              <TableCell sx={{ fontWeight: 700 }}>{`Q ${totalGeneral.tarjeta.toFixed(2)}`}</TableCell>
-              <TableCell sx={{ fontWeight: 700 }}>{`Q ${totalGeneral.transferencia.toFixed(2)}`}</TableCell>
+              <TableCell sx={{ fontWeight: 700 }}>{formatCurrency(totalGeneral.total)}</TableCell>
+              <TableCell sx={{ fontWeight: 700 }}>{formatCurrency(totalGeneral.efectivo)}</TableCell>
+              <TableCell sx={{ fontWeight: 700 }}>{formatCurrency(totalGeneral.tarjeta)}</TableCell>
+              <TableCell sx={{ fontWeight: 700 }}>{formatCurrency(totalGeneral.transferencia)}</TableCell>
             </TableRow>}
           </TableBody>
         </Table>
