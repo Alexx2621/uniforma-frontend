@@ -26,7 +26,7 @@ import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
 import SendOutlined from "@mui/icons-material/SendOutlined";
 import TaskAltOutlined from "@mui/icons-material/TaskAltOutlined";
 import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { hasPermission } from "../auth/permissions";
@@ -57,6 +57,21 @@ interface UsuarioOption {
   usuario?: string | null;
 }
 
+interface TrackingNavigationState {
+  returnTo?: string;
+  returnLabel?: string;
+  trackingState?: {
+    usuarioFiltro?: string;
+    fechaInicio?: string;
+    fechaFin?: string;
+    pagination?: {
+      page?: number;
+      pageSize?: number;
+    };
+    selectedId?: number | null;
+  };
+}
+
 const formatDate = (value?: string | null) => (value ? new Date(value).toLocaleString("es-GT") : "N/D");
 const formatEstado = (value?: string | null) => `${value || "SIN ENVIAR"}`.replace(/_/g, " ").toUpperCase();
 const todayInput = () => {
@@ -76,11 +91,21 @@ const trackingIcons: Record<string, ElementType> = {
 
 export default function TrackingPedidos() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const restoredTrackingState = (location.state as TrackingNavigationState | null)?.trackingState;
   const [rows, setRows] = useState<TrackingRow[]>([]);
   const [usuarios, setUsuarios] = useState<UsuarioOption[]>([]);
-  const [usuarioFiltro, setUsuarioFiltro] = useState("");
-  const [fechaInicio, setFechaInicio] = useState(todayInput);
-  const [fechaFin, setFechaFin] = useState(todayInput);
+  const [usuarioFiltro, setUsuarioFiltro] = useState(() => restoredTrackingState?.usuarioFiltro || "");
+  const [fechaInicio, setFechaInicio] = useState(() => restoredTrackingState?.fechaInicio || todayInput());
+  const [fechaFin, setFechaFin] = useState(() => restoredTrackingState?.fechaFin || todayInput());
+  const [paginationModel, setPaginationModel] = useState(() => ({
+    page: Math.max(0, Number(restoredTrackingState?.pagination?.page || 0)),
+    pageSize: Number(restoredTrackingState?.pagination?.pageSize || 25),
+  }));
+  const [selectedPedidoId, setSelectedPedidoId] = useState<number | null>(() => {
+    const value = Number(restoredTrackingState?.selectedId);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  });
   const [loading, setLoading] = useState(false);
   const [sendingId, setSendingId] = useState<number | null>(null);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
@@ -88,6 +113,24 @@ export default function TrackingPedidos() {
   const { rol, permisos, id: currentUserId, nombre: currentNombre, usuario: currentUsuario } = useAuthStore();
   const isAdmin = `${rol || ""}`.toUpperCase() === "ADMIN";
   const canManage = hasPermission(rol, permisos, "tracking.manage");
+
+  const buildTrackingReturnState = useCallback((pedidoId?: number | null): TrackingNavigationState => ({
+    returnTo: "/tracking-pedidos",
+    returnLabel: "Regresar a tracking",
+    trackingState: {
+      usuarioFiltro,
+      fechaInicio,
+      fechaFin,
+      pagination: paginationModel,
+      selectedId: pedidoId ?? selectedPedidoId,
+    },
+  }), [fechaFin, fechaInicio, paginationModel, selectedPedidoId, usuarioFiltro]);
+
+  const abrirPedidoDocumento = useCallback((pedido: Pick<TrackingRow, "id">) => {
+    const pedidoId = Number(pedido.id);
+    setSelectedPedidoId(pedidoId);
+    navigate(`/produccion/${pedidoId}`, { state: buildTrackingReturnState(pedidoId) });
+  }, [buildTrackingReturnState, navigate]);
 
   const cargar = useCallback(async () => {
     try {
@@ -209,7 +252,7 @@ export default function TrackingPedidos() {
               size="small"
               variant="outlined"
               endIcon={<OpenInNewOutlined />}
-              onClick={() => navigate(`/produccion/${params.row.id}`)}
+              onClick={() => abrirPedidoDocumento(params.row)}
             >
               Pedido
             </Button>
@@ -226,7 +269,7 @@ export default function TrackingPedidos() {
         ),
       },
     ],
-    [actualizarEstado, canManage, navigate, reenviar, sendingId, updatingId],
+    [actualizarEstado, abrirPedidoDocumento, canManage, reenviar, sendingId, updatingId],
   );
 
   const previewEstado = preview?.tracking?.ultimoEstado || "pedido_ingresado";
@@ -294,7 +337,31 @@ export default function TrackingPedidos() {
           loading={loading}
           disableRowSelectionOnClick
           pageSizeOptions={[10, 25, 50, 100]}
-          initialState={{ pagination: { paginationModel: { page: 0, pageSize: 25 } } }}
+          paginationModel={paginationModel}
+          onPaginationModelChange={setPaginationModel}
+          rowSelectionModel={selectedPedidoId ? [selectedPedidoId] : []}
+          onRowSelectionModelChange={(model) => {
+            const selected = Array.isArray(model) ? model[0] : Array.from((model as any)?.ids || [])[0];
+            const selectedId = Number(selected);
+            setSelectedPedidoId(Number.isFinite(selectedId) && selectedId > 0 ? selectedId : null);
+          }}
+          getRowClassName={(params) => (Number(params.id) === selectedPedidoId ? "tracking-row-returned" : "")}
+          sx={{
+            "& .tracking-row-returned .MuiDataGrid-cell": {
+              backgroundColor: "rgba(25, 118, 210, 0.14) !important",
+              borderTop: "1px solid rgba(25, 118, 210, 0.35)",
+              borderBottom: "1px solid rgba(25, 118, 210, 0.35)",
+            },
+            "& .tracking-row-returned .MuiDataGrid-cell:first-of-type": {
+              borderLeft: "5px solid #1976d2",
+            },
+            "& .MuiDataGrid-row.Mui-selected": {
+              backgroundColor: "rgba(25, 118, 210, 0.14)",
+            },
+            "& .MuiDataGrid-row.Mui-selected:hover": {
+              backgroundColor: "rgba(25, 118, 210, 0.18)",
+            },
+          }}
         />
       </Box>
       <Dialog open={Boolean(preview)} onClose={() => setPreview(null)} fullWidth maxWidth="md">
@@ -380,7 +447,7 @@ export default function TrackingPedidos() {
         <DialogActions>
           <Button onClick={() => setPreview(null)}>Cerrar</Button>
           {preview && (
-            <Button variant="contained" endIcon={<OpenInNewOutlined />} onClick={() => navigate(`/produccion/${preview.id}`)}>
+            <Button variant="contained" endIcon={<OpenInNewOutlined />} onClick={() => abrirPedidoDocumento(preview)}>
               Ver pedido
             </Button>
           )}

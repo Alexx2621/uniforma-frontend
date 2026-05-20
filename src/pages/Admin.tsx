@@ -68,6 +68,8 @@ interface NotifConfig {
   dailyReportSubject: string;
   dailyReportScheduleEnabled: boolean;
   dailyReportScheduleRules: ReportScheduleRule[];
+  pedidoScheduleEnabled: boolean;
+  pedidoScheduleRules: ReportScheduleRule[];
   fortnightlyReportEnabled: boolean;
   fortnightlyReportEmailTo: string;
   fortnightlyReportSubject: string;
@@ -151,6 +153,31 @@ interface ProductBulkCreateDraft {
 }
 
 const createKey = () => Date.now() + Math.floor(Math.random() * 100000);
+
+type ScheduleModuleKey = "reporteDiario" | "pedidoNuevo";
+
+const SCHEDULE_MODULE_OPTIONS: Array<{
+  key: ScheduleModuleKey;
+  label: string;
+  description: string;
+  activeLabel: string;
+  inactiveLabel: string;
+}> = [
+  {
+    key: "reporteDiario",
+    label: "Cierre diario",
+    description: "Restringe el boton Nuevo reporte del modulo Reporte diario.",
+    activeLabel: "Limitar cierre diario por horario",
+    inactiveLabel: "Permitir cierre diario en cualquier horario",
+  },
+  {
+    key: "pedidoNuevo",
+    label: "Crear pedido",
+    description: "Restringe el boton Nuevo pedido y el guardado de pedidos de produccion.",
+    activeLabel: "Limitar creacion de pedidos por horario",
+    inactiveLabel: "Permitir crear pedidos en cualquier horario",
+  },
+];
 
 const parseCsv = (value: string) =>
   value
@@ -365,6 +392,8 @@ export default function Admin() {
     dailyReportSubject: "Reporte diario {fecha}",
     dailyReportScheduleEnabled: true,
     dailyReportScheduleRules: DEFAULT_DAILY_REPORT_SCHEDULE_RULES,
+    pedidoScheduleEnabled: false,
+    pedidoScheduleRules: DEFAULT_DAILY_REPORT_SCHEDULE_RULES,
     fortnightlyReportEnabled: false,
     fortnightlyReportEmailTo: "",
     fortnightlyReportSubject: "Reporte quincenal {periodo}",
@@ -378,6 +407,7 @@ export default function Admin() {
   const [smtpPassDraft, setSmtpPassDraft] = useState('');
   const [resendApiKeyDraft, setResendApiKeyDraft] = useState('');
   const [mensajeActualizacion, setMensajeActualizacion] = useState("");
+  const [selectedScheduleModule, setSelectedScheduleModule] = useState<ScheduleModuleKey>("reporteDiario");
   const [productMassConfigDraft, setProductMassConfigDraft] = useState<ProductMassConfigDraft>(
     () => createEmptyMassConfigDraft()
   );
@@ -441,6 +471,10 @@ export default function Admin() {
         ? reportesConfig.reportes.find((item: any) => item?.tipo === 'reporteQuincenal')
         : undefined;
       const dailyReportSchedule = reporteDiario?.schedule || {};
+      const actionSchedules = Array.isArray((reportesConfig as any)?.actionSchedules)
+        ? (reportesConfig as any).actionSchedules
+        : [];
+      const pedidoSchedule = actionSchedules.find((item: any) => item?.key === "pedidoNuevo") || {};
 
       setConfig({
         emailTo: data.emailTo || "",
@@ -466,6 +500,8 @@ export default function Admin() {
         dailyReportSubject: reporteDiario?.subject || 'Reporte diario {fecha}',
         dailyReportScheduleEnabled: Boolean(dailyReportSchedule?.enabled),
         dailyReportScheduleRules: expandReportScheduleRulesByDay(dailyReportSchedule?.rules),
+        pedidoScheduleEnabled: Boolean(pedidoSchedule?.enabled),
+        pedidoScheduleRules: expandReportScheduleRulesByDay(pedidoSchedule?.rules),
         fortnightlyReportEnabled: Boolean(reporteQuincenal?.enabled),
         fortnightlyReportEmailTo: reporteQuincenal?.emailTo || '',
         fortnightlyReportSubject: reporteQuincenal?.subject || 'Reporte quincenal {periodo}',
@@ -545,6 +581,14 @@ export default function Admin() {
               emailTo: config.fortnightlyReportEmailTo,
               subject: config.fortnightlyReportSubject,
               triggerOn: ['create'],
+            },
+          ],
+          actionSchedules: [
+            {
+              key: "pedidoNuevo",
+              label: "Crear pedido",
+              enabled: config.pedidoScheduleEnabled,
+              rules: normalizeReportScheduleRules(config.pedidoScheduleRules),
             },
           ],
         },
@@ -992,27 +1036,68 @@ export default function Admin() {
     }));
   };
 
-  const updateDailyScheduleRule = (index: number, field: "start" | "end", value: string) => {
+  const getSelectedScheduleState = () => {
+    const option = SCHEDULE_MODULE_OPTIONS.find((item) => item.key === selectedScheduleModule) || SCHEDULE_MODULE_OPTIONS[0];
+    if (selectedScheduleModule === "pedidoNuevo") {
+      return {
+        option,
+        enabled: config.pedidoScheduleEnabled,
+        rules: expandReportScheduleRulesByDay(config.pedidoScheduleRules),
+      };
+    }
+    return {
+      option,
+      enabled: config.dailyReportScheduleEnabled,
+      rules: expandReportScheduleRulesByDay(config.dailyReportScheduleRules),
+    };
+  };
+
+  const setSelectedScheduleEnabled = (enabled: boolean) => {
+    setConfig((prev) =>
+      selectedScheduleModule === "pedidoNuevo"
+        ? { ...prev, pedidoScheduleEnabled: enabled }
+        : { ...prev, dailyReportScheduleEnabled: enabled }
+    );
+  };
+
+  const updateSelectedScheduleRule = (index: number, field: "start" | "end", value: string) => {
     setConfig((prev) => ({
       ...prev,
-      dailyReportScheduleRules: expandReportScheduleRulesByDay(prev.dailyReportScheduleRules).map((rule, ruleIndex) =>
-        ruleIndex === index ? { ...rule, [field]: value } : rule
-      ),
+      ...(selectedScheduleModule === "pedidoNuevo"
+        ? {
+            pedidoScheduleRules: expandReportScheduleRulesByDay(prev.pedidoScheduleRules).map((rule, ruleIndex) =>
+              ruleIndex === index ? { ...rule, [field]: value } : rule
+            ),
+          }
+        : {
+            dailyReportScheduleRules: expandReportScheduleRulesByDay(prev.dailyReportScheduleRules).map((rule, ruleIndex) =>
+              ruleIndex === index ? { ...rule, [field]: value } : rule
+            ),
+          }),
     }));
   };
 
-  const toggleDailyScheduleRule = (index: number, enabled: boolean) => {
+  const toggleSelectedScheduleRule = (index: number, enabled: boolean) => {
     setConfig((prev) => ({
       ...prev,
-      dailyReportScheduleRules: expandReportScheduleRulesByDay(prev.dailyReportScheduleRules).map((rule, ruleIndex) =>
-        ruleIndex === index ? { ...rule, enabled } : rule
-      ),
+      ...(selectedScheduleModule === "pedidoNuevo"
+        ? {
+            pedidoScheduleRules: expandReportScheduleRulesByDay(prev.pedidoScheduleRules).map((rule, ruleIndex) =>
+              ruleIndex === index ? { ...rule, enabled } : rule
+            ),
+          }
+        : {
+            dailyReportScheduleRules: expandReportScheduleRulesByDay(prev.dailyReportScheduleRules).map((rule, ruleIndex) =>
+              ruleIndex === index ? { ...rule, enabled } : rule
+            ),
+          }),
     }));
   };
 
   const generosDisponibles = productMassConfigDraft.generos.map((item) => item.nombre).filter(Boolean);
   const telasDisponibles = productMassConfigDraft.telas.map((item) => item.nombre).filter(Boolean);
   const coloresDisponibles = productMassConfigDraft.colorAbreviaciones.map((item) => item.nombre).filter(Boolean);
+  const selectedScheduleState = getSelectedScheduleState();
 
   return (
     <Paper sx={{ p: 3 }}>
@@ -1336,31 +1421,42 @@ export default function Admin() {
           <Stack spacing={1.5}>
             <Stack direction="row" spacing={1} alignItems="center">
               <ScheduleOutlined color="primary" />
-              <Typography variant="subtitle2">Nuevo reporte diario</Typography>
+              <Typography variant="subtitle2">Restricciones por modulo</Typography>
             </Stack>
             <Typography variant="body2" color="text.secondary">
-              Cuando esta regla esta activa, el boton Nuevo reporte del modulo Reporte diario solo se habilita en los dias y horarios configurados.
+              Selecciona una accion y define su propio horario. Cada modulo guarda su configuracion de forma independiente.
+            </Typography>
+            <TextField
+              select
+              label="Modulo / accion"
+              value={selectedScheduleModule}
+              onChange={(e) => setSelectedScheduleModule(e.target.value as ScheduleModuleKey)}
+              sx={{ maxWidth: 360 }}
+            >
+              {SCHEDULE_MODULE_OPTIONS.map((option) => (
+                <MenuItem key={option.key} value={option.key}>
+                  {option.label}
+                </MenuItem>
+              ))}
+            </TextField>
+            <Typography variant="body2" color="text.secondary">
+              {selectedScheduleState.option.description}
             </Typography>
             <FormControlLabel
               control={
                 <Switch
-                  checked={config.dailyReportScheduleEnabled}
-                  onChange={(e) =>
-                    setConfig((prev) => ({
-                      ...prev,
-                      dailyReportScheduleEnabled: e.target.checked,
-                    }))
-                  }
+                  checked={selectedScheduleState.enabled}
+                  onChange={(e) => setSelectedScheduleEnabled(e.target.checked)}
                 />
               }
               label={
-                config.dailyReportScheduleEnabled
-                  ? "Limitar Nuevo reporte por horario"
-                  : "Permitir Nuevo reporte en cualquier horario"
+                selectedScheduleState.enabled
+                  ? selectedScheduleState.option.activeLabel
+                  : selectedScheduleState.option.inactiveLabel
               }
             />
             <Grid container spacing={2}>
-              {expandReportScheduleRulesByDay(config.dailyReportScheduleRules).map((rule, index) => {
+              {selectedScheduleState.rules.map((rule, index) => {
                 const day = rule.days[0];
                 const enabled = rule.enabled !== false;
                 return (
@@ -1371,8 +1467,8 @@ export default function Admin() {
                           control={
                             <Switch
                               checked={enabled}
-                              onChange={(e) => toggleDailyScheduleRule(index, e.target.checked)}
-                              disabled={!config.dailyReportScheduleEnabled}
+                              onChange={(e) => toggleSelectedScheduleRule(index, e.target.checked)}
+                              disabled={!selectedScheduleState.enabled}
                             />
                           }
                           label={`${DAY_LABELS[day] || `dia ${day}`}`.toUpperCase()}
@@ -1383,20 +1479,20 @@ export default function Admin() {
                             type="time"
                             fullWidth
                             value={rule.start}
-                            onChange={(e) => updateDailyScheduleRule(index, "start", e.target.value)}
+                            onChange={(e) => updateSelectedScheduleRule(index, "start", e.target.value)}
                             InputLabelProps={{ shrink: true }}
                             inputProps={{ step: 300 }}
-                            disabled={!config.dailyReportScheduleEnabled || !enabled}
+                            disabled={!selectedScheduleState.enabled || !enabled}
                           />
                           <TextField
                             label="Hasta"
                             type="time"
                             fullWidth
                             value={rule.end}
-                            onChange={(e) => updateDailyScheduleRule(index, "end", e.target.value)}
+                            onChange={(e) => updateSelectedScheduleRule(index, "end", e.target.value)}
                             InputLabelProps={{ shrink: true }}
                             inputProps={{ step: 300 }}
-                            disabled={!config.dailyReportScheduleEnabled || !enabled}
+                            disabled={!selectedScheduleState.enabled || !enabled}
                           />
                         </Stack>
                       </Stack>
@@ -1406,7 +1502,7 @@ export default function Admin() {
               })}
             </Grid>
             <Typography variant="caption" color="text.secondary">
-              Horario actual: {formatReportSchedule({ rules: config.dailyReportScheduleRules })}
+              Horario actual: {formatReportSchedule({ rules: selectedScheduleState.rules })}
             </Typography>
             <Stack direction="row" justifyContent="flex-end">
               <Button variant="contained" onClick={guardar} disabled={loading}>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   Alert,
   Box,
@@ -95,6 +95,8 @@ const MetricCard = ({ title, value, helper, icon }: { title: string; value: stri
 export default function ClienteFicha() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const returnState = location.state as { returnTo?: string; returnLabel?: string } | null;
   const [data, setData] = useState<ClienteFichaData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -114,6 +116,13 @@ export default function ClienteFicha() {
   }, [id]);
 
   const actividad = useMemo(() => data?.actividad || [], [data]);
+
+  const volver = () => {
+    navigate(returnState?.returnTo || "/clientes", {
+      state: returnState || undefined,
+      replace: true,
+    });
+  };
 
   if (loading) {
     return (
@@ -145,8 +154,8 @@ export default function ClienteFicha() {
             </Typography>
           </Box>
         </Stack>
-        <Button startIcon={<ArrowBackOutlined />} variant="outlined" onClick={() => navigate("/clientes")}>
-          Volver
+        <Button startIcon={<ArrowBackOutlined />} variant="outlined" onClick={volver}>
+          {returnState?.returnLabel || "Volver"}
         </Button>
       </Stack>
 

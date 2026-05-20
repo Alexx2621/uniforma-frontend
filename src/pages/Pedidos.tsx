@@ -14,7 +14,7 @@ import {
   MenuItem,
   ListItemIcon,
 } from "@mui/material";
-import { DataGrid, GridColDef } from "@mui/x-data-grid";
+import { DataGrid, GridColDef, useGridApiRef } from "@mui/x-data-grid";
 import AddIcon from "@mui/icons-material/Add";
 import MergeTypeOutlined from "@mui/icons-material/MergeTypeOutlined";
 import PlaylistAddCheckOutlined from "@mui/icons-material/PlaylistAddCheckOutlined";
@@ -22,7 +22,7 @@ import BlockOutlined from "@mui/icons-material/BlockOutlined";
 import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
 import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
 import { io, Socket } from "socket.io-client";
 import { api } from "../api/axios";
@@ -32,6 +32,7 @@ import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import TransactionRelationMap, { RelationEdge, RelationNode } from "../components/TransactionRelationMap";
 import { descargarProduccionUnificadoPdf } from "../utils/produccionUnificadoPdf";
 import { formatCurrency } from "../utils/currency";
+import { formatReportScheduleForDay, getActionSchedule, isReportScheduleOpen } from "../utils/reportSchedule";
 
 interface ProductoCatalogo {
   id: number;
@@ -100,6 +101,24 @@ interface PedidoRow {
 interface RelationNodeItem extends RelationNode {}
 
 interface RelationEdgeItem extends RelationEdge {}
+
+interface PedidosNavigationState {
+  returnTo?: string;
+  returnLabel?: string;
+  pedidosState?: {
+    filters?: {
+      cliente?: string;
+      fechaInicio?: string;
+      fechaFin?: string;
+      bodega?: number | "all";
+    };
+    pagination?: {
+      page?: number;
+      pageSize?: number;
+    };
+    selectedId?: number | null;
+  };
+}
 
 interface Bodega {
   id: number;
@@ -305,31 +324,72 @@ const buildResumenUnificacion = (
 });
 
 export default function Pedidos() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const restoredPedidosState = (location.state as PedidosNavigationState | null)?.pedidosState;
+  const pedidosGridApiRef = useGridApiRef();
   const [rows, setRows] = useState<PedidoRow[]>([]);
   const [bodegas, setBodegas] = useState<Bodega[]>([]);
   const [productos, setProductos] = useState<ProductoCatalogo[]>([]);
   const [telas, setTelas] = useState<CatalogoItem[]>([]);
   const [tallas, setTallas] = useState<CatalogoItem[]>([]);
   const [colores, setColores] = useState<CatalogoItem[]>([]);
-  const [filterCliente, setFilterCliente] = useState("");
-  const [filterFechaInicio, setFilterFechaInicio] = useState(() => getTodayDateInputValue());
-  const [filterFechaFin, setFilterFechaFin] = useState(() => getTodayDateInputValue());
-  const [filterBodega, setFilterBodega] = useState<number | "all">("all");
+  const [filterCliente, setFilterCliente] = useState(() => restoredPedidosState?.filters?.cliente || "");
+  const [filterFechaInicio, setFilterFechaInicio] = useState(
+    () => restoredPedidosState?.filters?.fechaInicio || getTodayDateInputValue()
+  );
+  const [filterFechaFin, setFilterFechaFin] = useState(
+    () => restoredPedidosState?.filters?.fechaFin || getTodayDateInputValue()
+  );
+  const [filterBodega, setFilterBodega] = useState<number | "all">(
+    () => restoredPedidosState?.filters?.bodega ?? "all"
+  );
+  const [paginationModel, setPaginationModel] = useState(() => ({
+    page: Math.max(0, Number(restoredPedidosState?.pagination?.page || 0)),
+    pageSize: Number(restoredPedidosState?.pagination?.pageSize || 10),
+  }));
+  const [selectedPedidoId, setSelectedPedidoId] = useState<number | null>(() => {
+    const value = Number(restoredPedidosState?.selectedId);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  });
   const [generandoUnificado, setGenerandoUnificado] = useState(false);
   const [loadingPedidos, setLoadingPedidos] = useState(false);
-  const navigate = useNavigate();
   const cargandoPedidosRef = useRef(false);
   const pedidosSocketRef = useRef<Socket | null>(null);
+  const skipInitialPaginationResetRef = useRef(Boolean(restoredPedidosState));
   const { rol, permisos, bodegaId: userBodegaId } = useAuthStore();
-  const { fetchConfig } = useSystemConfigStore();
+  const { fetchConfig, reportesConfig } = useSystemConfigStore();
   const canAccessAllBodegas = hasPermission(rol, permisos, "sistema.multi-tienda");
   const canUnifyPedidos = hasPermission(rol, permisos, "produccion.unificar");
+  const pedidoSchedule = useMemo(() => getActionSchedule(reportesConfig, "pedidoNuevo"), [reportesConfig]);
+  const pedidoScheduleOpen = useMemo(() => isReportScheduleOpen(pedidoSchedule), [pedidoSchedule]);
 
   const [relationModalOpen, setRelationModalOpen] = useState(false);
   const [relationModalData, setRelationModalData] = useState<{ nodes: RelationNodeItem[]; edges: RelationEdgeItem[] } | null>(null);
   const [relationModalTitle, setRelationModalTitle] = useState("Relaciones del pedido");
   const [contextMenuAnchor, setContextMenuAnchor] = useState<{ mouseX: number; mouseY: number } | null>(null);
   const [contextMenuPedido, setContextMenuPedido] = useState<PedidoRow | null>(null);
+
+  const buildPedidosReturnState = (pedidoId?: number | null): PedidosNavigationState => ({
+    returnTo: "/produccion",
+    returnLabel: "Regresar a pedidos",
+    pedidosState: {
+      filters: {
+        cliente: filterCliente,
+        fechaInicio: filterFechaInicio,
+        fechaFin: filterFechaFin,
+        bodega: filterBodega,
+      },
+      pagination: paginationModel,
+      selectedId: pedidoId ?? selectedPedidoId,
+    },
+  });
+
+  const abrirPedidoDetalle = (pedido: Pick<PedidoRow, "id">) => {
+    const pedidoId = Number(pedido.id);
+    setSelectedPedidoId(pedidoId);
+    navigate(`/produccion/${pedidoId}`, { state: buildPedidosReturnState(pedidoId) });
+  };
 
   const openRelationModal = async (pedido: PedidoRow) => {
     try {
@@ -347,8 +407,28 @@ export default function Pedidos() {
     setRelationModalData(null);
   };
 
+  const abrirNuevoPedido = () => {
+    if (!pedidoScheduleOpen) {
+      Swal.fire(
+        "Horario no habilitado",
+        `La creacion de pedidos esta habilitada en este horario: ${formatReportScheduleForDay(pedidoSchedule)}.`,
+        "info"
+      );
+      return;
+    }
+    navigate("/produccion/nuevo", { state: buildPedidosReturnState(selectedPedidoId) });
+  };
+
   const handleRelationNodeClick = (node: RelationNodeItem) => {
-    if (node.path) navigate(node.path);
+    if (!node.path) return;
+    const match = node.path.match(/^\/produccion\/(\d+)$/);
+    if (match) {
+      const pedidoId = Number(match[1]);
+      setSelectedPedidoId(pedidoId);
+      navigate(node.path, { state: buildPedidosReturnState(pedidoId) });
+      return;
+    }
+    navigate(node.path);
   };
 
   const handleGridContextMenu = (event: MouseEvent<HTMLElement>) => {
@@ -378,10 +458,11 @@ export default function Pedidos() {
         void openRelationModal(contextMenuPedido);
         break;
       case "open":
-        navigate(`/produccion/${contextMenuPedido.id}`);
+        abrirPedidoDetalle(contextMenuPedido);
         break;
       case "payments":
-        navigate(`/pagos/recibidos?pedido=${contextMenuPedido.id}`);
+        setSelectedPedidoId(Number(contextMenuPedido.id));
+        navigate(`/pagos/recibidos?pedido=${contextMenuPedido.id}`, { state: buildPedidosReturnState(contextMenuPedido.id) });
         break;
     }
     handleCloseContextMenu();
@@ -592,13 +673,37 @@ export default function Pedidos() {
 
   useEffect(() => {
     if (canAccessAllBodegas) {
-      setFilterBodega("all");
       return;
     }
 
     const parsedBodegaId = Number(userBodegaId);
     setFilterBodega(Number.isFinite(parsedBodegaId) && parsedBodegaId > 0 ? parsedBodegaId : "all");
   }, [canAccessAllBodegas, userBodegaId]);
+
+  useEffect(() => {
+    if (skipInitialPaginationResetRef.current) {
+      skipInitialPaginationResetRef.current = false;
+      return;
+    }
+    setPaginationModel((prev) => ({ ...prev, page: 0 }));
+  }, [filterCliente, filterFechaInicio, filterFechaFin, filterBodega]);
+
+  useEffect(() => {
+    const nextState = (location.state as PedidosNavigationState | null)?.pedidosState;
+    if (!nextState) return;
+
+    setFilterCliente(nextState.filters?.cliente || "");
+    setFilterFechaInicio(nextState.filters?.fechaInicio || getTodayDateInputValue());
+    setFilterFechaFin(nextState.filters?.fechaFin || getTodayDateInputValue());
+    setFilterBodega(nextState.filters?.bodega ?? "all");
+    setPaginationModel({
+      page: Math.max(0, Number(nextState.pagination?.page || 0)),
+      pageSize: Number(nextState.pagination?.pageSize || 10),
+    });
+
+    const selectedId = Number(nextState.selectedId);
+    setSelectedPedidoId(Number.isFinite(selectedId) && selectedId > 0 ? selectedId : null);
+  }, [location.key, location.state]);
 
   const filtered = useMemo(() => {
     return rows.filter((r) => {
@@ -623,6 +728,24 @@ export default function Pedidos() {
       );
     });
   }, [rows, filterCliente, filterBodega, filterFechaInicio, filterFechaFin, canAccessAllBodegas, userBodegaId]);
+
+  useEffect(() => {
+    if (!selectedPedidoId || !filtered.length) return;
+
+    const rowIndex = filtered.findIndex((row) => Number(row.id) === Number(selectedPedidoId));
+    if (rowIndex < 0) return;
+
+    const nextPage = Math.floor(rowIndex / Math.max(1, paginationModel.pageSize));
+    if (paginationModel.page !== nextPage) {
+      setPaginationModel((prev) => ({ ...prev, page: nextPage }));
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      pedidosGridApiRef.current.selectRow(selectedPedidoId, true, true);
+      pedidosGridApiRef.current.scrollToIndexes({ rowIndex });
+    });
+  }, [filtered, paginationModel.page, paginationModel.pageSize, pedidosGridApiRef, selectedPedidoId]);
 
   const bodegasDisponibles = useMemo(() => {
     if (canAccessAllBodegas) return bodegas;
@@ -927,7 +1050,7 @@ export default function Pedidos() {
       sortable: false,
       renderCell: (p) => (
         <Stack direction="row" spacing={1}>
-          <Button size="small" variant="outlined" onClick={() => navigate(`/produccion/${p.row.id}`)}>
+          <Button size="small" variant="outlined" onClick={() => abrirPedidoDetalle(p.row)}>
             Ver
           </Button>
           <Button
@@ -963,7 +1086,7 @@ export default function Pedidos() {
               {generandoUnificado ? "Unificando..." : `Unificar nuevos (${pedidosUnificables.length})`}
             </Button>
           )}
-          <Button startIcon={<AddIcon />} variant="contained" onClick={() => navigate("/produccion/nuevo")}>
+          <Button startIcon={<AddIcon />} variant="contained" onClick={abrirNuevoPedido}>
             Nuevo pedido
           </Button>
         </Stack>
@@ -1022,12 +1145,24 @@ export default function Pedidos() {
 
       <div style={{ height: 620, width: "100%" }} onContextMenu={handleGridContextMenu}>
         <DataGrid
+          apiRef={pedidosGridApiRef}
           loading={loadingPedidos}
           rows={filtered}
           columns={columns}
           getRowId={(row) => row.id}
           pageSizeOptions={[10, 25, 50]}
-          initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
+          paginationModel={paginationModel}
+          onPaginationModelChange={setPaginationModel}
+          keepNonExistentRowsSelected
+          rowSelectionModel={selectedPedidoId ? [selectedPedidoId] : []}
+          onRowSelectionModelChange={(model) => {
+            const selected = Array.isArray(model) ? model[0] : Array.from((model as any)?.ids || [])[0];
+            if (!selected && selectedPedidoId && (loadingPedidos || !filtered.length)) {
+              return;
+            }
+            const selectedId = Number(selected);
+            setSelectedPedidoId(Number.isFinite(selectedId) && selectedId > 0 ? selectedId : null);
+          }}
         />
       </div>
 

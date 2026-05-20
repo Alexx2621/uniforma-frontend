@@ -25,7 +25,7 @@ import { DataGrid, GridColDef } from "@mui/x-data-grid";
 import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
 import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
 import SaveOutlined from "@mui/icons-material/SaveOutlined";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { formatCurrency } from "../utils/currency";
@@ -54,6 +54,17 @@ interface DetalleBordado {
   bordadoImagenUrl?: string | null;
   bordadoEstado?: string | null;
   bordadoFechaEntrega?: string | null;
+  bordados?: Array<{
+    id?: number | null;
+    monto?: number | null;
+    color?: string | null;
+    tamano?: string | null;
+    posicion?: string | null;
+    observaciones?: string | null;
+    imagenUrl?: string | null;
+    estado?: string | null;
+    fechaEntrega?: string | null;
+  }>;
   producto?: ProductoBordado | null;
 }
 
@@ -84,6 +95,21 @@ type DetalleDraft = {
   bordadoFechaEntrega: string;
 };
 
+interface BordadosNavigationState {
+  returnTo?: string;
+  returnLabel?: string;
+  bordadosState?: {
+    usuarioFiltro?: string;
+    fechaInicio?: string;
+    fechaFin?: string;
+    pagination?: {
+      page?: number;
+      pageSize?: number;
+    };
+    selectedRowId?: string | null;
+  };
+}
+
 const BORDADO_ESTADOS = ["EN PRODUCCION", "EN COLA", "BORDANDO", "ENVIADO"];
 const BORDADO_ESTADO_COLORS: Record<string, { bg: string; color: string; border: string }> = {
   "EN PRODUCCION": { bg: "#e3f2fd", color: "#0d47a1", border: "#90caf9" },
@@ -98,6 +124,21 @@ const getCliente = (pedido: PedidoBordado) => pedido.clienteNombre || pedido.cli
 const getUsuario = (pedido: PedidoBordado) => pedido.usuario?.nombre || pedido.solicitadoPor || pedido.usuario?.usuario || "N/D";
 const getProducto = (detalle: DetalleBordado) => detalle.producto?.nombre || detalle.descripcion || `Producto #${detalle.productoId}`;
 const getEstadoBordado = (detalle: DetalleBordado) => detalle.bordadoEstado || "EN PRODUCCION";
+const getBordadosDetalle = (detalle: DetalleBordado) =>
+  detalle.bordados?.length
+    ? detalle.bordados
+    : [
+        {
+          monto: detalle.bordado,
+          color: detalle.bordadoColor,
+          tamano: detalle.bordadoTamano,
+          posicion: detalle.bordadoPosicion,
+          observaciones: detalle.bordadoObservaciones,
+          imagenUrl: detalle.bordadoImagenUrl,
+          estado: detalle.bordadoEstado,
+          fechaEntrega: detalle.bordadoFechaEntrega,
+        },
+      ];
 const isPedidoAnulado = (pedido?: Pick<PedidoBordado, "estado"> | null) =>
   `${pedido?.estado || ""}`.trim().toLowerCase() === "anulado";
 const money = formatCurrency;
@@ -125,11 +166,19 @@ const toDateInputValue = (value?: string | null) => {
   return date.toISOString().slice(0, 10);
 };
 export default function Bordados() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const restoredBordadosState = (location.state as BordadosNavigationState | null)?.bordadosState;
   const [pedidos, setPedidos] = useState<PedidoBordado[]>([]);
   const [usuarios, setUsuarios] = useState<UsuarioOption[]>([]);
-  const [usuarioFiltro, setUsuarioFiltro] = useState("");
-  const [fechaInicio, setFechaInicio] = useState(getTodayInputValue);
-  const [fechaFin, setFechaFin] = useState(getTodayInputValue);
+  const [usuarioFiltro, setUsuarioFiltro] = useState(() => restoredBordadosState?.usuarioFiltro || "");
+  const [fechaInicio, setFechaInicio] = useState(() => restoredBordadosState?.fechaInicio || getTodayInputValue());
+  const [fechaFin, setFechaFin] = useState(() => restoredBordadosState?.fechaFin || getTodayInputValue());
+  const [paginationModel, setPaginationModel] = useState(() => ({
+    page: Math.max(0, Number(restoredBordadosState?.pagination?.page || 0)),
+    pageSize: Number(restoredBordadosState?.pagination?.pageSize || 25),
+  }));
+  const [selectedRowId, setSelectedRowId] = useState<string | null>(() => restoredBordadosState?.selectedRowId || null);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<PedidoBordado | null>(null);
   const [drafts, setDrafts] = useState<Record<number, DetalleDraft>>({});
@@ -138,7 +187,24 @@ export default function Bordados() {
   const isAdmin = `${rol || ""}`.toUpperCase() === "ADMIN";
   const canEditSeguimiento = ["ADMIN", "BORDADOR"].includes(`${rol || ""}`.toUpperCase()) || hasPermission(rol, permisos, "bordados.manage");
   const canFilterUsuarios = ["ADMIN", "BORDADOR"].includes(`${rol || ""}`.toUpperCase()) || hasPermission(rol, permisos, "sistema.multi-tienda");
-  const navigate = useNavigate();
+
+  const buildBordadosReturnState = (rowId?: string | null): BordadosNavigationState => ({
+    returnTo: "/bordados",
+    returnLabel: "Regresar a bordados",
+    bordadosState: {
+      usuarioFiltro,
+      fechaInicio,
+      fechaFin,
+      pagination: paginationModel,
+      selectedRowId: rowId ?? selectedRowId,
+    },
+  });
+
+  const abrirPedidoDocumento = (pedido: PedidoBordado & { rowId?: string }) => {
+    const rowId = pedido.rowId || `${pedido.origen || "pedido"}-${pedido.id}`;
+    setSelectedRowId(rowId);
+    navigate(`/produccion/${pedido.id}`, { state: buildBordadosReturnState(rowId) });
+  };
 
   const cargar = useCallback(async () => {
     try {
@@ -241,10 +307,12 @@ export default function Bordados() {
         bodegaDisplay: pedido.bodega?.nombre || "N/D",
         usuarioDisplay: getUsuario(pedido),
         totalPrendasBordado: (pedido.detalle || []).reduce((sum, item) => sum + Number(item.cantidad || 0), 0),
-        totalLineasBordado: pedido.detalle?.length || 0,
+        totalLineasBordado: (pedido.detalle || []).reduce((sum, item) => sum + getBordadosDetalle(item).length, 0),
         estadoBordadoDisplay: (() => {
           if (isPedidoAnulado(pedido)) return "ANULADO";
-          const estados = Array.from(new Set((pedido.detalle || []).map((item) => getEstadoBordado(item))));
+          const estados = Array.from(
+            new Set((pedido.detalle || []).flatMap((item) => getBordadosDetalle(item).map((bordado) => bordado.estado || getEstadoBordado(item)))),
+          );
           return estados.length === 1 ? estados[0] : "VARIOS";
         })(),
       })),
@@ -311,7 +379,7 @@ export default function Bordados() {
             Ver
           </Button>
           {params.row.origen !== "venta" && (
-            <Button size="small" endIcon={<OpenInNewOutlined />} onClick={() => navigate(`/produccion/${params.row.id}`)}>
+            <Button size="small" endIcon={<OpenInNewOutlined />} onClick={() => abrirPedidoDocumento(params.row)}>
               Pedido
             </Button>
           )}
@@ -399,7 +467,30 @@ export default function Bordados() {
           loading={loading}
           disableRowSelectionOnClick
           pageSizeOptions={[10, 25, 50, 100]}
-          initialState={{ pagination: { paginationModel: { pageSize: 25, page: 0 } } }}
+          paginationModel={paginationModel}
+          onPaginationModelChange={setPaginationModel}
+          rowSelectionModel={selectedRowId ? [selectedRowId] : []}
+          onRowSelectionModelChange={(model) => {
+            const selected = Array.isArray(model) ? model[0] : Array.from((model as any)?.ids || [])[0];
+            setSelectedRowId(selected ? String(selected) : null);
+          }}
+          getRowClassName={(params) => (String(params.id) === selectedRowId ? "bordado-row-returned" : "")}
+          sx={{
+            "& .bordado-row-returned .MuiDataGrid-cell": {
+              backgroundColor: "rgba(25, 118, 210, 0.14) !important",
+              borderTop: "1px solid rgba(25, 118, 210, 0.35)",
+              borderBottom: "1px solid rgba(25, 118, 210, 0.35)",
+            },
+            "& .bordado-row-returned .MuiDataGrid-cell:first-of-type": {
+              borderLeft: "5px solid #1976d2",
+            },
+            "& .MuiDataGrid-row.Mui-selected": {
+              backgroundColor: "rgba(25, 118, 210, 0.14)",
+            },
+            "& .MuiDataGrid-row.Mui-selected:hover": {
+              backgroundColor: "rgba(25, 118, 210, 0.18)",
+            },
+          }}
         />
       </Box>
 
@@ -443,6 +534,7 @@ export default function Bordados() {
                     {(selected.detalle || []).map((detalle) => {
                       const draft = drafts[detalle.id] || {};
                       const readOnly = !canEditSeguimiento || isPedidoAnulado(selected);
+                      const bordados = getBordadosDetalle(detalle);
                       return (
                         <TableRow key={detalle.id} hover>
                           <TableCell>
@@ -454,37 +546,59 @@ export default function Bordados() {
                             </Typography>
                           </TableCell>
                           <TableCell align="center">{detalle.cantidad}</TableCell>
-                          <TableCell align="right">{money(detalle.bordado)}</TableCell>
-                          <TableCell>
-                            <Typography variant="body2" sx={{ minWidth: 140 }}>
-                              {safeText(detalle.bordadoColor)}
-                            </Typography>
+                          <TableCell align="right">
+                            {money(bordados.reduce((sum, bordado) => sum + Number(bordado.monto || 0), 0))}
                           </TableCell>
                           <TableCell>
-                            <Typography variant="body2" sx={{ minWidth: 120 }}>
-                              {safeText(detalle.bordadoTamano)}
-                            </Typography>
+                            <Stack spacing={0.5} sx={{ minWidth: 140 }}>
+                              {bordados.map((bordado, index) => (
+                                <Typography key={`${detalle.id}-color-${index}`} variant="body2">
+                                  {index + 1}. {safeText(bordado.color)}
+                                </Typography>
+                              ))}
+                            </Stack>
                           </TableCell>
                           <TableCell>
-                            <Typography variant="body2" sx={{ minWidth: 160 }}>
-                              {safeText(detalle.bordadoPosicion)}
-                            </Typography>
+                            <Stack spacing={0.5} sx={{ minWidth: 120 }}>
+                              {bordados.map((bordado, index) => (
+                                <Typography key={`${detalle.id}-tamano-${index}`} variant="body2">
+                                  {safeText(bordado.tamano)}
+                                </Typography>
+                              ))}
+                            </Stack>
                           </TableCell>
                           <TableCell>
-                            <Typography variant="body2" sx={{ minWidth: 240, whiteSpace: "pre-wrap" }}>
-                              {safeText(detalle.bordadoObservaciones)}
-                            </Typography>
+                            <Stack spacing={0.5} sx={{ minWidth: 160 }}>
+                              {bordados.map((bordado, index) => (
+                                <Typography key={`${detalle.id}-posicion-${index}`} variant="body2">
+                                  {safeText(bordado.posicion)}
+                                </Typography>
+                              ))}
+                            </Stack>
                           </TableCell>
                           <TableCell>
-                            {detalle.bordadoImagenUrl ? (
-                              <Button size="small" href={detalle.bordadoImagenUrl} target="_blank" rel="noreferrer" endIcon={<OpenInNewOutlined />}>
-                                Ver
-                              </Button>
-                            ) : (
-                              <Typography variant="body2" color="text.secondary">
-                                N/D
-                              </Typography>
-                            )}
+                            <Stack spacing={0.5} sx={{ minWidth: 240 }}>
+                              {bordados.map((bordado, index) => (
+                                <Typography key={`${detalle.id}-obs-${index}`} variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
+                                  {safeText(bordado.observaciones)}
+                                </Typography>
+                              ))}
+                            </Stack>
+                          </TableCell>
+                          <TableCell>
+                            <Stack spacing={0.5} sx={{ minWidth: 110 }}>
+                              {bordados.map((bordado, index) =>
+                                bordado.imagenUrl ? (
+                                  <Button key={`${detalle.id}-img-${index}`} size="small" href={bordado.imagenUrl} target="_blank" rel="noreferrer" endIcon={<OpenInNewOutlined />}>
+                                    Ver {index + 1}
+                                  </Button>
+                                ) : (
+                                  <Typography key={`${detalle.id}-img-${index}`} variant="body2" color="text.secondary">
+                                    N/D
+                                  </Typography>
+                                ),
+                              )}
+                            </Stack>
                           </TableCell>
                           <TableCell>
                             <FormControl size="small" sx={{ minWidth: 170 }}>

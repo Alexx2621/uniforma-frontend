@@ -10,6 +10,11 @@ export interface ReportScheduleConfig {
   rules?: ReportScheduleRule[];
 }
 
+export interface ActionScheduleConfig extends ReportScheduleConfig {
+  key?: string;
+  label?: string;
+}
+
 export const DEFAULT_DAILY_REPORT_SCHEDULE_RULES: ReportScheduleRule[] = [
   { days: [1], start: "17:55", end: "19:00", enabled: true },
   { days: [2], start: "17:55", end: "19:00", enabled: true },
@@ -79,6 +84,21 @@ export const getReportSchedule = (reportesConfig: unknown, tipo: string): Report
   return {
     enabled: Boolean(schedule.enabled),
     rules: normalizeReportScheduleRules(schedule.rules),
+  };
+};
+
+export const getActionSchedule = (reportesConfig: unknown, key: string): ActionScheduleConfig => {
+  const schedules = (reportesConfig as any)?.actionSchedules;
+  const scheduleConfig = Array.isArray(schedules) ? schedules.find((item) => item?.key === key) : undefined;
+  if (!scheduleConfig || typeof scheduleConfig !== "object") {
+    return { key, enabled: false, rules: DEFAULT_DAILY_REPORT_SCHEDULE_RULES };
+  }
+
+  return {
+    key,
+    label: scheduleConfig.label,
+    enabled: Boolean(scheduleConfig.enabled),
+    rules: normalizeReportScheduleRules(scheduleConfig.rules),
   };
 };
 

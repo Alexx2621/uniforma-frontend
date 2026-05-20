@@ -1,5 +1,5 @@
 import { ChangeEvent, useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   Avatar,
   Box,
@@ -49,6 +49,19 @@ interface UsuarioOption {
   usuario: string;
 }
 
+interface ClientesNavigationState {
+  returnTo?: string;
+  returnLabel?: string;
+  clientesState?: {
+    usuarioFiltro?: string;
+    pagination?: {
+      page?: number;
+      pageSize?: number;
+    };
+    selectedId?: number | null;
+  };
+}
+
 const tipos = ["mayorista", "minorista", "corporativo", "frecuente"];
 
 const getImageUrl = (path?: string | null) => {
@@ -60,6 +73,9 @@ const getImageUrl = (path?: string | null) => {
 const formatDate = (value?: string | null) => (value ? new Date(value).toLocaleString("es-GT") : "N/D");
 
 export default function Clientes() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const restoredClientesState = (location.state as ClientesNavigationState | null)?.clientesState;
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [usuarios, setUsuarios] = useState<UsuarioOption[]>([]);
   const [loading, setLoading] = useState(false);
@@ -74,11 +90,34 @@ export default function Clientes() {
   const [tipoCliente, setTipoCliente] = useState("");
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState("");
-  const [usuarioFiltro, setUsuarioFiltro] = useState<string>("");
+  const [usuarioFiltro, setUsuarioFiltro] = useState<string>(() => restoredClientesState?.usuarioFiltro || "");
+  const [paginationModel, setPaginationModel] = useState(() => ({
+    page: Math.max(0, Number(restoredClientesState?.pagination?.page || 0)),
+    pageSize: Number(restoredClientesState?.pagination?.pageSize || 25),
+  }));
+  const [selectedClienteId, setSelectedClienteId] = useState<number | null>(() => {
+    const value = Number(restoredClientesState?.selectedId);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  });
   const { rol, permisos, id: currentUserId, nombre: currentNombre, usuario: currentUsuario } = useAuthStore();
   const canManage = hasPermission(rol, permisos, "clientes.manage");
   const isAdmin = rol === "ADMIN";
-  const navigate = useNavigate();
+
+  const buildClientesReturnState = (clienteId?: number | null): ClientesNavigationState => ({
+    returnTo: "/clientes",
+    returnLabel: "Regresar a clientes",
+    clientesState: {
+      usuarioFiltro,
+      pagination: paginationModel,
+      selectedId: clienteId ?? selectedClienteId,
+    },
+  });
+
+  const abrirFicha = (cliente: Cliente) => {
+    const clienteId = Number(cliente.id);
+    setSelectedClienteId(clienteId);
+    navigate(`/clientes/${clienteId}/ficha`, { state: buildClientesReturnState(clienteId) });
+  };
 
   const cargar = useCallback(async () => {
     try {
@@ -291,7 +330,7 @@ export default function Clientes() {
             <Button variant="text" size="small" startIcon={<VisibilityOutlined />} onClick={() => abrirVer(params.row)}>
               Ver
             </Button>
-            <Button variant="text" size="small" startIcon={<InsightsOutlined />} onClick={() => navigate(`/clientes/${params.row.id}/ficha`)}>
+            <Button variant="text" size="small" startIcon={<InsightsOutlined />} onClick={() => abrirFicha(params.row)}>
               Ficha
             </Button>
             <Button variant="text" size="small" startIcon={<EditOutlined />} disabled={!canManage} onClick={() => abrirEditar(params.row)}>
@@ -361,7 +400,31 @@ export default function Clientes() {
           getRowId={(row) => row.id}
           loading={loading}
           pageSizeOptions={[10, 25, 50, 100]}
-          initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
+          paginationModel={paginationModel}
+          onPaginationModelChange={setPaginationModel}
+          rowSelectionModel={selectedClienteId ? [selectedClienteId] : []}
+          onRowSelectionModelChange={(model) => {
+            const selected = Array.isArray(model) ? model[0] : Array.from((model as any)?.ids || [])[0];
+            const selectedId = Number(selected);
+            setSelectedClienteId(Number.isFinite(selectedId) && selectedId > 0 ? selectedId : null);
+          }}
+          getRowClassName={(params) => (Number(params.id) === Number(selectedClienteId) ? "cliente-row-returned" : "")}
+          sx={{
+            "& .cliente-row-returned .MuiDataGrid-cell": {
+              backgroundColor: "rgba(25, 118, 210, 0.14) !important",
+              borderTop: "1px solid rgba(25, 118, 210, 0.35)",
+              borderBottom: "1px solid rgba(25, 118, 210, 0.35)",
+            },
+            "& .cliente-row-returned .MuiDataGrid-cell:first-of-type": {
+              borderLeft: "5px solid #1976d2",
+            },
+            "& .MuiDataGrid-row.Mui-selected": {
+              backgroundColor: "rgba(25, 118, 210, 0.14)",
+            },
+            "& .MuiDataGrid-row.Mui-selected:hover": {
+              backgroundColor: "rgba(25, 118, 210, 0.18)",
+            },
+          }}
           disableRowSelectionOnClick
           localeText={{ noRowsLabel: "No hay clientes registrados." }}
         />

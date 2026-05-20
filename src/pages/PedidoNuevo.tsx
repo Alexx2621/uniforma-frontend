@@ -14,6 +14,7 @@ import {
   InputAdornment,
   Button,
   Dialog,
+  DialogActions,
   DialogContent,
   DialogTitle,
   Stack,
@@ -36,7 +37,7 @@ import DeleteOutline from "@mui/icons-material/DeleteOutline";
 import KeyboardArrowDownOutlined from "@mui/icons-material/KeyboardArrowDownOutlined";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { hasPermission } from "../auth/permissions";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
@@ -44,6 +45,7 @@ import uniformaLogo from "../assets/3-logos.png";
 import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../utils/fontFamily";
 import { findPotentialMisspellings } from "../utils/spellcheck";
 import { formatCurrency } from "../utils/currency";
+import { formatReportScheduleForDay, getActionSchedule, isReportScheduleOpen } from "../utils/reportSchedule";
 
 interface Cliente {
   id: number;
@@ -90,6 +92,16 @@ interface RegistroPostventa {
   monto: number;
 }
 
+interface BordadoArticulo {
+  key: number;
+  monto: number;
+  color: string;
+  tamano: string;
+  posicion: string;
+  observaciones: string;
+  imagenUrl: string;
+}
+
 interface DetalleRow {
   key: number;
   productoId: number;
@@ -97,6 +109,7 @@ interface DetalleRow {
   precioUnit: number;
   bordado: number;
   bordadoActivo: boolean;
+  bordados: BordadoArticulo[];
   bordadoColor: string;
   bordadoTamano: string;
   bordadoPosicion: string;
@@ -114,6 +127,7 @@ interface CapturaArticulo {
   precioUnit: number;
   bordado: number;
   bordadoActivo: boolean;
+  bordados: BordadoArticulo[];
   bordadoColor: string;
   bordadoTamano: string;
   bordadoPosicion: string;
@@ -131,6 +145,7 @@ const detalleInicial: CapturaArticulo = {
   precioUnit: 0,
   bordado: 0,
   bordadoActivo: false,
+  bordados: [],
   bordadoColor: "FULL COLOR",
   bordadoTamano: "NORMAL",
   bordadoPosicion: "PECHO IZQUIERDO",
@@ -233,6 +248,31 @@ const bordadoTextFieldSx = {
     "&.Mui-focused fieldset": { borderColor: "success.main" },
   },
 };
+
+const getBordadoKey = () => Date.now() + Math.floor(Math.random() * 1000);
+
+const buildBordadoDesdeArticulo = (articulo: CapturaArticulo): BordadoArticulo | null => {
+  if (!articulo.bordadoActivo) return null;
+  const monto = Number(articulo.bordado) || 0;
+  const observaciones = `${articulo.bordadoObservaciones || ""}`.trim();
+  const imagenUrl = articulo.bordadoImagenUrl || "";
+  const tieneContenidoReal = monto > 0 || Boolean(observaciones) || Boolean(imagenUrl);
+  if (!tieneContenidoReal) return null;
+
+  const bordado: BordadoArticulo = {
+    key: getBordadoKey(),
+    monto,
+    color: `${articulo.bordadoColor || "FULL COLOR"}`.trim(),
+    tamano: `${articulo.bordadoTamano || "NORMAL"}`.trim(),
+    posicion: `${articulo.bordadoPosicion || "PECHO IZQUIERDO"}`.trim(),
+    observaciones,
+    imagenUrl,
+  };
+  return bordado;
+};
+
+const getBordadoTotal = (bordados: BordadoArticulo[]) =>
+  bordados.reduce((sum, bordado) => sum + Number(bordado.monto || 0), 0);
 
 const fileToDataUrl = (file: File) =>
   new Promise<string>((resolve, reject) => {
@@ -444,6 +484,7 @@ export default function PedidoNuevo() {
   const [filtroColor, setFiltroColor] = useState("");
   const [cantidadAdvertida, setCantidadAdvertida] = useState<number | null>(null);
   const [bordadoPreviewOpen, setBordadoPreviewOpen] = useState(false);
+  const [bordadosModalOpen, setBordadosModalOpen] = useState(false);
 
   const {
     usuario,
@@ -462,8 +503,10 @@ export default function PedidoNuevo() {
     usuario?.trim() ||
     authBodegaNombre?.trim() ||
     "usuario";
-  const { fetchConfig } = useSystemConfigStore();
+  const { fetchConfig, reportesConfig } = useSystemConfigStore();
   const navigate = useNavigate();
+  const location = useLocation();
+  const returnState = location.state as { returnTo?: string; returnLabel?: string; pedidosState?: any } | null;
   const canAccessAllBodegas = hasPermission(rol, permisos, "sistema.multi-tienda");
   const metodoUsaRecargo = metodoPago === "tarjeta" || metodoPago === "visalink";
   const metodoRequiereReferencia = metodoPago !== "efectivo";
@@ -473,6 +516,26 @@ export default function PedidoNuevo() {
   const postventaSeleccionada = postventaDocs.find((doc) => doc.id === Number(postventaId)) || null;
   const pedidoSinCobro = Boolean(postventaSeleccionada && postventaCobro === "sin_cobro");
   const pedidoSinValor = pedidoSinCobro || pedidoParaStock;
+  const pedidoSchedule = useMemo(() => getActionSchedule(reportesConfig, "pedidoNuevo"), [reportesConfig]);
+  const pedidoScheduleOpen = useMemo(() => isReportScheduleOpen(pedidoSchedule), [pedidoSchedule]);
+
+  const volverAlListado = (selectedId?: number | null) => {
+    const nextState =
+      selectedId && returnState?.pedidosState
+        ? {
+            ...returnState,
+            pedidosState: {
+              ...returnState.pedidosState,
+              selectedId,
+            },
+          }
+        : returnState || undefined;
+
+    navigate(returnState?.returnTo || "/produccion", {
+      state: nextState,
+      replace: true,
+    });
+  };
 
   const cargarCatalogos = async () => {
     try {
@@ -652,6 +715,7 @@ export default function PedidoNuevo() {
       precioUnit: 0,
       bordado: 0,
       bordadoActivo: false,
+      bordados: [],
       bordadoColor: "FULL COLOR",
       bordadoTamano: "NORMAL",
       bordadoPosicion: "PECHO IZQUIERDO",
@@ -667,6 +731,7 @@ export default function PedidoNuevo() {
         precioUnit: 0,
         bordado: 0,
         bordadoActivo: false,
+        bordados: [],
         bordadoColor: "FULL COLOR",
         bordadoTamano: "NORMAL",
         bordadoPosicion: "PECHO IZQUIERDO",
@@ -985,29 +1050,43 @@ export default function PedidoNuevo() {
       Swal.fire("Validacion", "Ingresa una cantidad mayor a 0", "warning");
       return;
     }
-    const tieneBordado = !pedidoParaStock && Boolean(articuloActual.bordadoActivo);
+    const bordadoEnCaptura = buildBordadoDesdeArticulo(articuloActual);
+    const bordadosFinales = !pedidoParaStock
+      ? [
+          ...articuloActual.bordados.filter(
+            (bordado) =>
+              Number(bordado.monto || 0) > 0 ||
+              Boolean(`${bordado.observaciones || ""}`.trim()) ||
+              Boolean(bordado.imagenUrl),
+          ),
+          ...(bordadoEnCaptura ? [bordadoEnCaptura] : []),
+        ]
+      : [];
+    const tieneBordado = !pedidoParaStock && (Boolean(articuloActual.bordadoActivo) || bordadosFinales.length > 0);
     if (
       tieneBordado &&
-      (!`${articuloActual.bordadoColor || ""}`.trim() ||
-        !`${articuloActual.bordadoTamano || ""}`.trim() ||
-        !`${articuloActual.bordadoPosicion || ""}`.trim())
+      (!bordadosFinales.length ||
+        bordadosFinales.some((bordado) => !bordado.color || !bordado.tamano || !bordado.posicion))
     ) {
-      Swal.fire("Validacion", "Color, tamano y posicion de bordado son obligatorios", "warning");
+      Swal.fire("Validacion", "Agrega al menos un bordado con color, tamano y posicion", "warning");
       return;
     }
+    const bordadoTotal = getBordadoTotal(bordadosFinales);
+    const primerBordado = bordadosFinales[0] || null;
 
     const row: DetalleRow = {
       key: editingDetalleKey ?? Date.now(),
       productoId,
       cantidad,
       precioUnit: pedidoParaStock ? 0 : Number(articuloActual.precioUnit) || 0,
-      bordado: pedidoParaStock ? 0 : Number(articuloActual.bordado) || 0,
+      bordado: bordadoTotal,
       bordadoActivo: tieneBordado,
-      bordadoColor: tieneBordado ? `${articuloActual.bordadoColor || "FULL COLOR"}`.trim() : "",
-      bordadoTamano: tieneBordado ? `${articuloActual.bordadoTamano || "NORMAL"}`.trim() : "",
-      bordadoPosicion: tieneBordado ? `${articuloActual.bordadoPosicion || "PECHO IZQUIERDO"}`.trim() : "",
-      bordadoObservaciones: tieneBordado ? `${articuloActual.bordadoObservaciones || ""}`.trim() : "",
-      bordadoImagenUrl: tieneBordado ? articuloActual.bordadoImagenUrl || "" : "",
+      bordados: bordadosFinales,
+      bordadoColor: primerBordado?.color || "",
+      bordadoTamano: primerBordado?.tamano || "",
+      bordadoPosicion: primerBordado?.posicion || "",
+      bordadoObservaciones: primerBordado?.observaciones || "",
+      bordadoImagenUrl: primerBordado?.imagenUrl || "",
       estiloEspecial: pedidoParaStock ? false : Boolean(articuloActual.estiloEspecial),
       estiloEspecialMonto: pedidoParaStock || !articuloActual.estiloEspecial ? 0 : Number(articuloActual.estiloEspecialMonto) || 0,
       descuento: pedidoParaStock ? 0 : Number(articuloActual.descuento) || 0,
@@ -1031,6 +1110,7 @@ export default function PedidoNuevo() {
       precioUnit: row.precioUnit,
       bordado: row.bordado,
       bordadoActivo: row.bordadoActivo || Number(row.bordado || 0) > 0,
+      bordados: row.bordados || [],
       bordadoColor: row.bordadoColor || "FULL COLOR",
       bordadoTamano: row.bordadoTamano || "NORMAL",
       bordadoPosicion: row.bordadoPosicion || "PECHO IZQUIERDO",
@@ -1089,6 +1169,62 @@ export default function PedidoNuevo() {
       text: "La cantidad registrada es superior a la habitual para este tipo de pedido. Se recomienda verificar la informacion antes de continuar con el proceso.",
       confirmButtonText: "Entendido",
     });
+  };
+
+  const limpiarBordadoActual = () => {
+    setArticuloActual((prev) => ({
+      ...prev,
+      bordado: 0,
+      bordadoColor: "FULL COLOR",
+      bordadoTamano: "NORMAL",
+      bordadoPosicion: "PECHO IZQUIERDO",
+      bordadoObservaciones: "",
+      bordadoImagenUrl: "",
+    }));
+  };
+
+  const agregarBordadoActual = () => {
+    const bordado = buildBordadoDesdeArticulo(articuloActual);
+    if (!bordado) {
+      Swal.fire("Validacion", "Ingresa un monto, una imagen u observaciones antes de agregar el bordado", "warning");
+      return;
+    }
+    if (!bordado.color || !bordado.tamano || !bordado.posicion) {
+      Swal.fire("Validacion", "Color, tamano y posicion de bordado son obligatorios", "warning");
+      return;
+    }
+    setArticuloActual((prev) => ({
+      ...prev,
+      bordados: [...prev.bordados, bordado],
+      bordadoActivo: true,
+      bordado: 0,
+      bordadoColor: "FULL COLOR",
+      bordadoTamano: "NORMAL",
+      bordadoPosicion: "PECHO IZQUIERDO",
+      bordadoObservaciones: "",
+      bordadoImagenUrl: "",
+    }));
+  };
+
+  const editarBordadoActual = (bordado: BordadoArticulo) => {
+    setArticuloActual((prev) => ({
+      ...prev,
+      bordadoActivo: true,
+      bordado: bordado.monto,
+      bordadoColor: bordado.color || "FULL COLOR",
+      bordadoTamano: bordado.tamano || "NORMAL",
+      bordadoPosicion: bordado.posicion || "PECHO IZQUIERDO",
+      bordadoObservaciones: bordado.observaciones || "",
+      bordadoImagenUrl: bordado.imagenUrl || "",
+      bordados: prev.bordados.filter((item) => item.key !== bordado.key),
+    }));
+  };
+
+  const quitarBordadoActual = (key: number) => {
+    setArticuloActual((prev) => ({
+      ...prev,
+      bordados: prev.bordados.filter((item) => item.key !== key),
+    }));
   };
 
   const mostrarFormularioRegistroCliente = async (datosIniciales: ClientePedido) => {
@@ -1206,6 +1342,14 @@ export default function PedidoNuevo() {
   };
 
   const guardar = async () => {
+    if (!pedidoScheduleOpen) {
+      Swal.fire(
+        "Horario no habilitado",
+        `La creacion de pedidos esta habilitada en este horario: ${formatReportScheduleForDay(pedidoSchedule)}.`,
+        "info"
+      );
+      return;
+    }
     if (!bodegaId) {
       Swal.fire("Validacion", "Selecciona una bodega", "warning");
       return;
@@ -1278,6 +1422,17 @@ export default function PedidoNuevo() {
         bordadoPosicion: pedidoParaStock || !d.bordadoActivo ? null : d.bordadoPosicion,
         bordadoObservaciones: pedidoParaStock || !d.bordadoActivo ? null : d.bordadoObservaciones,
         bordadoImagenUrl: pedidoParaStock || !d.bordadoActivo ? null : d.bordadoImagenUrl,
+        bordados:
+          pedidoParaStock || !d.bordadoActivo
+            ? []
+            : (d.bordados || []).map((bordado) => ({
+                monto: Number(bordado.monto) || 0,
+                color: bordado.color,
+                tamano: bordado.tamano,
+                posicion: bordado.posicion,
+                observaciones: bordado.observaciones,
+                imagenUrl: bordado.imagenUrl,
+              })),
         estiloEspecial: pedidoParaStock ? false : d.estiloEspecial,
         estiloEspecialMonto: pedidoParaStock ? 0 : d.estiloEspecialMonto,
         descuento: pedidoParaStock ? 0 : d.descuento,
@@ -1290,10 +1445,11 @@ export default function PedidoNuevo() {
       Swal.fire("Guardado", "Pedido creado", "success");
       const folioPedido = resp.data?.folio || (resp.data?.id ? `P-${resp.data.id}` : "PEND");
       const fechaPedido = resp.data?.fecha ? new Date(resp.data.fecha) : new Date();
+      const nuevoPedidoId = Number(resp.data?.id) || null;
       generarPdfPedidoProduccion(folioPedido, clienteParaPedido, fechaPedido);
       if (pedidoParaStock) {
         setTimeout(() => {
-          navigate("/produccion");
+          volverAlListado(nuevoPedidoId);
         }, 300);
         return;
       }
@@ -1302,7 +1458,7 @@ export default function PedidoNuevo() {
         generarPdfReciboPedido(folioPedido, clienteParaPedido, fechaPedido);
         // Navegar después de que ambos PDFs se hayan abierto
         setTimeout(() => {
-          navigate("/produccion");
+          volverAlListado(nuevoPedidoId);
         }, 300);
       }, 300);
     } catch (error: any) {
@@ -1896,66 +2052,53 @@ export default function PedidoNuevo() {
                   InputProps={{ readOnly: true }}
                 />
               </Grid>
-              <Grid size={{ xs: 12, sm: 4, md: 2 }}>
-                <TextField
-                  label="Bordado"
-                  type="number"
-                  fullWidth
-                  value={articuloActual.bordado}
-                  onChange={(e) =>
-                    setArticuloActual((prev) => {
-                      const bordado = Number(e.target.value) || 0;
-                      return {
-                        ...prev,
-                        bordado,
-                        bordadoActivo: bordado > 0 ? true : prev.bordadoActivo,
-                        bordadoColor: prev.bordadoColor || "FULL COLOR",
-                        bordadoTamano: prev.bordadoTamano || "NORMAL",
-                        bordadoPosicion: prev.bordadoPosicion || "PECHO IZQUIERDO",
-                        bordadoObservaciones: prev.bordadoObservaciones || "",
-                        bordadoImagenUrl: prev.bordadoImagenUrl || "",
-                      };
-                    })
-                  }
-                  InputProps={{
-                    readOnly: !articuloActual.bordadoActivo,
-                    startAdornment: (
-                      <InputAdornment position="start" sx={{ mr: 0.5 }}>
-                        <Stack direction="row" alignItems="center" spacing={0.5}>
-                          <Checkbox
-                            checked={articuloActual.bordadoActivo}
-                            onChange={(e) =>
-                              setArticuloActual((prev) => ({
-                                ...prev,
-                                bordadoActivo: e.target.checked,
-                                bordado: e.target.checked ? prev.bordado : 0,
-                                bordadoColor: e.target.checked ? prev.bordadoColor || "FULL COLOR" : "FULL COLOR",
-                                bordadoTamano: e.target.checked ? prev.bordadoTamano || "NORMAL" : "NORMAL",
-                                bordadoPosicion: e.target.checked ? prev.bordadoPosicion || "PECHO IZQUIERDO" : "PECHO IZQUIERDO",
-                                bordadoObservaciones: e.target.checked ? prev.bordadoObservaciones || "" : "",
-                                bordadoImagenUrl: e.target.checked ? prev.bordadoImagenUrl || "" : "",
-                              }))
-                            }
-                            sx={{ p: 0.5 }}
-                          />
-                          {!articuloActual.bordadoActivo && (
-                            <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: "nowrap" }}>
-                              Bordado
-                            </Typography>
-                          )}
-                        </Stack>
-                      </InputAdornment>
-                    ),
-                  }}
+              <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                <Paper
+                  variant="outlined"
                   sx={{
-                    "& .MuiInputBase-root": {
-                      backgroundColor: articuloActual.bordadoActivo ? "transparent" : "action.disabledBackground",
-                    },
+                    p: 1,
+                    minHeight: 56,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 1,
+                    borderColor: articuloActual.bordadoActivo ? "success.main" : "divider",
+                    bgcolor: articuloActual.bordadoActivo ? "#f8fff9" : "background.paper",
                   }}
-                  helperText={articuloActual.bordadoActivo ? "Monto editable por producto" : "Activa bordado para habilitar el monto"}
-                />
+                >
+                  <Stack direction="row" alignItems="center" spacing={0.5}>
+                    <Checkbox
+                      checked={articuloActual.bordadoActivo}
+                      onChange={(e) =>
+                        setArticuloActual((prev) => ({
+                          ...prev,
+                          bordadoActivo: e.target.checked,
+                          bordado: e.target.checked ? prev.bordado : 0,
+                          bordadoColor: e.target.checked ? prev.bordadoColor || "FULL COLOR" : "FULL COLOR",
+                          bordadoTamano: e.target.checked ? prev.bordadoTamano || "NORMAL" : "NORMAL",
+                          bordadoPosicion: e.target.checked ? prev.bordadoPosicion || "PECHO IZQUIERDO" : "PECHO IZQUIERDO",
+                          bordadoObservaciones: e.target.checked ? prev.bordadoObservaciones || "" : "",
+                          bordadoImagenUrl: e.target.checked ? prev.bordadoImagenUrl || "" : "",
+                          bordados: e.target.checked ? prev.bordados : [],
+                        }))
+                      }
+                      sx={{ p: 0.5 }}
+                    />
+                    <Box>
+                      <Typography variant="body2" fontWeight={700}>
+                        Bordado
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {articuloActual.bordados.length} item(s) | {formatCurrency(getBordadoTotal(articuloActual.bordados))}
+                      </Typography>
+                    </Box>
+                  </Stack>
+                  <Button size="small" variant="outlined" disabled={!articuloActual.bordadoActivo} onClick={() => setBordadosModalOpen(true)}>
+                    Gestionar
+                  </Button>
+                </Paper>
               </Grid>
-              {articuloActual.bordadoActivo && (
+              {false && articuloActual.bordadoActivo && (
                 <>
                   <Grid size={{ xs: 12, sm: 4, md: 2 }}>
                     <TextField
@@ -2035,6 +2178,67 @@ export default function PedidoNuevo() {
                         </Button>
                       )}
                     </Stack>
+                  </Grid>
+                  <Grid size={{ xs: 12 }}>
+                    <Paper variant="outlined" sx={{ p: 1.5, borderColor: "success.light", bgcolor: "#f8fff9" }}>
+                      <Stack direction={{ xs: "column", md: "row" }} spacing={1} alignItems={{ xs: "stretch", md: "center" }} justifyContent="space-between">
+                        <Box>
+                          <Typography variant="subtitle2" color="success.dark">
+                            Bordados de esta prenda: {articuloActual.bordados.length}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            Agrega uno por cada ubicación o imagen diferente. El monto total se suma al artículo.
+                          </Typography>
+                        </Box>
+                        <Stack direction="row" spacing={1}>
+                          <Button variant="contained" color="success" onClick={agregarBordadoActual}>
+                            Agregar bordado
+                          </Button>
+                          <Button variant="text" onClick={limpiarBordadoActual}>
+                            Limpiar captura
+                          </Button>
+                        </Stack>
+                      </Stack>
+                      {articuloActual.bordados.length > 0 && (
+                        <TableContainer sx={{ mt: 1.5 }}>
+                          <Table size="small">
+                            <TableHead>
+                              <TableRow>
+                                <TableCell>Posicion</TableCell>
+                                <TableCell>Color</TableCell>
+                                <TableCell>Tamano</TableCell>
+                                <TableCell align="right">Monto</TableCell>
+                                <TableCell>Imagen</TableCell>
+                                <TableCell>Observaciones</TableCell>
+                                <TableCell align="center">Acciones</TableCell>
+                              </TableRow>
+                            </TableHead>
+                            <TableBody>
+                              {articuloActual.bordados.map((bordado) => (
+                                <TableRow key={bordado.key}>
+                                  <TableCell>{bordado.posicion}</TableCell>
+                                  <TableCell>{bordado.color}</TableCell>
+                                  <TableCell>{bordado.tamano}</TableCell>
+                                  <TableCell align="right">{formatCurrency(bordado.monto)}</TableCell>
+                                  <TableCell>{bordado.imagenUrl ? "Si" : "No"}</TableCell>
+                                  <TableCell>{bordado.observaciones || "-"}</TableCell>
+                                  <TableCell align="center">
+                                    <Stack direction="row" spacing={1} justifyContent="center">
+                                      <Button size="small" onClick={() => editarBordadoActual(bordado)}>
+                                        Editar
+                                      </Button>
+                                      <Button size="small" color="error" onClick={() => quitarBordadoActual(bordado.key)}>
+                                        Quitar
+                                      </Button>
+                                    </Stack>
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </TableContainer>
+                      )}
+                    </Paper>
                   </Grid>
                 </>
               )}
@@ -2177,7 +2381,16 @@ export default function PedidoNuevo() {
                   {!pedidoParaStock && (
                     <>
                       <TableCell align="center">{formatCurrency(row.precioUnit || 0)}</TableCell>
-                      <TableCell align="center">{formatCurrency(row.bordado || 0)}</TableCell>
+                      <TableCell align="center">
+                        <Stack spacing={0.25} alignItems="center">
+                          <Typography variant="body2">{formatCurrency(row.bordado || 0)}</Typography>
+                          {row.bordados?.length ? (
+                            <Typography variant="caption" color="text.secondary">
+                              {row.bordados.length} bordado(s)
+                            </Typography>
+                          ) : null}
+                        </Stack>
+                      </TableCell>
                       <TableCell align="center">
                         {row.estiloEspecial ? formatCurrency(row.estiloEspecialMonto || 0) : "No"}
                       </TableCell>
@@ -2381,7 +2594,12 @@ export default function PedidoNuevo() {
       )}
 
       <Stack direction="row" justifyContent="flex-end" spacing={2} sx={{ mt: 3 }}>
-        <Button variant="outlined" onClick={() => navigate("/produccion")}>
+        {!pedidoScheduleOpen && (
+          <Alert severity="info" sx={{ mr: "auto" }}>
+            La creacion de pedidos esta fuera de horario. Horario de hoy: {formatReportScheduleForDay(pedidoSchedule)}.
+          </Alert>
+        )}
+        <Button variant="outlined" onClick={() => volverAlListado()}>
           Cancelar
         </Button>
         <Button
@@ -2395,10 +2613,167 @@ export default function PedidoNuevo() {
               backgroundColor: "#232148",
             },
           }}
+          disabled={!pedidoScheduleOpen}
         >
           Guardar pedido
         </Button>
       </Stack>
+
+      <Dialog open={bordadosModalOpen} onClose={() => setBordadosModalOpen(false)} maxWidth="lg" fullWidth>
+        <DialogTitle>Gestionar bordados de la prenda</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2}>
+            <Grid container spacing={2}>
+              <Grid size={{ xs: 12, md: 3 }}>
+                <TextField
+                  label="Monto"
+                  type="number"
+                  fullWidth
+                  value={articuloActual.bordado}
+                  onChange={(e) => setArticuloActual((prev) => ({ ...prev, bordado: Number(e.target.value) || 0 }))}
+                  sx={bordadoTextFieldSx}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 3 }}>
+                <TextField
+                  label="Color de bordado"
+                  fullWidth
+                  required
+                  value={articuloActual.bordadoColor}
+                  onChange={(e) => setArticuloActual((prev) => ({ ...prev, bordadoColor: e.target.value }))}
+                  sx={bordadoTextFieldSx}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 3 }}>
+                <TextField
+                  label="Tamano de bordado"
+                  fullWidth
+                  required
+                  value={articuloActual.bordadoTamano}
+                  onChange={(e) => setArticuloActual((prev) => ({ ...prev, bordadoTamano: e.target.value }))}
+                  sx={bordadoTextFieldSx}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 3 }}>
+                <TextField
+                  label="Posicion de bordado"
+                  fullWidth
+                  required
+                  value={articuloActual.bordadoPosicion}
+                  onChange={(e) => setArticuloActual((prev) => ({ ...prev, bordadoPosicion: e.target.value }))}
+                  sx={bordadoTextFieldSx}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <TextField
+                  label="Observaciones especiales"
+                  fullWidth
+                  value={articuloActual.bordadoObservaciones}
+                  onChange={(e) => setArticuloActual((prev) => ({ ...prev, bordadoObservaciones: e.target.value }))}
+                  sx={bordadoTextFieldSx}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                  <Button variant="outlined" component="label" color="success">
+                    Imagen de bordado
+                    <input
+                      hidden
+                      type="file"
+                      accept="image/*"
+                      onChange={async (event) => {
+                        const file = event.target.files?.[0];
+                        if (!file) return;
+                        if (!file.type.startsWith("image/")) {
+                          Swal.fire("Validacion", "Selecciona un archivo de imagen", "warning");
+                          return;
+                        }
+                        const dataUrl = await fileToDataUrl(file);
+                        setArticuloActual((prev) => ({ ...prev, bordadoImagenUrl: dataUrl }));
+                        setBordadoPreviewOpen(true);
+                        event.target.value = "";
+                      }}
+                    />
+                  </Button>
+                  <Button variant="text" disabled={!articuloActual.bordadoImagenUrl} onClick={() => setBordadoPreviewOpen(true)}>
+                    Vista previa
+                  </Button>
+                  {articuloActual.bordadoImagenUrl && (
+                    <Button variant="text" color="error" onClick={() => setArticuloActual((prev) => ({ ...prev, bordadoImagenUrl: "" }))}>
+                      Quitar imagen
+                    </Button>
+                  )}
+                </Stack>
+              </Grid>
+            </Grid>
+
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1} justifyContent="space-between" alignItems={{ xs: "stretch", sm: "center" }}>
+              <Box>
+                <Typography variant="subtitle2">Bordados agregados: {articuloActual.bordados.length}</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Total de bordados: {formatCurrency(getBordadoTotal(articuloActual.bordados))}
+                </Typography>
+              </Box>
+              <Stack direction="row" spacing={1}>
+                <Button variant="contained" color="success" onClick={agregarBordadoActual}>
+                  Agregar bordado
+                </Button>
+                <Button variant="text" onClick={limpiarBordadoActual}>
+                  Limpiar captura
+                </Button>
+              </Stack>
+            </Stack>
+
+            <TableContainer component={Paper} variant="outlined">
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Posicion</TableCell>
+                    <TableCell>Color</TableCell>
+                    <TableCell>Tamano</TableCell>
+                    <TableCell align="right">Monto</TableCell>
+                    <TableCell>Imagen</TableCell>
+                    <TableCell>Observaciones</TableCell>
+                    <TableCell align="center">Acciones</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {articuloActual.bordados.map((bordado) => (
+                    <TableRow key={bordado.key}>
+                      <TableCell>{bordado.posicion}</TableCell>
+                      <TableCell>{bordado.color}</TableCell>
+                      <TableCell>{bordado.tamano}</TableCell>
+                      <TableCell align="right">{formatCurrency(bordado.monto)}</TableCell>
+                      <TableCell>{bordado.imagenUrl ? "Si" : "No"}</TableCell>
+                      <TableCell>{bordado.observaciones || "-"}</TableCell>
+                      <TableCell align="center">
+                        <Stack direction="row" spacing={1} justifyContent="center">
+                          <Button size="small" onClick={() => editarBordadoActual(bordado)}>
+                            Editar
+                          </Button>
+                          <Button size="small" color="error" onClick={() => quitarBordadoActual(bordado.key)}>
+                            Quitar
+                          </Button>
+                        </Stack>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {!articuloActual.bordados.length && (
+                    <TableRow>
+                      <TableCell colSpan={7} align="center">
+                        No hay bordados agregados para esta prenda.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setBordadosModalOpen(false)}>Cerrar</Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={bordadoPreviewOpen} onClose={() => setBordadoPreviewOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Vista previa de imagen de bordado</DialogTitle>

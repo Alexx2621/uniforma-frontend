@@ -20,10 +20,11 @@ import {
   Box,
 } from "@mui/material";
 import PlaylistAddCheckOutlined from "@mui/icons-material/PlaylistAddCheckOutlined";
+import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import DoneAllOutlined from "@mui/icons-material/DoneAllOutlined";
 import PictureAsPdfOutlined from "@mui/icons-material/PictureAsPdfOutlined";
 import AssignmentReturnOutlined from "@mui/icons-material/AssignmentReturnOutlined";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { hasPermission } from "../auth/permissions";
@@ -57,6 +58,15 @@ interface Detalle {
   cantidad: number;
   precioUnit: number;
   bordado?: number;
+  bordados?: Array<{
+    id?: number | null;
+    monto?: number | null;
+    color?: string | null;
+    tamano?: string | null;
+    posicion?: string | null;
+    observaciones?: string | null;
+    imagenUrl?: string | null;
+  }>;
   estiloEspecial?: boolean;
   estiloEspecialMonto?: number;
   descuento?: number;
@@ -281,11 +291,20 @@ const getDetalleSubtotal = (detalle: Detalle) => {
   return cantidad * (precioConDescuento + bordado);
 };
 
+const getBordadosDetalle = (detalle: Detalle) =>
+  detalle.bordados?.length
+    ? detalle.bordados
+    : Number(detalle.bordado || 0) > 0
+      ? [{ monto: detalle.bordado }]
+      : [];
+
 const getPagoAplicado = (pago: Pago) => Number(pago.monto || 0) + Number(pago.recargo || 0);
 
 export default function PedidoDetalle() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const returnState = location.state as { returnTo?: string; returnLabel?: string } | null;
   const { rol, permisos, bodegaId: userBodegaId } = useAuthStore();
   const { fetchConfig } = useSystemConfigStore();
   const [pedido, setPedido] = useState<Pedido | null>(null);
@@ -357,6 +376,13 @@ export default function PedidoDetalle() {
   const esRegresadoProduccion = `${pedido?.estado || ""}`.trim().toLowerCase() === "regresado_produccion";
   const esRecibido = ["recibido", "completado", "pendiente_pago"].includes(`${pedido?.estado || ""}`.trim().toLowerCase());
 
+  const volver = () => {
+    navigate(returnState?.returnTo || "/produccion", {
+      state: returnState || undefined,
+      replace: true,
+    });
+  };
+
   const obtenerTela = (prod?: any) => {
     if (!prod) return "N/D";
     const telaId = prod?.telaId ?? prod?.tela_id ?? prod?.tela?.id ?? prod?.telaid ?? null;
@@ -379,7 +405,7 @@ export default function PedidoDetalle() {
     try {
       await api.post(`/produccion/${id}/terminar`, {});
       Swal.fire("Listo", saldoCalculado > 0 ? "Pedido recibido y pendiente de pago" : "Pedido marcado como recibido", "success");
-      navigate("/produccion");
+      volver();
     } catch (error: any) {
       const msg = error?.response?.data?.message || error?.message || "No se pudo terminar";
       Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
@@ -640,6 +666,9 @@ export default function PedidoDetalle() {
   return (
     <Paper sx={{ p: 3, maxWidth: 1200, mx: "auto", width: "100%" }}>
       <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2, flexWrap: "wrap", gap: 1 }}>
+        <Button size="small" variant="outlined" startIcon={<ArrowBackOutlined />} onClick={volver}>
+          {returnState?.returnLabel || "Regresar"}
+        </Button>
         <PlaylistAddCheckOutlined color="primary" />
         <Typography variant="h4">{`Pedido ${pedido.folio || `P-${pedido.id}`}`}</Typography>
         <Chip
@@ -728,7 +757,16 @@ export default function PedidoDetalle() {
                 <TableCell>{obtenerColor(d.producto)}</TableCell>
                 <TableCell>{d.cantidad}</TableCell>
                 <TableCell>{formatCurrency(d.precioUnit || 0)}</TableCell>
-                <TableCell>{formatCurrency(d.bordado || 0)}</TableCell>
+                <TableCell>
+                  <Stack spacing={0.25}>
+                    <Typography variant="body2">{formatCurrency(d.bordado || 0)}</Typography>
+                    {getBordadosDetalle(d).length > 1 && (
+                      <Typography variant="caption" color="text.secondary">
+                        {getBordadosDetalle(d).length} bordados
+                      </Typography>
+                    )}
+                  </Stack>
+                </TableCell>
                 <TableCell>
                   {d.estiloEspecial ? formatCurrency(d.estiloEspecialMonto || 0) : "No"}
                 </TableCell>
