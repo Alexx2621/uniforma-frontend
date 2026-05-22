@@ -664,6 +664,58 @@ export default function IngresoInventario() {
     }
   };
 
+  const importarMasivo = async () => {
+    const bodegaOptions = bodegas
+      .map((bodega) => `<option value="${bodega.id}">${bodega.nombre}</option>`)
+      .join("");
+    const resp = await Swal.fire({
+      title: "Importacion masiva",
+      width: 720,
+      html: `
+        <div style="text-align:left;display:grid;gap:12px">
+          <label>Bodega</label>
+          <select id="import-bodega" class="swal2-input" style="width:100%;margin:0">${bodegaOptions}</select>
+          <label>Codigos y cantidades</label>
+          <textarea id="import-data" class="swal2-textarea" style="width:100%;height:220px;margin:0" placeholder="CODIGO,CANTIDAD&#10;FDSSVMU,5&#10;PDSXVMU,2"></textarea>
+          <small>Formato aceptado: codigo,cantidad. Tambien puedes pegar datos separados por tabulacion desde Excel.</small>
+        </div>
+      `,
+      showCancelButton: true,
+      confirmButtonText: "Importar",
+      preConfirm: () => {
+        const bodega = Number((document.getElementById("import-bodega") as HTMLSelectElement)?.value || 0);
+        const raw = (document.getElementById("import-data") as HTMLTextAreaElement)?.value || "";
+        const items = raw
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .map((line) => {
+            const [codigo, cantidad] = line.split(/[,\t;]/).map((value) => value.trim());
+            return { codigo, cantidad: Number(cantidad || 0) };
+          })
+          .filter((item) => item.codigo && item.cantidad > 0);
+        if (!bodega || !items.length) {
+          Swal.showValidationMessage("Selecciona bodega y pega al menos una linea valida");
+          return false;
+        }
+        return { bodegaId: bodega, items };
+      },
+    });
+    if (!resp.isConfirmed || !resp.value) return;
+    try {
+      const result = await api.post("/ingresos/importar", {
+        ...resp.value,
+        responsable: usuario || null,
+        observaciones: "Importacion masiva de inventario",
+      });
+      Swal.fire("Importado", "Ingreso masivo registrado correctamente", "success");
+      abrirPdfIngresoRegistro(result.data);
+      await cargarIngresos();
+    } catch (error: any) {
+      Swal.fire("Error", error?.response?.data?.message || "No se pudo importar el ingreso", "error");
+    }
+  };
+
   const ingresosPaginados = ingresos.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
   const totalItemsSeleccionado =
     ingresoSeleccionado?.detalle?.reduce((sum, item) => sum + Number(item.cantidad || 0), 0) || 0;
@@ -676,18 +728,23 @@ export default function IngresoInventario() {
             <Inventory2Outlined color="primary" />
             <Typography variant="h4">Ingresos de inventario</Typography>
           </Stack>
-          <Button
-            startIcon={<AddIcon />}
-            variant="contained"
-            onClick={() => {
-              limpiarArticulo();
-              setDetalle([]);
-              setObservaciones("");
-              setVista("nuevo");
-            }}
-          >
-            Nuevo ingreso
-          </Button>
+          <Stack direction="row" spacing={1}>
+            <Button variant="outlined" onClick={importarMasivo}>
+              Importar masivo
+            </Button>
+            <Button
+              startIcon={<AddIcon />}
+              variant="contained"
+              onClick={() => {
+                limpiarArticulo();
+                setDetalle([]);
+                setObservaciones("");
+                setVista("nuevo");
+              }}
+            >
+              Nuevo ingreso
+            </Button>
+          </Stack>
         </Stack>
 
         <Divider sx={{ mb: 2 }} />

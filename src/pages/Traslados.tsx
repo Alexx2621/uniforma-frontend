@@ -102,6 +102,24 @@ interface TrasladoRegistro {
   }>;
 }
 
+interface SolicitudTrasladoRegistro {
+  id: number;
+  folio?: string | null;
+  fecha: string;
+  estado: string;
+  responsable?: string | null;
+  observaciones?: string | null;
+  venta?: { id: number; folio?: string | null; clienteNombre?: string | null } | null;
+  desdeBodega?: Bodega | null;
+  haciaBodega?: Bodega | null;
+  detalle?: Array<{
+    id: number;
+    productoId: number;
+    cantidad: number;
+    producto?: Producto | null;
+  }>;
+}
+
 const detalleInicial: CapturaArticulo = {
   productoId: "",
   cantidad: 1,
@@ -158,6 +176,7 @@ export default function Traslados() {
   const today = useMemo(() => toInputDate(new Date()), []);
   const [vista, setVista] = useState<"listado" | "nuevo">("listado");
   const [traslados, setTraslados] = useState<TrasladoRegistro[]>([]);
+  const [solicitudes, setSolicitudes] = useState<SolicitudTrasladoRegistro[]>([]);
   const [loadingTraslados, setLoadingTraslados] = useState(false);
   const [filtroDesdeFecha, setFiltroDesdeFecha] = useState(today);
   const [filtroHastaFecha, setFiltroHastaFecha] = useState(today);
@@ -194,16 +213,19 @@ export default function Traslados() {
   const cargarTraslados = useCallback(async () => {
     try {
       setLoadingTraslados(true);
-      const resp = await api.get("/traslados", {
-        params: {
-          desde: filtroDesdeFecha || undefined,
-          hasta: filtroHastaFecha || undefined,
-          desdeBodegaId: filtroDesdeBodegaId || undefined,
-          haciaBodegaId: filtroHaciaBodegaId || undefined,
-          responsable: filtroResponsable.trim() || undefined,
-        },
-      });
+      const params = {
+        desde: filtroDesdeFecha || undefined,
+        hasta: filtroHastaFecha || undefined,
+        desdeBodegaId: filtroDesdeBodegaId || undefined,
+        haciaBodegaId: filtroHaciaBodegaId || undefined,
+        responsable: filtroResponsable.trim() || undefined,
+      };
+      const [resp, respSolicitudes] = await Promise.all([
+        api.get("/traslados", { params }),
+        api.get("/traslados/solicitudes", { params }),
+      ]);
       setTraslados(Array.isArray(resp.data) ? resp.data : []);
+      setSolicitudes(Array.isArray(respSolicitudes.data) ? respSolicitudes.data : []);
       setPage(0);
     } catch {
       Swal.fire("Error", "No se pudieron cargar los traslados", "error");
@@ -684,6 +706,34 @@ export default function Traslados() {
   const totalItemsSeleccionado =
     trasladoSeleccionado?.detalle?.reduce((sum, item) => sum + Number(item.cantidad || 0), 0) || 0;
 
+  const estadoColor = (estado: string) => {
+    const normalized = `${estado || ""}`.toUpperCase();
+    if (normalized === "RECIBIDO") return "success";
+    if (normalized === "CANCELADO") return "error";
+    if (normalized === "PENDIENTE_APROBACION") return "warning";
+    if (normalized === "EN_TRANSITO") return "info";
+    return "default";
+  };
+
+  const cambiarEstadoSolicitud = async (solicitud: SolicitudTrasladoRegistro, estado: string) => {
+    const resp = await Swal.fire({
+      title: "Cambiar estado",
+      text: `La solicitud ${solicitud.folio || `#${solicitud.id}`} quedara como ${estado}.`,
+      icon: estado === "RECIBIDO" ? "question" : "info",
+      showCancelButton: true,
+      confirmButtonText: "Confirmar",
+      cancelButtonText: "Cancelar",
+    });
+    if (!resp.isConfirmed) return;
+    try {
+      await api.patch(`/traslados/solicitudes/${solicitud.id}/estado`, { estado });
+      Swal.fire("Actualizado", "Estado de solicitud actualizado", "success");
+      await cargarTraslados();
+    } catch (error: any) {
+      Swal.fire("Error", error?.response?.data?.message || "No se pudo actualizar la solicitud", "error");
+    }
+  };
+
   if (vista === "listado") {
     return (
       <Paper sx={{ p: 3 }}>
@@ -782,6 +832,83 @@ export default function Traslados() {
           </Grid>
         </Paper>
 
+        <Typography variant="h6" sx={{ mb: 1 }}>
+          Solicitudes pendientes y trazabilidad
+        </Typography>
+        <TableContainer component={Paper} variant="outlined" sx={{ mb: 3 }}>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Solicitud</TableCell>
+                <TableCell>Venta</TableCell>
+                <TableCell>Fecha</TableCell>
+                <TableCell>Origen</TableCell>
+                <TableCell>Destino</TableCell>
+                <TableCell align="center">Items</TableCell>
+                <TableCell>Estado</TableCell>
+                <TableCell align="right">Acciones</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {loadingTraslados ? (
+                <TableRow>
+                  <TableCell colSpan={8} align="center">Cargando solicitudes...</TableCell>
+                </TableRow>
+              ) : solicitudes.length ? (
+                solicitudes.map((solicitud) => {
+                  const items = solicitud.detalle?.reduce((sum, item) => sum + Number(item.cantidad || 0), 0) || 0;
+                  return (
+                    <TableRow key={solicitud.id} hover>
+                      <TableCell>
+                        <Chip size="small" color="primary" variant="outlined" label={solicitud.folio || `ST-${solicitud.id}`} />
+                      </TableCell>
+                      <TableCell>{solicitud.venta?.folio || (solicitud.venta?.id ? `Venta #${solicitud.venta.id}` : "-")}</TableCell>
+                      <TableCell>{formatDateTime(solicitud.fecha)}</TableCell>
+                      <TableCell>{solicitud.desdeBodega?.nombre || "N/D"}</TableCell>
+                      <TableCell>{solicitud.haciaBodega?.nombre || "N/D"}</TableCell>
+                      <TableCell align="center">{items}</TableCell>
+                      <TableCell>
+                        <Chip size="small" color={estadoColor(solicitud.estado) as any} label={solicitud.estado} />
+                      </TableCell>
+                      <TableCell align="right">
+                        <Stack direction="row" spacing={0.5} justifyContent="flex-end">
+                          {solicitud.estado === "PENDIENTE_APROBACION" && (
+                            <Button size="small" onClick={() => cambiarEstadoSolicitud(solicitud, "PENDIENTE")}>
+                              Aprobar
+                            </Button>
+                          )}
+                          {solicitud.estado !== "RECIBIDO" && solicitud.estado !== "CANCELADO" && (
+                            <>
+                              <Button size="small" onClick={() => cambiarEstadoSolicitud(solicitud, "EN_TRANSITO")}>
+                                En transito
+                              </Button>
+                              <Button size="small" color="success" onClick={() => cambiarEstadoSolicitud(solicitud, "RECIBIDO")}>
+                                Recibir
+                              </Button>
+                              <Button size="small" color="error" onClick={() => cambiarEstadoSolicitud(solicitud, "CANCELADO")}>
+                                Cancelar
+                              </Button>
+                            </>
+                          )}
+                        </Stack>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={8} align="center">
+                    No hay solicitudes de traslado con los filtros seleccionados.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+
+        <Typography variant="h6" sx={{ mb: 1 }}>
+          Traslados registrados
+        </Typography>
         <TableContainer component={Paper} variant="outlined">
           <Table size="small">
             <TableHead>

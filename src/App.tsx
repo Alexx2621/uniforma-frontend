@@ -14,6 +14,7 @@ import Tallas from "./pages/Tallas";
 import IngresoInventario from "./pages/IngresoInventario";
 import InventarioResumen from "./pages/InventarioResumen";
 import InventarioTelas from "./pages/InventarioTelas";
+import ConteosFisicos from "./pages/ConteosFisicos";
 import Traslados from "./pages/Traslados";
 import VentaNueva from "./pages/VentaNueva";
 import Bodegas from "./pages/Bodegas";
@@ -78,6 +79,7 @@ export default function App() {
           <Route path="/inventario" element={<IngresoInventario />} />
           <Route path="/inventario/resumen" element={<InventarioResumen />} />
           <Route path="/inventario/telas" element={<InventarioTelas />} />
+          <Route path="/inventario/conteos" element={<ConteosFisicos />} />
           <Route path="/inventario/traslados" element={<Traslados />} />
           <Route path="/bodegas" element={<Bodegas />} />
           <Route path="/cotizaciones" element={<Cotizaciones />} />
