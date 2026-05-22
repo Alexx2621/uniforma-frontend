@@ -24,6 +24,7 @@ import {
   TableHead,
   TableRow,
   Box,
+  Chip,
   createFilterOptions,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
@@ -35,7 +36,6 @@ import { api } from "../api/axios";
 import { useNavigate } from "react-router-dom";
 import { hasPermission } from "../auth/permissions";
 import { useAuthStore } from "../auth/useAuthStore";
-import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import LOGO_URL from "../assets/3-logos.png";
 import { buildVentaPdfHtml } from "../utils/ventaPdf";
 import { formatCurrency } from "../utils/currency";
@@ -100,11 +100,17 @@ interface Bodega {
   id: number;
   nombre: string;
   ubicacion?: string | null;
+  tipo?: string | null;
+  usaInventarioVentas?: boolean;
 }
 
 interface DetalleRow {
   key: number;
   productoId: number;
+  bodegaId: number;
+  bodegaNombre: string;
+  controlaInventario: boolean;
+  requiereTraslado: boolean;
   cantidad: number;
   precio: number;
   bordado: number;
@@ -123,6 +129,7 @@ interface DetalleRow {
 
 interface CapturaArticulo {
   productoId: number | "";
+  bodegaId: number | "";
   cantidad: number;
   precio: number;
   bordado: number;
@@ -141,6 +148,7 @@ interface CapturaArticulo {
 
 const detalleInicial: CapturaArticulo = {
   productoId: "",
+  bodegaId: "",
   cantidad: 1,
   precio: 0,
   bordado: 0,
@@ -269,13 +277,10 @@ export default function VentaNueva() {
 
   const navigate = useNavigate();
   const { usuario, rol, permisos, bodegaId: userBodegaId, bodegaNombre: authBodegaNombre, id: userId } = useAuthStore();
-  const { salesInventoryEnabled, fetchConfig } = useSystemConfigStore();
   const canAccessAllBodegas = hasPermission(rol, permisos, "sistema.multi-tienda");
   const metodoUsaRecargo = metodoPago === "tarjeta" || metodoPago === "visalink";
   const metodoRequiereReferencia = metodoPago !== "efectivo";
   const metodoRequiereBanco = metodoPago === "deposito_bancario";
-  const stockRestanteEstimado =
-    salesInventoryEnabled && articuloActual.stock != null ? Math.max(articuloActual.stock - (Number(cantidadInput) || 0), 0) : null;
   const clientesConCf = useMemo(() => {
     const hasCf = clientes.some((cliente) => `${cliente.nombre || ""}`.trim().toUpperCase() === "CF");
     return hasCf ? clientes : [CLIENTE_CF_OPTION, ...clientes];
@@ -294,7 +299,7 @@ export default function VentaNueva() {
       const [respCli, respProd, respBod, respTelas, respTallas, respColores] = await Promise.all([
         api.get("/clientes/todos"),
         api.get("/productos"),
-        api.get("/bodegas"),
+        api.get("/bodegas", { params: { operacion: "ventas" } }),
         api.get("/telas").catch(() => ({ data: [] })),
         api.get("/tallas").catch(() => ({ data: [] })),
         api.get("/colores").catch(() => ({ data: [] })),
@@ -311,9 +316,8 @@ export default function VentaNueva() {
   };
 
   useEffect(() => {
-    void fetchConfig();
     void cargarCatalogos();
-  }, [fetchConfig]);
+  }, []);
 
   useEffect(() => {
     if (clienteId !== CLIENTE_CF_ID || clienteNombre !== "CF" || clienteTelefono) return;
@@ -373,17 +377,20 @@ export default function VentaNueva() {
   };
 
   useEffect(() => {
-    if (userBodegaId && !canAccessAllBodegas) {
+    if (userBodegaId && !canAccessAllBodegas && !bodegaId) {
       const parsed = Number(userBodegaId);
       const exists = bodegas.some((b) => b.id === parsed);
       setBodegaId(exists ? parsed : "");
+      if (exists) {
+        setArticuloActual((prev) => ({ ...prev, bodegaId: prev.bodegaId || parsed }));
+      }
       if (exists) {
         const selected = bodegas.find((b) => b.id === parsed);
         const ubic = normalizarUbicacion(selected?.ubicacion);
         setUbicacion(ubic || "TIENDA");
       }
     }
-  }, [userBodegaId, canAccessAllBodegas, bodegas]);
+  }, [userBodegaId, canAccessAllBodegas, bodegas, bodegaId]);
 
   const fetchStock = async (bodega: number, producto: number) => {
     try {
@@ -522,6 +529,15 @@ export default function VentaNueva() {
   );
 
   const productoDetectado = productosCoincidentes.length === 1 ? productosCoincidentes[0] : undefined;
+  const bodegaOrigenArticuloId = Number(articuloActual.bodegaId || bodegaId || 0) || null;
+  const bodegaOrigenArticulo = bodegas.find((b) => Number(b.id) === Number(bodegaOrigenArticuloId)) || null;
+  const controlaInventarioArticulo = Boolean(bodegaOrigenArticulo?.usaInventarioVentas);
+  const mostrarColumnaStock = detalle.some((row) => row.controlaInventario) || controlaInventarioArticulo;
+  const stockRestanteEstimado =
+    controlaInventarioArticulo && articuloActual.stock != null ? Math.max(articuloActual.stock - (Number(cantidadInput) || 0), 0) : null;
+  const requiereTrasladoArticulo =
+    Boolean(bodegaId && bodegaOrigenArticuloId) && Number(bodegaOrigenArticuloId) !== Number(bodegaId);
+  const trasladosPendientes = detalle.filter((row) => row.requiereTraslado);
 
   useEffect(() => {
     if (filtroTipo && !tiposDisponibles.includes(filtroTipo)) setFiltroTipo("");
@@ -555,7 +571,9 @@ export default function VentaNueva() {
         return;
       }
 
-      const stock = salesInventoryEnabled && bodegaId ? await fetchStock(Number(bodegaId), productoDetectado.id) : null;
+      const sourceBodegaId = Number(articuloActual.bodegaId || bodegaId || 0);
+      const sourceBodega = bodegas.find((b) => Number(b.id) === Number(sourceBodegaId));
+      const stock = sourceBodega?.usaInventarioVentas && sourceBodegaId ? await fetchStock(sourceBodegaId, productoDetectado.id) : null;
       setArticuloActual((prev) => ({
         ...prev,
         productoId: productoDetectado.id,
@@ -565,7 +583,7 @@ export default function VentaNueva() {
     };
 
     void syncProducto();
-  }, [productoDetectado, bodegaId, salesInventoryEnabled]);
+  }, [productoDetectado, articuloActual.bodegaId, bodegaId, bodegas]);
 
   const limpiarArticulo = () => {
     setArticuloActual(detalleInicial);
@@ -583,6 +601,10 @@ export default function VentaNueva() {
       Swal.fire("Validacion", "Selecciona un producto", "warning");
       return;
     }
+    if (!bodegaOrigenArticuloId) {
+      Swal.fire("Validacion", "Selecciona la bodega origen del articulo", "warning");
+      return;
+    }
 
     const cantidad = Number(cantidadInput) || 0;
     if (cantidad <= 0) {
@@ -590,7 +612,7 @@ export default function VentaNueva() {
       return;
     }
 
-    if (salesInventoryEnabled && articuloActual.stock != null && cantidad > articuloActual.stock) {
+    if (controlaInventarioArticulo && articuloActual.stock != null && cantidad > articuloActual.stock) {
       Swal.fire("Validacion", `Solo hay ${articuloActual.stock} unidades disponibles en inventario`, "warning");
       return;
     }
@@ -609,6 +631,10 @@ export default function VentaNueva() {
     const row: DetalleRow = {
       key: editingDetalleKey ?? Date.now(),
       productoId: Number(articuloActual.productoId),
+      bodegaId: bodegaOrigenArticuloId,
+      bodegaNombre: bodegaOrigenArticulo?.nombre || `Bodega ${bodegaOrigenArticuloId}`,
+      controlaInventario: controlaInventarioArticulo,
+      requiereTraslado: requiereTrasladoArticulo,
       cantidad,
       precio: Number(articuloActual.precio) || 0,
       bordado: tieneBordado ? Number(articuloActual.bordado) || 0 : 0,
@@ -636,6 +662,7 @@ export default function VentaNueva() {
     setEditingDetalleKey(row.key);
     setArticuloActual({
       productoId: row.productoId,
+      bodegaId: row.bodegaId,
       cantidad: row.cantidad,
       precio: row.precio,
       bordado: row.bordado,
@@ -668,6 +695,7 @@ export default function VentaNueva() {
   };
 
   const onBodegaChange = async (value: number) => {
+    const previousBodegaId = bodegaId;
     setBodegaId(value);
     const selected = bodegas.find((b) => b.id === value);
     const ubic = normalizarUbicacion(selected?.ubicacion);
@@ -675,19 +703,26 @@ export default function VentaNueva() {
       setUbicacion(ubic);
     }
 
-    const updated = salesInventoryEnabled
-      ? await Promise.all(
-          detalle.map(async (row) => {
-            const stock = await fetchStock(value, row.productoId);
-            return { ...row, stock };
-          }),
-        )
-      : detalle.map((row) => ({ ...row, stock: null }));
-    setDetalle(updated);
+    setDetalle((prev) =>
+      prev.map((row) => ({
+        ...row,
+        requiereTraslado: Number(row.bodegaId) !== Number(value),
+      })),
+    );
 
     if (articuloActual.productoId) {
-      const stock = salesInventoryEnabled ? await fetchStock(value, Number(articuloActual.productoId)) : null;
-      setArticuloActual((prev) => ({ ...prev, stock }));
+      const nextSourceBodegaId =
+        !articuloActual.bodegaId || Number(articuloActual.bodegaId) === Number(previousBodegaId)
+          ? value
+          : Number(articuloActual.bodegaId);
+      const sourceBodega = bodegas.find((b) => Number(b.id) === Number(nextSourceBodegaId));
+      const stock = sourceBodega?.usaInventarioVentas ? await fetchStock(nextSourceBodegaId, Number(articuloActual.productoId)) : null;
+      setArticuloActual((prev) => ({ ...prev, bodegaId: nextSourceBodegaId, stock }));
+    } else {
+      setArticuloActual((prev) => ({
+        ...prev,
+        bodegaId: !prev.bodegaId || Number(prev.bodegaId) === Number(previousBodegaId) ? value : prev.bodegaId,
+      }));
     }
   };
 
@@ -945,6 +980,7 @@ export default function VentaNueva() {
       vendedor: usuario,
         detalle: detalle.map((d) => ({
           productoId: d.productoId,
+          bodegaId: d.bodegaId,
           cantidad: d.cantidad,
           precio: d.precio,
           bordado: d.bordado,
@@ -987,7 +1023,7 @@ export default function VentaNueva() {
               label="Bodega"
               value={bodegaId === "" ? "" : bodegaId}
               onChange={(e) => void onBodegaChange(Number(e.target.value))}
-              disabled={!!userBodegaId && !canAccessAllBodegas}
+              disabled={bodegas.length <= 1}
             >
               {bodegas.map((b) => (
                 <MenuItem key={b.id} value={b.id}>
@@ -1138,12 +1174,15 @@ export default function VentaNueva() {
           <Typography variant="body2" color="text.secondary">
             Selecciona la combinacion del articulo y agregalo a la lista temporal antes de guardar la venta.
           </Typography>
-          {!salesInventoryEnabled ? (
-            <Alert severity="warning">El uso de inventario en ventas esta deshabilitado. La venta no validara ni descontara stock.</Alert>
+          {bodegaOrigenArticulo && !controlaInventarioArticulo ? (
+            <Alert severity="warning">
+              Esta bodega no controla inventario en ventas. La venta no validara ni descontara stock para esta linea.
+            </Alert>
           ) : articuloActual.stock != null && articuloActual.productoId ? (
             <Alert severity={stockRestanteEstimado !== null && stockRestanteEstimado <= 0 ? "warning" : "info"}>
-              {`Stock actual: ${articuloActual.stock} unidades. `}
+              {`Stock actual en ${bodegaOrigenArticulo?.nombre || "bodega origen"}: ${articuloActual.stock} unidades. `}
               {`Stock restante estimado con esta captura: ${stockRestanteEstimado ?? 0} unidades.`}
+              {requiereTrasladoArticulo ? " Este articulo quedara marcado como traslado pendiente." : ""}
             </Alert>
           ) : (
             <Alert severity="info">Selecciona bodega y articulo para visualizar el stock disponible.</Alert>
@@ -1151,6 +1190,37 @@ export default function VentaNueva() {
         </Stack>
 
         <Grid container spacing={2}>
+          <Grid size={{ xs: 12, md: 3 }}>
+            <FormControl fullWidth>
+              <InputLabel>Bodega origen</InputLabel>
+              <Select
+                label="Bodega origen"
+                value={articuloActual.bodegaId || bodegaId || ""}
+                onChange={async (e) => {
+                  const nextBodegaId = Number(e.target.value);
+                  const nextBodega = bodegas.find((b) => Number(b.id) === Number(nextBodegaId));
+                  const stock =
+                    nextBodega?.usaInventarioVentas && articuloActual.productoId
+                      ? await fetchStock(nextBodegaId, Number(articuloActual.productoId))
+                      : null;
+                  setArticuloActual((prev) => ({ ...prev, bodegaId: nextBodegaId, stock }));
+                }}
+              >
+                {bodegas.map((b) => (
+                  <MenuItem key={b.id} value={b.id}>
+                    {b.nombre}{b.tipo ? ` - ${b.tipo}` : ""}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+          {requiereTrasladoArticulo && (
+            <Grid size={{ xs: 12, md: 3 }}>
+              <Alert severity="warning" sx={{ height: "100%", alignItems: "center" }}>
+                Requiere traslado hacia la bodega de la venta.
+              </Alert>
+            </Grid>
+          )}
           <Grid size={{ xs: 12, md: 2 }}>
             <FormControl fullWidth>
               <InputLabel>Tipo</InputLabel>
@@ -1497,6 +1567,11 @@ export default function VentaNueva() {
       <Typography variant="h6" sx={{ mb: 1 }}>
         Articulos agregados
       </Typography>
+      {trasladosPendientes.length > 0 && (
+        <Alert severity="warning" sx={{ mb: 1 }}>
+          {trasladosPendientes.length} articulo(s) salen de una bodega distinta a la venta. Quedan como referencia de traslado pendiente.
+        </Alert>
+      )}
       <TableContainer component={Paper} variant="outlined">
         <Table size="small">
           <TableHead>
@@ -1507,13 +1582,15 @@ export default function VentaNueva() {
               <TableCell align="center" sx={{ fontWeight: 700 }}>Tela</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Talla</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Color</TableCell>
+              <TableCell align="center" sx={{ fontWeight: 700 }}>Bodega origen</TableCell>
+              <TableCell align="center" sx={{ fontWeight: 700 }}>Traslado</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Cantidad</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Precio</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Bordado</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Detalle bordado</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Estilo especial</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Desc.</TableCell>
-              {salesInventoryEnabled && <TableCell align="center" sx={{ fontWeight: 700 }}>Stock</TableCell>}
+              {mostrarColumnaStock && <TableCell align="center" sx={{ fontWeight: 700 }}>Stock</TableCell>}
               <TableCell align="center" sx={{ fontWeight: 700 }}>Observacion</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Subtotal</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Acciones</TableCell>
@@ -1530,6 +1607,10 @@ export default function VentaNueva() {
                   <TableCell align="center">{obtenerTela(producto)}</TableCell>
                   <TableCell align="center">{obtenerTalla(producto)}</TableCell>
                   <TableCell align="center">{obtenerColor(producto)}</TableCell>
+                  <TableCell align="center">{row.bodegaNombre}</TableCell>
+                  <TableCell align="center">
+                    {row.requiereTraslado ? <Chip size="small" color="warning" label="Pendiente" /> : <Chip size="small" label="No aplica" />}
+                  </TableCell>
                   <TableCell align="center">{row.cantidad}</TableCell>
                   <TableCell align="center">{formatCurrency(row.precio)}</TableCell>
                   <TableCell align="center">{formatCurrency(row.bordado)}</TableCell>
@@ -1542,7 +1623,7 @@ export default function VentaNueva() {
                     {row.estiloEspecial ? formatCurrency(row.estiloEspecialMonto || 0) : "No"}
                   </TableCell>
                   <TableCell align="center">{`${row.descuento.toFixed(2)}%`}</TableCell>
-                  {salesInventoryEnabled && <TableCell align="center">{row.stock ?? "N/D"}</TableCell>}
+                  {mostrarColumnaStock && <TableCell align="center">{row.controlaInventario ? row.stock ?? "N/D" : "No aplica"}</TableCell>}
                   <TableCell align="center">{row.descripcion || "-"}</TableCell>
                   <TableCell align="center">{formatCurrency(calcularSubtotal(row))}</TableCell>
                   <TableCell align="center">
@@ -1566,7 +1647,7 @@ export default function VentaNueva() {
             })}
             {detalle.length > 0 && (
               <TableRow sx={{ backgroundColor: "action.hover" }}>
-                <TableCell align="right" colSpan={6} sx={{ fontWeight: 700 }}>
+                <TableCell align="right" colSpan={8} sx={{ fontWeight: 700 }}>
                   Totales
                 </TableCell>
                 <TableCell align="center" sx={{ fontWeight: 700 }}>
@@ -1583,7 +1664,7 @@ export default function VentaNueva() {
                   {formatCurrency(detalleTableTotals.estiloEspecial)}
                 </TableCell>
                 <TableCell align="center">-</TableCell>
-                {salesInventoryEnabled && <TableCell align="center">-</TableCell>}
+                {mostrarColumnaStock && <TableCell align="center">-</TableCell>}
                 <TableCell align="center">-</TableCell>
                 <TableCell align="center">-</TableCell>
                 <TableCell align="center">-</TableCell>
@@ -1591,7 +1672,7 @@ export default function VentaNueva() {
             )}
             {!detalle.length && (
               <TableRow>
-                <TableCell colSpan={salesInventoryEnabled ? 16 : 15} align="center">
+                <TableCell colSpan={mostrarColumnaStock ? 18 : 17} align="center">
                   Aun no has agregado articulos a la venta.
                 </TableCell>
               </TableRow>

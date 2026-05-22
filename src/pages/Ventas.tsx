@@ -319,12 +319,14 @@ export default function Ventas() {
               <td>${productoMap.get(Number(d.productoId))?.codigo || d.producto?.codigo || d.productoId || ""}</td>
               <td>${d.cantidad ?? 0}</td>
               <td>${formatter(Number(d.precioUnit || 0))}</td>
+              <td>${d.bodegaOrigen?.nombre || d.bodegaNombre || "Bodega venta"}</td>
+              <td>${d.requiereTraslado ? d.trasladoEstado || "PENDIENTE" : "No aplica"}</td>
               <td>${d.descripcion || ""}</td>
               <td>${formatter(Number(d.subtotal || 0))}</td>
             </tr>`,
             )
             .join("")
-        : `<tr><td colspan="6" style="text-align:center;color:#6b7280;">Sin detalle</td></tr>`;
+        : `<tr><td colspan="8" style="text-align:center;color:#6b7280;">Sin detalle</td></tr>`;
 
     Swal.fire({
       title: "Detalle de venta",
@@ -350,6 +352,8 @@ export default function Ventas() {
                 <th style="border:1px solid #e5e7eb;padding:6px;text-align:left;">Producto</th>
                 <th style="border:1px solid #e5e7eb;padding:6px;text-align:left;">Cant.</th>
                 <th style="border:1px solid #e5e7eb;padding:6px;text-align:left;">Precio</th>
+                <th style="border:1px solid #e5e7eb;padding:6px;text-align:left;">Bodega origen</th>
+                <th style="border:1px solid #e5e7eb;padding:6px;text-align:left;">Traslado</th>
                 <th style="border:1px solid #e5e7eb;padding:6px;text-align:left;">Observacion</th>
                 <th style="border:1px solid #e5e7eb;padding:6px;text-align:left;">Subtotal</th>
               </tr>

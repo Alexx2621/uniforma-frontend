@@ -19,11 +19,20 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  TablePagination,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Chip,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
 import AddIcon from "@mui/icons-material/Add";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import SwapHorizIcon from "@mui/icons-material/SwapHoriz";
+import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
+import PrintOutlined from "@mui/icons-material/PrintOutlined";
+import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { hasPermission } from "../auth/permissions";
@@ -75,6 +84,24 @@ interface CapturaArticulo {
   stockDestino: number | null;
 }
 
+interface TrasladoRegistro {
+  id: number;
+  folio?: string | null;
+  fecha: string;
+  desdeBodegaId: number;
+  haciaBodegaId: number;
+  observaciones?: string | null;
+  responsable?: string | null;
+  desdeBodega?: Bodega | null;
+  haciaBodega?: Bodega | null;
+  detalle?: Array<{
+    id: number;
+    productoId: number;
+    cantidad: number;
+    producto?: Producto | null;
+  }>;
+}
+
 const detalleInicial: CapturaArticulo = {
   productoId: "",
   cantidad: 1,
@@ -110,7 +137,36 @@ const resolveColorNombre = (prod: Producto | undefined, colores: CatalogoItem[])
 const uniqueSorted = (values: string[]) =>
   Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b));
 
+const toInputDate = (date: Date) => {
+  const offset = date.getTimezoneOffset();
+  const localDate = new Date(date.getTime() - offset * 60000);
+  return localDate.toISOString().slice(0, 10);
+};
+
+const formatDateTime = (value?: string | null) => {
+  if (!value) return "N/D";
+  return new Date(value).toLocaleString("es-GT", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
 export default function Traslados() {
+  const today = useMemo(() => toInputDate(new Date()), []);
+  const [vista, setVista] = useState<"listado" | "nuevo">("listado");
+  const [traslados, setTraslados] = useState<TrasladoRegistro[]>([]);
+  const [loadingTraslados, setLoadingTraslados] = useState(false);
+  const [filtroDesdeFecha, setFiltroDesdeFecha] = useState(today);
+  const [filtroHastaFecha, setFiltroHastaFecha] = useState(today);
+  const [filtroDesdeBodegaId, setFiltroDesdeBodegaId] = useState<number | "">("");
+  const [filtroHaciaBodegaId, setFiltroHaciaBodegaId] = useState<number | "">("");
+  const [filtroResponsable, setFiltroResponsable] = useState("");
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [trasladoSeleccionado, setTrasladoSeleccionado] = useState<TrasladoRegistro | null>(null);
   const [bodegas, setBodegas] = useState<Bodega[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [telas, setTelas] = useState<CatalogoItem[]>([]);
@@ -135,10 +191,31 @@ export default function Traslados() {
   const mismaBodegaSeleccionada =
     desdeBodegaId !== "" && haciaBodegaId !== "" && Number(desdeBodegaId) === Number(haciaBodegaId);
 
+  const cargarTraslados = useCallback(async () => {
+    try {
+      setLoadingTraslados(true);
+      const resp = await api.get("/traslados", {
+        params: {
+          desde: filtroDesdeFecha || undefined,
+          hasta: filtroHastaFecha || undefined,
+          desdeBodegaId: filtroDesdeBodegaId || undefined,
+          haciaBodegaId: filtroHaciaBodegaId || undefined,
+          responsable: filtroResponsable.trim() || undefined,
+        },
+      });
+      setTraslados(Array.isArray(resp.data) ? resp.data : []);
+      setPage(0);
+    } catch {
+      Swal.fire("Error", "No se pudieron cargar los traslados", "error");
+    } finally {
+      setLoadingTraslados(false);
+    }
+  }, [filtroDesdeFecha, filtroHastaFecha, filtroDesdeBodegaId, filtroHaciaBodegaId, filtroResponsable]);
+
   const cargarCatalogos = async () => {
     try {
       const [respBod, respProd, respTelas, respTallas, respColores] = await Promise.all([
-        api.get("/bodegas"),
+        api.get("/bodegas", { params: { operacion: "traslados" } }),
         api.get("/productos"),
         api.get("/telas").catch(() => ({ data: [] })),
         api.get("/tallas").catch(() => ({ data: [] })),
@@ -160,12 +237,17 @@ export default function Traslados() {
   }, [fetchConfig]);
 
   useEffect(() => {
-    if (userBodegaId && !canAccessAllBodegas) {
+    void cargarTraslados();
+  }, [cargarTraslados]);
+
+  useEffect(() => {
+    if (userBodegaId && !canAccessAllBodegas && !desdeBodegaId) {
       const parsed = Number(userBodegaId);
       const exists = bodegas.some((b) => b.id === parsed);
       setDesdeBodegaId(exists ? parsed : "");
+      setFiltroDesdeBodegaId((prev) => prev || (exists ? parsed : ""));
     }
-  }, [userBodegaId, canAccessAllBodegas, bodegas]);
+  }, [userBodegaId, canAccessAllBodegas, bodegas, desdeBodegaId]);
 
   const fetchStock = async (bodega: number, producto: number) => {
     if (!bodega || !producto) return null;
@@ -447,7 +529,7 @@ export default function Traslados() {
       bodegas.find((b) => b.id === Number(haciaBodegaId))?.nombre ||
       "Destino";
     const fecha = traslado?.fecha ? new Date(traslado.fecha) : new Date();
-    const folio = traslado?.id ? `TR-${traslado.id}` : "Pendiente";
+    const folio = traslado?.folio || (traslado?.id ? `TR-${traslado.id}` : "Pendiente");
     const responsable = usuario || "Responsable";
     const html = buildTrasladoPdfHtml({
       folio,
@@ -468,6 +550,42 @@ export default function Traslados() {
           tela: obtenerTela(producto),
           talla: obtenerTalla(producto),
           color: obtenerColor(producto),
+          cantidad: Number(item.cantidad) || 0,
+        };
+      }),
+    });
+
+    nuevaVentana.document.write(html);
+    nuevaVentana.document.close();
+  };
+
+  const abrirPdfTrasladoRegistro = (traslado: TrasladoRegistro) => {
+    const nuevaVentana = window.open("", "_blank");
+    if (!nuevaVentana) {
+      Swal.fire("Aviso", "Habilita las ventanas emergentes para ver el PDF", "info");
+      return;
+    }
+
+    const detalleRegistro = Array.isArray(traslado.detalle) ? traslado.detalle : [];
+    const html = buildTrasladoPdfHtml({
+      folio: traslado.folio || `TR-${traslado.id}`,
+      fecha: traslado.fecha ? new Date(traslado.fecha) : new Date(),
+      origen: traslado.desdeBodega?.nombre || bodegas.find((b) => b.id === Number(traslado.desdeBodegaId))?.nombre || "Origen",
+      destino: traslado.haciaBodega?.nombre || bodegas.find((b) => b.id === Number(traslado.haciaBodegaId))?.nombre || "Destino",
+      responsable: traslado.responsable || "Responsable",
+      observaciones: traslado.observaciones || "",
+      totalItems: detalleRegistro.reduce((sum, item) => sum + Number(item.cantidad || 0), 0),
+      logoUrl: LOGO_URL,
+      items: detalleRegistro.map((item) => {
+        const producto = item.producto || productos.find((p) => p.id === item.productoId);
+        return {
+          codigo: producto?.codigo || `${item.productoId}`,
+          nombre: producto?.nombre || "Producto",
+          tipo: producto?.tipo || "N/D",
+          genero: producto?.genero || "N/D",
+          tela: resolveTelaNombre(producto || undefined, telas),
+          talla: resolveTallaNombre(producto || undefined, tallas),
+          color: resolveColorNombre(producto || undefined, colores),
           cantidad: Number(item.cantidad) || 0,
         };
       }),
@@ -543,6 +661,7 @@ export default function Traslados() {
       desdeBodegaId: Number(desdeBodegaId),
       haciaBodegaId: Number(haciaBodegaId),
       observaciones: observaciones || null,
+      responsable: usuario || null,
       detalle: detalle.map((d) => ({ productoId: d.productoId, cantidad: d.cantidad })),
     };
 
@@ -553,17 +672,293 @@ export default function Traslados() {
       setObservaciones("");
       setDetalle([]);
       limpiarArticulo();
+      await cargarTraslados();
+      setVista("listado");
     } catch (error: any) {
       const msg = error?.response?.data?.message || error?.message || "No se pudo guardar";
       Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
     }
   };
 
+  const trasladosPaginados = traslados.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+  const totalItemsSeleccionado =
+    trasladoSeleccionado?.detalle?.reduce((sum, item) => sum + Number(item.cantidad || 0), 0) || 0;
+
+  if (vista === "listado") {
+    return (
+      <Paper sx={{ p: 3 }}>
+        <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" alignItems={{ xs: "flex-start", sm: "center" }} spacing={1} sx={{ mb: 2 }}>
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <SwapHorizIcon color="primary" />
+            <Typography variant="h4">Traslados entre bodegas</Typography>
+          </Stack>
+          <Button
+            startIcon={<AddIcon />}
+            variant="contained"
+            onClick={() => {
+              limpiarArticulo();
+              setDetalle([]);
+              setObservaciones("");
+              setVista("nuevo");
+            }}
+          >
+            Nuevo traslado
+          </Button>
+        </Stack>
+
+        <Divider sx={{ mb: 2 }} />
+
+        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+          <Grid container spacing={2} alignItems="center">
+            <Grid size={{ xs: 12, sm: 2 }}>
+              <TextField
+                label="Desde"
+                type="date"
+                fullWidth
+                value={filtroDesdeFecha}
+                onChange={(e) => setFiltroDesdeFecha(e.target.value)}
+                InputLabelProps={{ shrink: true }}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 2 }}>
+              <TextField
+                label="Hasta"
+                type="date"
+                fullWidth
+                value={filtroHastaFecha}
+                onChange={(e) => setFiltroHastaFecha(e.target.value)}
+                InputLabelProps={{ shrink: true }}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 3 }}>
+              <FormControl fullWidth>
+                <InputLabel>Origen</InputLabel>
+                <Select
+                  label="Origen"
+                  value={filtroDesdeBodegaId}
+                  onChange={(e) => {
+                    const value = e.target.value as number | "";
+                    setFiltroDesdeBodegaId(value === "" ? "" : Number(value));
+                  }}
+                  disabled={!canAccessAllBodegas && bodegas.length <= 1}
+                >
+                  {canAccessAllBodegas && <MenuItem value="">Todas</MenuItem>}
+                  {bodegas.map((b) => (
+                    <MenuItem key={b.id} value={b.id}>
+                      {b.nombre}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 3 }}>
+              <FormControl fullWidth>
+                <InputLabel>Destino</InputLabel>
+                <Select
+                  label="Destino"
+                  value={filtroHaciaBodegaId}
+                  onChange={(e) => {
+                    const value = e.target.value as number | "";
+                    setFiltroHaciaBodegaId(value === "" ? "" : Number(value));
+                  }}
+                >
+                  <MenuItem value="">Todas</MenuItem>
+                  {bodegas.map((b) => (
+                    <MenuItem key={b.id} value={b.id}>
+                      {b.nombre}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 2 }}>
+              <TextField
+                label="Responsable"
+                fullWidth
+                value={filtroResponsable}
+                onChange={(e) => setFiltroResponsable(e.target.value)}
+              />
+            </Grid>
+          </Grid>
+        </Paper>
+
+        <TableContainer component={Paper} variant="outlined">
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Documento</TableCell>
+                <TableCell>Fecha</TableCell>
+                <TableCell>Origen</TableCell>
+                <TableCell>Destino</TableCell>
+                <TableCell>Responsable</TableCell>
+                <TableCell align="center">Lineas</TableCell>
+                <TableCell align="center">Items</TableCell>
+                <TableCell>Observaciones</TableCell>
+                <TableCell align="right">Acciones</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {loadingTraslados ? (
+                <TableRow>
+                  <TableCell colSpan={9} align="center">
+                    Cargando traslados...
+                  </TableCell>
+                </TableRow>
+              ) : trasladosPaginados.length ? (
+                trasladosPaginados.map((traslado) => {
+                  const lineas = traslado.detalle?.length || 0;
+                  const items = traslado.detalle?.reduce((sum, item) => sum + Number(item.cantidad || 0), 0) || 0;
+                  return (
+                    <TableRow key={traslado.id} hover>
+                      <TableCell>
+                        <Chip size="small" color="primary" variant="outlined" label={traslado.folio || `TR-${traslado.id}`} />
+                      </TableCell>
+                      <TableCell>{formatDateTime(traslado.fecha)}</TableCell>
+                      <TableCell>{traslado.desdeBodega?.nombre || bodegas.find((b) => b.id === traslado.desdeBodegaId)?.nombre || "N/D"}</TableCell>
+                      <TableCell>{traslado.haciaBodega?.nombre || bodegas.find((b) => b.id === traslado.haciaBodegaId)?.nombre || "N/D"}</TableCell>
+                      <TableCell>{traslado.responsable || "N/D"}</TableCell>
+                      <TableCell align="center">{lineas}</TableCell>
+                      <TableCell align="center">{items}</TableCell>
+                      <TableCell>{traslado.observaciones || "-"}</TableCell>
+                      <TableCell align="right">
+                        <Stack direction="row" spacing={0.5} justifyContent="flex-end">
+                          <Button
+                            size="small"
+                            variant="text"
+                            startIcon={<VisibilityOutlined />}
+                            onClick={() => setTrasladoSeleccionado(traslado)}
+                          >
+                            Ver
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="text"
+                            startIcon={<PrintOutlined />}
+                            onClick={() => abrirPdfTrasladoRegistro(traslado)}
+                          >
+                            PDF
+                          </Button>
+                        </Stack>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={9} align="center">
+                    No hay traslados registrados con los filtros seleccionados.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+        <TablePagination
+          component="div"
+          count={traslados.length}
+          page={page}
+          onPageChange={(_, nextPage) => setPage(nextPage)}
+          rowsPerPage={rowsPerPage}
+          onRowsPerPageChange={(e) => {
+            setRowsPerPage(Number(e.target.value));
+            setPage(0);
+          }}
+          rowsPerPageOptions={[5, 10, 25, 50]}
+          labelRowsPerPage="Rows per page:"
+        />
+
+        <Dialog open={Boolean(trasladoSeleccionado)} onClose={() => setTrasladoSeleccionado(null)} fullWidth maxWidth="lg">
+          <DialogTitle>{trasladoSeleccionado ? `Traslado ${trasladoSeleccionado.folio || `TR-${trasladoSeleccionado.id}`}` : "Traslado"}</DialogTitle>
+          <DialogContent dividers>
+            {trasladoSeleccionado && (
+              <Stack spacing={2}>
+                <Grid container spacing={2}>
+                  <Grid size={{ xs: 12, sm: 3 }}>
+                    <Typography variant="caption" color="text.secondary">Fecha</Typography>
+                    <Typography>{formatDateTime(trasladoSeleccionado.fecha)}</Typography>
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 3 }}>
+                    <Typography variant="caption" color="text.secondary">Origen</Typography>
+                    <Typography>{trasladoSeleccionado.desdeBodega?.nombre || "N/D"}</Typography>
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 3 }}>
+                    <Typography variant="caption" color="text.secondary">Destino</Typography>
+                    <Typography>{trasladoSeleccionado.haciaBodega?.nombre || "N/D"}</Typography>
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 3 }}>
+                    <Typography variant="caption" color="text.secondary">Total items</Typography>
+                    <Typography>{totalItemsSeleccionado}</Typography>
+                  </Grid>
+                </Grid>
+                <Grid container spacing={2}>
+                  <Grid size={{ xs: 12, sm: 3 }}>
+                    <Typography variant="caption" color="text.secondary">Responsable</Typography>
+                    <Typography>{trasladoSeleccionado.responsable || "N/D"}</Typography>
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 9 }}>
+                    <Typography variant="caption" color="text.secondary">Observaciones</Typography>
+                    <Typography>{trasladoSeleccionado.observaciones || "Sin observaciones"}</Typography>
+                  </Grid>
+                </Grid>
+                <TableContainer component={Paper} variant="outlined">
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Codigo</TableCell>
+                        <TableCell>Producto</TableCell>
+                        <TableCell>Tipo</TableCell>
+                        <TableCell>Genero</TableCell>
+                        <TableCell>Tela</TableCell>
+                        <TableCell>Talla</TableCell>
+                        <TableCell>Color</TableCell>
+                        <TableCell align="center">Cantidad</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {(trasladoSeleccionado.detalle || []).map((item) => {
+                        const producto = item.producto || productos.find((p) => p.id === item.productoId);
+                        return (
+                          <TableRow key={item.id}>
+                            <TableCell>{producto?.codigo || item.productoId}</TableCell>
+                            <TableCell>{producto?.nombre || "Producto"}</TableCell>
+                            <TableCell>{producto?.tipo || "N/D"}</TableCell>
+                            <TableCell>{producto?.genero || "N/D"}</TableCell>
+                            <TableCell>{resolveTelaNombre(producto || undefined, telas)}</TableCell>
+                            <TableCell>{resolveTallaNombre(producto || undefined, tallas)}</TableCell>
+                            <TableCell>{resolveColorNombre(producto || undefined, colores)}</TableCell>
+                            <TableCell align="center">{item.cantidad}</TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Stack>
+            )}
+          </DialogContent>
+          <DialogActions>
+            {trasladoSeleccionado && (
+              <Button startIcon={<PrintOutlined />} onClick={() => abrirPdfTrasladoRegistro(trasladoSeleccionado)}>
+                Reimprimir PDF
+              </Button>
+            )}
+            <Button onClick={() => setTrasladoSeleccionado(null)}>Cerrar</Button>
+          </DialogActions>
+        </Dialog>
+      </Paper>
+    );
+  }
+
   return (
     <Paper sx={{ p: 3 }}>
-      <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2 }}>
-        <SwapHorizIcon />
-        <Typography variant="h4">Traslados entre bodegas</Typography>
+      <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" alignItems={{ xs: "flex-start", sm: "center" }} spacing={1} sx={{ mb: 2 }}>
+        <Stack direction="row" alignItems="center" spacing={1}>
+          <SwapHorizIcon color="primary" />
+          <Typography variant="h4">Traslados entre bodegas</Typography>
+        </Stack>
+        <Button startIcon={<ArrowBackOutlined />} variant="outlined" onClick={() => setVista("listado")}>
+          Regresar
+        </Button>
       </Stack>
       <Divider sx={{ mb: 2 }} />
 
@@ -575,7 +970,7 @@ export default function Traslados() {
               label="Bodega origen"
               value={desdeBodegaId === "" ? "" : desdeBodegaId}
               onChange={(e) => void onBodegaChange("desde", Number(e.target.value))}
-              disabled={!!userBodegaId && !canAccessAllBodegas}
+              disabled={bodegas.length <= 1}
             >
               {bodegas.map((b) => (
                 <MenuItem key={b.id} value={b.id} disabled={Number(haciaBodegaId || 0) === b.id}>

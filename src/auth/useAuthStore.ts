@@ -28,6 +28,7 @@ interface AuthState {
   permisos: string[];
   bodegaId: string | null;
   bodegaNombre: string | null;
+  bodegasPermitidas: any[];
   id: number | null;
 
   login: (data: any) => void;
@@ -49,6 +50,13 @@ export const useAuthStore = create<AuthState>((set) => ({
   permisos: readStoredPermisos(),
   bodegaId: localStorage.getItem('bodegaId'),
   bodegaNombre: localStorage.getItem('bodegaNombre'),
+  bodegasPermitidas: (() => {
+    try {
+      return JSON.parse(localStorage.getItem('bodegasPermitidas:v1') || '[]');
+    } catch {
+      return [];
+    }
+  })(),
   id: Number(localStorage.getItem('id') || '') || null,
 
   login: (data) => {
@@ -71,6 +79,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (data.bodegaNombre !== undefined && data.bodegaNombre !== null) {
       localStorage.setItem('bodegaNombre', data.bodegaNombre);
     }
+    localStorage.setItem('bodegasPermitidas:v1', JSON.stringify(data.bodegasPermitidas || []));
 
     set({
       token: data.token,
@@ -86,6 +95,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       permisos: data.permisos ?? [],
       bodegaId: data.bodegaId ?? null,
       bodegaNombre: data.bodegaNombre ?? null,
+      bodegasPermitidas: data.bodegasPermitidas ?? [],
       id: data.id ?? null,
     });
   },
@@ -131,6 +141,9 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (data.bodegaNombre !== undefined) {
       localStorage.setItem('bodegaNombre', data.bodegaNombre ?? '');
     }
+    if (data.bodegasPermitidas !== undefined) {
+      localStorage.setItem('bodegasPermitidas:v1', JSON.stringify(data.bodegasPermitidas || []));
+    }
 
     set((state) => ({
       token: state.token,
@@ -147,6 +160,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       permisos: data.permisos !== undefined ? data.permisos ?? [] : state.permisos,
       bodegaId: data.bodegaId !== undefined ? (data.bodegaId != null ? String(data.bodegaId) : null) : state.bodegaId,
       bodegaNombre: data.bodegaNombre !== undefined ? data.bodegaNombre ?? null : state.bodegaNombre,
+      bodegasPermitidas: data.bodegasPermitidas !== undefined ? data.bodegasPermitidas ?? [] : state.bodegasPermitidas,
       id: data.id !== undefined ? (data.id != null ? Number(data.id) : null) : state.id,
     }));
   },
@@ -167,6 +181,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       permisos: [],
       bodegaId: null,
       bodegaNombre: null,
+      bodegasPermitidas: [],
       id: null,
     });
   },

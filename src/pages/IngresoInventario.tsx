@@ -19,11 +19,20 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  TablePagination,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Chip,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
 import AddIcon from "@mui/icons-material/Add";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
+import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
+import PrintOutlined from "@mui/icons-material/PrintOutlined";
+import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { hasPermission } from "../auth/permissions";
@@ -75,6 +84,22 @@ interface CapturaArticulo {
   stockActual: number | null;
 }
 
+interface IngresoRegistro {
+  id: number;
+  folio?: string | null;
+  fecha: string;
+  bodegaId: number;
+  observaciones?: string | null;
+  responsable?: string | null;
+  bodega?: Bodega | null;
+  detalle?: Array<{
+    id: number;
+    productoId: number;
+    cantidad: number;
+    producto?: Producto | null;
+  }>;
+}
+
 const detalleInicial: CapturaArticulo = {
   productoId: "",
   cantidad: 1,
@@ -110,7 +135,35 @@ const resolveColorNombre = (prod: Producto | undefined, colores: CatalogoItem[])
 const uniqueSorted = (values: string[]) =>
   Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b));
 
+const toInputDate = (date: Date) => {
+  const offset = date.getTimezoneOffset();
+  const localDate = new Date(date.getTime() - offset * 60000);
+  return localDate.toISOString().slice(0, 10);
+};
+
+const formatDateTime = (value?: string | null) => {
+  if (!value) return "N/D";
+  return new Date(value).toLocaleString("es-GT", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
 export default function IngresoInventario() {
+  const today = useMemo(() => toInputDate(new Date()), []);
+  const [vista, setVista] = useState<"listado" | "nuevo">("listado");
+  const [ingresos, setIngresos] = useState<IngresoRegistro[]>([]);
+  const [loadingIngresos, setLoadingIngresos] = useState(false);
+  const [filtroDesde, setFiltroDesde] = useState(today);
+  const [filtroHasta, setFiltroHasta] = useState(today);
+  const [filtroBodega, setFiltroBodega] = useState<number | "">("");
+  const [filtroResponsable, setFiltroResponsable] = useState("");
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [ingresoSeleccionado, setIngresoSeleccionado] = useState<IngresoRegistro | null>(null);
   const [bodegas, setBodegas] = useState<Bodega[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [telas, setTelas] = useState<CatalogoItem[]>([]);
@@ -132,10 +185,30 @@ export default function IngresoInventario() {
   const { fetchConfig } = useSystemConfigStore();
   const canAccessAllBodegas = hasPermission(rol, permisos, "sistema.multi-tienda");
 
+  const cargarIngresos = useCallback(async () => {
+    try {
+      setLoadingIngresos(true);
+      const resp = await api.get("/ingresos", {
+        params: {
+          desde: filtroDesde || undefined,
+          hasta: filtroHasta || undefined,
+          bodegaId: filtroBodega || undefined,
+          responsable: filtroResponsable.trim() || undefined,
+        },
+      });
+      setIngresos(Array.isArray(resp.data) ? resp.data : []);
+      setPage(0);
+    } catch {
+      Swal.fire("Error", "No se pudieron cargar los ingresos de inventario", "error");
+    } finally {
+      setLoadingIngresos(false);
+    }
+  }, [filtroDesde, filtroHasta, filtroBodega, filtroResponsable]);
+
   const cargarCatalogos = async () => {
     try {
       const [respBod, respProd, respTelas, respTallas, respColores] = await Promise.all([
-        api.get("/bodegas"),
+        api.get("/bodegas", { params: { operacion: "ajustes" } }),
         api.get("/productos"),
         api.get("/telas").catch(() => ({ data: [] })),
         api.get("/tallas").catch(() => ({ data: [] })),
@@ -157,12 +230,17 @@ export default function IngresoInventario() {
   }, [fetchConfig]);
 
   useEffect(() => {
-    if (userBodegaId && !canAccessAllBodegas) {
+    void cargarIngresos();
+  }, [cargarIngresos]);
+
+  useEffect(() => {
+    if (userBodegaId && !canAccessAllBodegas && !bodegaId) {
       const parsed = Number(userBodegaId);
       const exists = bodegas.some((b) => b.id === parsed);
       setBodegaId(exists ? parsed : "");
+      setFiltroBodega((prev) => prev || (exists ? parsed : ""));
     }
-  }, [userBodegaId, canAccessAllBodegas, bodegas]);
+  }, [userBodegaId, canAccessAllBodegas, bodegas, bodegaId]);
 
   const fetchStockActual = async (bodega: number, producto: number) => {
     if (!bodega || !producto) return null;
@@ -447,7 +525,7 @@ export default function IngresoInventario() {
 
     const bodegaNombre = bodegas.find((b) => b.id === Number(bodegaId))?.nombre || "N/D";
     const fecha = ingreso?.fecha ? new Date(ingreso.fecha) : new Date();
-    const folio = ingreso?.id ? `ING-${ingreso.id}` : "Pendiente";
+    const folio = ingreso?.folio || (ingreso?.id ? `ING-${ingreso.id}` : "Pendiente");
     const responsable = usuario || "Responsable";
 
     const html = buildIngresoInventarioPdfHtml({
@@ -468,6 +546,41 @@ export default function IngresoInventario() {
           tela: obtenerTela(producto),
           talla: obtenerTalla(producto),
           color: obtenerColor(producto),
+          cantidad: Number(item.cantidad) || 0,
+        };
+      }),
+    });
+
+    nuevaVentana.document.write(html);
+    nuevaVentana.document.close();
+  };
+
+  const abrirPdfIngresoRegistro = (ingreso: IngresoRegistro) => {
+    const nuevaVentana = window.open("", "_blank");
+    if (!nuevaVentana) {
+      Swal.fire("Aviso", "Habilita las ventanas emergentes para ver el PDF", "info");
+      return;
+    }
+
+    const detalleRegistro = Array.isArray(ingreso.detalle) ? ingreso.detalle : [];
+    const html = buildIngresoInventarioPdfHtml({
+      folio: ingreso.folio || `ING-${ingreso.id}`,
+      fecha: ingreso.fecha ? new Date(ingreso.fecha) : new Date(),
+      bodega: ingreso.bodega?.nombre || bodegas.find((b) => b.id === Number(ingreso.bodegaId))?.nombre || "N/D",
+      responsable: ingreso.responsable || "Responsable",
+      observaciones: ingreso.observaciones || "",
+      totalItems: detalleRegistro.reduce((sum, item) => sum + Number(item.cantidad || 0), 0),
+      logoUrl: LOGO_URL,
+      items: detalleRegistro.map((item) => {
+        const producto = item.producto || productos.find((p) => p.id === item.productoId);
+        return {
+          codigo: producto?.codigo || `${item.productoId}`,
+          nombre: producto?.nombre || "Producto",
+          tipo: producto?.tipo || "N/D",
+          genero: producto?.genero || "N/D",
+          tela: resolveTelaNombre(producto || undefined, telas),
+          talla: resolveTallaNombre(producto || undefined, tallas),
+          color: resolveColorNombre(producto || undefined, colores),
           cantidad: Number(item.cantidad) || 0,
         };
       }),
@@ -543,17 +656,264 @@ export default function IngresoInventario() {
       setObservaciones("");
       setDetalle([]);
       limpiarArticulo();
+      await cargarIngresos();
+      setVista("listado");
     } catch (error: any) {
       const msg = error?.response?.data?.message || error?.message || "No se pudo guardar";
       Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
     }
   };
 
+  const ingresosPaginados = ingresos.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+  const totalItemsSeleccionado =
+    ingresoSeleccionado?.detalle?.reduce((sum, item) => sum + Number(item.cantidad || 0), 0) || 0;
+
+  if (vista === "listado") {
+    return (
+      <Paper sx={{ p: 3 }}>
+        <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" alignItems={{ xs: "flex-start", sm: "center" }} spacing={1} sx={{ mb: 2 }}>
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <Inventory2Outlined color="primary" />
+            <Typography variant="h4">Ingresos de inventario</Typography>
+          </Stack>
+          <Button
+            startIcon={<AddIcon />}
+            variant="contained"
+            onClick={() => {
+              limpiarArticulo();
+              setDetalle([]);
+              setObservaciones("");
+              setVista("nuevo");
+            }}
+          >
+            Nuevo ingreso
+          </Button>
+        </Stack>
+
+        <Divider sx={{ mb: 2 }} />
+
+        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+          <Grid container spacing={2} alignItems="center">
+            <Grid size={{ xs: 12, sm: 3 }}>
+              <TextField
+                label="Desde"
+                type="date"
+                fullWidth
+                value={filtroDesde}
+                onChange={(e) => setFiltroDesde(e.target.value)}
+                InputLabelProps={{ shrink: true }}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 3 }}>
+              <TextField
+                label="Hasta"
+                type="date"
+                fullWidth
+                value={filtroHasta}
+                onChange={(e) => setFiltroHasta(e.target.value)}
+                InputLabelProps={{ shrink: true }}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 3 }}>
+              <FormControl fullWidth>
+                <InputLabel>Bodega</InputLabel>
+                <Select
+                  label="Bodega"
+                  value={filtroBodega}
+                  onChange={(e) => {
+                    const value = e.target.value as number | "";
+                    setFiltroBodega(value === "" ? "" : Number(value));
+                  }}
+                  disabled={!canAccessAllBodegas && bodegas.length <= 1}
+                >
+                  {canAccessAllBodegas && <MenuItem value="">Todas</MenuItem>}
+                  {bodegas.map((b) => (
+                    <MenuItem key={b.id} value={b.id}>
+                      {b.nombre}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 3 }}>
+              <TextField
+                label="Responsable"
+                fullWidth
+                value={filtroResponsable}
+                onChange={(e) => setFiltroResponsable(e.target.value)}
+              />
+            </Grid>
+          </Grid>
+        </Paper>
+
+        <TableContainer component={Paper} variant="outlined">
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Registro</TableCell>
+                <TableCell>Fecha</TableCell>
+                <TableCell>Bodega</TableCell>
+                <TableCell>Responsable</TableCell>
+                <TableCell align="center">Lineas</TableCell>
+                <TableCell align="center">Items</TableCell>
+                <TableCell>Observaciones</TableCell>
+                <TableCell align="right">Acciones</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {loadingIngresos ? (
+                <TableRow>
+                  <TableCell colSpan={8} align="center">
+                    Cargando ingresos...
+                  </TableCell>
+                </TableRow>
+              ) : ingresosPaginados.length ? (
+                ingresosPaginados.map((ingreso) => {
+                  const lineas = ingreso.detalle?.length || 0;
+                  const items = ingreso.detalle?.reduce((sum, item) => sum + Number(item.cantidad || 0), 0) || 0;
+                  return (
+                    <TableRow key={ingreso.id} hover>
+                      <TableCell>
+                        <Chip size="small" color="primary" variant="outlined" label={ingreso.folio || `ING-${ingreso.id}`} />
+                      </TableCell>
+                      <TableCell>{formatDateTime(ingreso.fecha)}</TableCell>
+                      <TableCell>{ingreso.bodega?.nombre || bodegas.find((b) => b.id === ingreso.bodegaId)?.nombre || "N/D"}</TableCell>
+                      <TableCell>{ingreso.responsable || "N/D"}</TableCell>
+                      <TableCell align="center">{lineas}</TableCell>
+                      <TableCell align="center">{items}</TableCell>
+                      <TableCell>{ingreso.observaciones || "-"}</TableCell>
+                      <TableCell align="right">
+                        <Stack direction="row" spacing={0.5} justifyContent="flex-end">
+                          <Button
+                            size="small"
+                            variant="text"
+                            startIcon={<VisibilityOutlined />}
+                            onClick={() => setIngresoSeleccionado(ingreso)}
+                          >
+                            Ver
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="text"
+                            startIcon={<PrintOutlined />}
+                            onClick={() => abrirPdfIngresoRegistro(ingreso)}
+                          >
+                            PDF
+                          </Button>
+                        </Stack>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={8} align="center">
+                    No hay ingresos registrados con los filtros seleccionados.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+        <TablePagination
+          component="div"
+          count={ingresos.length}
+          page={page}
+          onPageChange={(_, nextPage) => setPage(nextPage)}
+          rowsPerPage={rowsPerPage}
+          onRowsPerPageChange={(e) => {
+            setRowsPerPage(Number(e.target.value));
+            setPage(0);
+          }}
+          rowsPerPageOptions={[5, 10, 25, 50]}
+          labelRowsPerPage="Rows per page:"
+        />
+
+        <Dialog open={Boolean(ingresoSeleccionado)} onClose={() => setIngresoSeleccionado(null)} fullWidth maxWidth="lg">
+          <DialogTitle>{ingresoSeleccionado ? `Ingreso ${ingresoSeleccionado.folio || `ING-${ingresoSeleccionado.id}`}` : "Ingreso"}</DialogTitle>
+          <DialogContent dividers>
+            {ingresoSeleccionado && (
+              <Stack spacing={2}>
+                <Grid container spacing={2}>
+                  <Grid size={{ xs: 12, sm: 3 }}>
+                    <Typography variant="caption" color="text.secondary">Fecha</Typography>
+                    <Typography>{formatDateTime(ingresoSeleccionado.fecha)}</Typography>
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 3 }}>
+                    <Typography variant="caption" color="text.secondary">Bodega</Typography>
+                    <Typography>{ingresoSeleccionado.bodega?.nombre || "N/D"}</Typography>
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 3 }}>
+                    <Typography variant="caption" color="text.secondary">Responsable</Typography>
+                    <Typography>{ingresoSeleccionado.responsable || "N/D"}</Typography>
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 3 }}>
+                    <Typography variant="caption" color="text.secondary">Total items</Typography>
+                    <Typography>{totalItemsSeleccionado}</Typography>
+                  </Grid>
+                </Grid>
+                <Typography variant="body2" color="text.secondary">
+                  {ingresoSeleccionado.observaciones || "Sin observaciones"}
+                </Typography>
+                <TableContainer component={Paper} variant="outlined">
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Codigo</TableCell>
+                        <TableCell>Producto</TableCell>
+                        <TableCell>Tipo</TableCell>
+                        <TableCell>Genero</TableCell>
+                        <TableCell>Tela</TableCell>
+                        <TableCell>Talla</TableCell>
+                        <TableCell>Color</TableCell>
+                        <TableCell align="center">Cantidad</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {(ingresoSeleccionado.detalle || []).map((item) => {
+                        const producto = item.producto || productos.find((p) => p.id === item.productoId);
+                        return (
+                          <TableRow key={item.id}>
+                            <TableCell>{producto?.codigo || item.productoId}</TableCell>
+                            <TableCell>{producto?.nombre || "Producto"}</TableCell>
+                            <TableCell>{producto?.tipo || "N/D"}</TableCell>
+                            <TableCell>{producto?.genero || "N/D"}</TableCell>
+                            <TableCell>{resolveTelaNombre(producto || undefined, telas)}</TableCell>
+                            <TableCell>{resolveTallaNombre(producto || undefined, tallas)}</TableCell>
+                            <TableCell>{resolveColorNombre(producto || undefined, colores)}</TableCell>
+                            <TableCell align="center">{item.cantidad}</TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Stack>
+            )}
+          </DialogContent>
+          <DialogActions>
+            {ingresoSeleccionado && (
+              <Button startIcon={<PrintOutlined />} onClick={() => abrirPdfIngresoRegistro(ingresoSeleccionado)}>
+                Reimprimir PDF
+              </Button>
+            )}
+            <Button onClick={() => setIngresoSeleccionado(null)}>Cerrar</Button>
+          </DialogActions>
+        </Dialog>
+      </Paper>
+    );
+  }
+
   return (
     <Paper sx={{ p: 3 }}>
-      <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2 }}>
-        <Inventory2Outlined color="primary" />
-        <Typography variant="h4">Ingreso de inventario</Typography>
+      <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" alignItems={{ xs: "flex-start", sm: "center" }} spacing={1} sx={{ mb: 2 }}>
+        <Stack direction="row" alignItems="center" spacing={1}>
+          <Inventory2Outlined color="primary" />
+          <Typography variant="h4">Ingreso de inventario</Typography>
+        </Stack>
+        <Button startIcon={<ArrowBackOutlined />} variant="outlined" onClick={() => setVista("listado")}>
+          Regresar
+        </Button>
       </Stack>
       <Divider sx={{ mb: 2 }} />
 
@@ -565,7 +925,7 @@ export default function IngresoInventario() {
               label="Bodega"
               value={bodegaId === "" ? "" : bodegaId}
               onChange={(e) => void onBodegaChange(Number(e.target.value))}
-              disabled={!!userBodegaId && !canAccessAllBodegas}
+              disabled={bodegas.length <= 1}
             >
               {bodegas.map((b) => (
                 <MenuItem key={b.id} value={b.id}>

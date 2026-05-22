@@ -51,7 +51,6 @@ interface NotifConfig {
   highSaleThreshold: number;
   pedidoAlertRoleIds: number[];
   vendedorDropdownBodegaIds: number[];
-  salesInventoryEnabled: boolean;
   emailEnabled: boolean;
   whatsappEnabled: boolean;
   smtpHost: string;
@@ -376,7 +375,6 @@ export default function Admin() {
     highSaleThreshold: 1000,
     pedidoAlertRoleIds: [],
     vendedorDropdownBodegaIds: [],
-    salesInventoryEnabled: true,
     emailEnabled: false,
     whatsappEnabled: false,
     smtpHost: "smtp.gmail.com",
@@ -483,7 +481,6 @@ export default function Admin() {
         highSaleThreshold: data.highSaleThreshold ?? 1000,
         pedidoAlertRoleIds: normalizeRoleIds(data.pedidoAlertRoleIds),
         vendedorDropdownBodegaIds: normalizeRoleIds(data.vendedorDropdownBodegaIds),
-        salesInventoryEnabled: data.salesInventoryEnabled !== false,
         emailEnabled: Boolean(data.emailTo),
         whatsappEnabled: Boolean(data.whatsappTo),
         smtpHost: data.smtpHost || 'smtp.gmail.com',
@@ -552,7 +549,6 @@ export default function Admin() {
         stockThreshold: config.stockThreshold,
         highSaleThreshold: config.highSaleThreshold,
         pedidoAlertRoleIds: config.pedidoAlertRoleIds,
-        salesInventoryEnabled: config.salesInventoryEnabled,
         smtpHost: config.smtpHost,
         smtpPort: config.smtpPort,
         smtpUser: config.smtpUser,
@@ -1147,38 +1143,6 @@ export default function Admin() {
                 disabled={loading || !mensajeActualizacion.trim()}
               >
                 Enviar mensaje y cerrar sesiones
-              </Button>
-            </Stack>
-          </Stack>
-        </SettingsSection>
-      )}
-
-      {canManageAdmin && (
-        <SettingsSection
-          title="Inventario"
-          description="Reglas de inventario que aplican al guardar ventas."
-          icon={<Inventory2Outlined color="primary" />}
-        >
-          <Stack spacing={1.5}>
-            <Stack direction="row" spacing={1} alignItems="center">
-              <Inventory2Outlined color="primary" />
-              <Typography variant="h6">Inventario en ventas</Typography>
-            </Stack>
-            <Typography variant="body2" color="text.secondary">
-              Controla si una venta valida stock disponible y descuenta inventario al guardarse.
-            </Typography>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={config.salesInventoryEnabled}
-                  onChange={(e) => setConfig((prev) => ({ ...prev, salesInventoryEnabled: e.target.checked }))}
-                />
-              }
-              label={config.salesInventoryEnabled ? "Usar inventario en ventas" : "No usar inventario en ventas"}
-            />
-            <Stack direction="row" justifyContent="flex-end">
-              <Button variant="contained" onClick={guardar} disabled={loading}>
-                Guardar configuracion
               </Button>
             </Stack>
           </Stack>

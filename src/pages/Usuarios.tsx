@@ -21,6 +21,9 @@ import {
   TextField,
   Typography,
   Chip,
+  Checkbox,
+  FormControlLabel,
+  Divider,
 } from "@mui/material";
 import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
@@ -56,6 +59,7 @@ interface Usuario {
   rol?: { id: number; nombre: string };
   bodegaId?: number | null;
   bodega?: { id: number; nombre: string };
+  bodegasPermitidas?: UsuarioBodegaAcceso[];
 }
 
 interface Rol {
@@ -66,6 +70,18 @@ interface Rol {
 interface Bodega {
   id: number;
   nombre: string;
+  tipo?: string | null;
+  activa?: boolean;
+}
+
+interface UsuarioBodegaAcceso {
+  id?: number;
+  bodegaId: number;
+  bodega?: Bodega;
+  puedeConsultarStock: boolean;
+  puedeVender: boolean;
+  puedeTrasladar: boolean;
+  puedeAjustar: boolean;
 }
 
 const getImageUrl = (path?: string | null) => {
@@ -100,6 +116,7 @@ export default function Usuarios() {
   const [password, setPassword] = useState("");
   const [rolId, setRolId] = useState<number | "">("");
   const [bodegaId, setBodegaId] = useState<number | "">("");
+  const [bodegasPermitidas, setBodegasPermitidas] = useState<UsuarioBodegaAcceso[]>([]);
   const [fotoFile, setFotoFile] = useState<File | null>(null);
   const [fotoPreview, setFotoPreview] = useState("");
   const { rol, permisos } = useAuthStore();
@@ -188,6 +205,7 @@ export default function Usuarios() {
     setPassword("");
     setRolId("");
     setBodegaId("");
+    setBodegasPermitidas([]);
     setFotoFile(null);
     setFotoPreview("");
   };
@@ -215,6 +233,16 @@ export default function Usuarios() {
     setPassword("");
     setRolId(u.rolId || "");
     setBodegaId(u.bodegaId ?? "");
+    setBodegasPermitidas(
+      (u.bodegasPermitidas || []).map((item) => ({
+        bodegaId: Number(item.bodegaId),
+        bodega: item.bodega,
+        puedeConsultarStock: item.puedeConsultarStock !== false,
+        puedeVender: item.puedeVender !== false,
+        puedeTrasladar: Boolean(item.puedeTrasladar),
+        puedeAjustar: Boolean(item.puedeAjustar),
+      })),
+    );
     setFotoFile(null);
     setFotoPreview(getImageUrl(u.fotoUrl));
     setOpenForm(true);
@@ -269,6 +297,7 @@ export default function Usuarios() {
     payload.append("fechaNacimiento", fechaNacimiento.trim());
     payload.append("rolId", String(rolId));
     payload.append("bodegaId", String(bodegaId));
+    payload.append("bodegasPermitidas", JSON.stringify(bodegasPermitidas));
     if (password.trim()) payload.append("password", password);
     if (fotoFile) payload.append("foto", fotoFile);
 
@@ -342,6 +371,34 @@ export default function Usuarios() {
     }
   };
 
+  const toggleBodegaPermitida = (bodega: Bodega, checked: boolean) => {
+    const bodegaIdNumber = Number(bodega.id);
+    setBodegasPermitidas((prev) => {
+      if (!checked) return prev.filter((item) => Number(item.bodegaId) !== bodegaIdNumber);
+      if (prev.some((item) => Number(item.bodegaId) === bodegaIdNumber)) return prev;
+      return [
+        ...prev,
+        {
+          bodegaId: bodegaIdNumber,
+          bodega,
+          puedeConsultarStock: true,
+          puedeVender: true,
+          puedeTrasladar: false,
+          puedeAjustar: false,
+        },
+      ];
+    });
+  };
+
+  const updateBodegaPermiso = (bodegaIdValue: number, field: keyof UsuarioBodegaAcceso, checked: boolean) => {
+    setBodegasPermitidas((prev) =>
+      prev.map((item) => (Number(item.bodegaId) === Number(bodegaIdValue) ? { ...item, [field]: checked } : item)),
+    );
+  };
+
+  const accesoForBodega = (bodegaIdValue: number) =>
+    bodegasPermitidas.find((item) => Number(item.bodegaId) === Number(bodegaIdValue));
+
   return (
     <Paper sx={{ p: 3 }}>
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
@@ -399,7 +456,14 @@ export default function Usuarios() {
                 <TableCell>{u.dpi || "N/D"}</TableCell>
                 <TableCell>{u.correo || "N/D"}</TableCell>
                 <TableCell>{u.rol?.nombre || u.rolId}</TableCell>
-                <TableCell>{u.bodega?.nombre || u.bodegaId || "N/D"}</TableCell>
+                <TableCell>
+                  <Typography variant="body2">{u.bodega?.nombre || u.bodegaId || "N/D"}</Typography>
+                  {Boolean(u.bodegasPermitidas?.length) && (
+                    <Typography variant="caption" color="text.secondary">
+                      +{u.bodegasPermitidas?.length} bodegas
+                    </Typography>
+                  )}
+                </TableCell>
                 <TableCell>
                   <Chip size="small" color={u.activo ? "success" : "default"} label={u.activo ? "Activo" : "Deshabilitado"} />
                 </TableCell>
@@ -505,6 +569,37 @@ export default function Usuarios() {
                   </MenuItem>
                 ))}
               </TextField>
+            </Stack>
+            <Divider />
+            <Stack spacing={1}>
+              <Typography variant="subtitle2">Bodegas adicionales permitidas</Typography>
+              <Typography variant="body2" color="text.secondary">
+                La bodega principal se mantiene como tienda base. Agrega aca bodegas extra como DISPAREJOS y define que puede hacer el usuario.
+              </Typography>
+              <Stack spacing={1}>
+                {bodegas
+                  .filter((b) => Number(b.id) !== Number(bodegaId || 0))
+                  .map((b) => {
+                    const acceso = accesoForBodega(b.id);
+                    const checked = Boolean(acceso);
+                    return (
+                      <Paper key={b.id} variant="outlined" sx={{ p: 1.5, borderRadius: 1 }}>
+                        <Stack direction={{ xs: "column", md: "row" }} spacing={1} alignItems={{ xs: "flex-start", md: "center" }} justifyContent="space-between">
+                          <FormControlLabel
+                            control={<Checkbox checked={checked} onChange={(e) => toggleBodegaPermitida(b, e.target.checked)} disabled={!canManage} />}
+                            label={`${b.nombre}${b.tipo ? ` (${b.tipo})` : ""}`}
+                          />
+                          <Stack direction="row" spacing={1} flexWrap="wrap">
+                            <FormControlLabel control={<Checkbox size="small" checked={acceso?.puedeConsultarStock ?? false} onChange={(e) => updateBodegaPermiso(b.id, "puedeConsultarStock", e.target.checked)} disabled={!checked || !canManage} />} label="Stock" />
+                            <FormControlLabel control={<Checkbox size="small" checked={acceso?.puedeVender ?? false} onChange={(e) => updateBodegaPermiso(b.id, "puedeVender", e.target.checked)} disabled={!checked || !canManage} />} label="Vender" />
+                            <FormControlLabel control={<Checkbox size="small" checked={acceso?.puedeTrasladar ?? false} onChange={(e) => updateBodegaPermiso(b.id, "puedeTrasladar", e.target.checked)} disabled={!checked || !canManage} />} label="Trasladar" />
+                            <FormControlLabel control={<Checkbox size="small" checked={acceso?.puedeAjustar ?? false} onChange={(e) => updateBodegaPermiso(b.id, "puedeAjustar", e.target.checked)} disabled={!checked || !canManage} />} label="Ajustar" />
+                          </Stack>
+                        </Stack>
+                      </Paper>
+                    );
+                  })}
+              </Stack>
             </Stack>
 
             <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ xs: "flex-start", sm: "center" }}>

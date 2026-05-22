@@ -17,6 +17,10 @@ import {
   DialogContent,
   DialogActions,
   TextField,
+  MenuItem,
+  Checkbox,
+  FormControlLabel,
+  Chip,
 } from "@mui/material";
 import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
 import AddOutlined from "@mui/icons-material/AddOutlined";
@@ -34,7 +38,20 @@ interface Bodega {
   id: number;
   nombre: string;
   ubicacion?: string | null;
+  tipo?: string | null;
+  activa?: boolean;
+  permiteVentas?: boolean;
+  usaInventarioVentas?: boolean;
+  permitePedidos?: boolean;
+  permiteTraslados?: boolean;
+  visibleVendedores?: boolean;
+  requiereAutorizacion?: boolean;
+  ordenPrioridad?: number;
+  observaciones?: string | null;
+  _count?: { inventario?: number; usuarios?: number; usuariosPermitidos?: number; ventas?: number };
 }
+
+const tiposBodega = ["tienda", "disparejos", "produccion", "general", "apartados", "otros"];
 
 export default function Bodegas() {
   const [bodegas, setBodegas] = useState<Bodega[]>([]);
@@ -43,6 +60,16 @@ export default function Bodegas() {
   const [editing, setEditing] = useState<Bodega | null>(null);
   const [nombre, setNombre] = useState("");
   const [ubicacion, setUbicacion] = useState("");
+  const [tipo, setTipo] = useState("tienda");
+  const [activa, setActiva] = useState(true);
+  const [permiteVentas, setPermiteVentas] = useState(true);
+  const [usaInventarioVentas, setUsaInventarioVentas] = useState(false);
+  const [permitePedidos, setPermitePedidos] = useState(true);
+  const [permiteTraslados, setPermiteTraslados] = useState(true);
+  const [visibleVendedores, setVisibleVendedores] = useState(false);
+  const [requiereAutorizacion, setRequiereAutorizacion] = useState(false);
+  const [ordenPrioridad, setOrdenPrioridad] = useState("100");
+  const [observaciones, setObservaciones] = useState("");
   const { rol, permisos } = useAuthStore();
   const denyAlertShown = useRef(false);
   const canView = hasPermission(rol, permisos, "bodegas.view");
@@ -81,6 +108,16 @@ export default function Bodegas() {
     setEditing(null);
     setNombre("");
     setUbicacion("");
+    setTipo("tienda");
+    setActiva(true);
+    setPermiteVentas(true);
+    setUsaInventarioVentas(false);
+    setPermitePedidos(true);
+    setPermiteTraslados(true);
+    setVisibleVendedores(false);
+    setRequiereAutorizacion(false);
+    setOrdenPrioridad("100");
+    setObservaciones("");
     setOpenForm(true);
   };
 
@@ -89,6 +126,16 @@ export default function Bodegas() {
     setEditing(b);
     setNombre(b.nombre);
     setUbicacion(b.ubicacion || "");
+    setTipo(b.tipo || "tienda");
+    setActiva(b.activa !== false);
+    setPermiteVentas(b.permiteVentas !== false);
+    setUsaInventarioVentas(Boolean(b.usaInventarioVentas));
+    setPermitePedidos(b.permitePedidos !== false);
+    setPermiteTraslados(b.permiteTraslados !== false);
+    setVisibleVendedores(Boolean(b.visibleVendedores));
+    setRequiereAutorizacion(Boolean(b.requiereAutorizacion));
+    setOrdenPrioridad(String(b.ordenPrioridad ?? 100));
+    setObservaciones(b.observaciones || "");
     setOpenForm(true);
   };
 
@@ -98,7 +145,20 @@ export default function Bodegas() {
       return;
     }
 
-    const payload = { nombre: nombre.trim(), ubicacion: ubicacion.trim() || null };
+    const payload = {
+      nombre: nombre.trim(),
+      ubicacion: ubicacion.trim() || null,
+      tipo,
+      activa,
+      permiteVentas,
+      usaInventarioVentas,
+      permitePedidos,
+      permiteTraslados,
+      visibleVendedores,
+      requiereAutorizacion,
+      ordenPrioridad: Number(ordenPrioridad || 100),
+      observaciones: observaciones.trim() || null,
+    };
     if (!payload.nombre) {
       Swal.fire("Validacion", "Ingresa el nombre de la bodega", "info");
       return;
@@ -184,17 +244,39 @@ export default function Bodegas() {
               <TableCell>ID</TableCell>
               <TableCell>Nombre</TableCell>
               <TableCell>Ubicacion</TableCell>
+              <TableCell>Tipo</TableCell>
+              <TableCell>Estado</TableCell>
+              <TableCell>Uso</TableCell>
+              <TableCell>Accesos</TableCell>
               <TableCell align="right">Acciones</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {loading ? (
-              <UniformaTableLoadingRow colSpan={4} />
+              <UniformaTableLoadingRow colSpan={8} />
             ) : paginatedRows.map((b) => (
               <TableRow key={b.id}>
                 <TableCell>{b.id}</TableCell>
                 <TableCell>{b.nombre}</TableCell>
                 <TableCell>{b.ubicacion || "N/D"}</TableCell>
+                <TableCell>{b.tipo || "tienda"}</TableCell>
+                <TableCell>
+                  <Chip size="small" color={b.activa === false ? "default" : "success"} label={b.activa === false ? "Inactiva" : "Activa"} />
+                </TableCell>
+                <TableCell>
+                  <Stack direction="row" spacing={0.5} flexWrap="wrap">
+                    {b.permiteVentas !== false && <Chip size="small" label="Ventas" />}
+                    {b.usaInventarioVentas && <Chip size="small" color="primary" label="Inv. ventas" />}
+                    {b.permitePedidos !== false && <Chip size="small" label="Pedidos" />}
+                    {b.permiteTraslados !== false && <Chip size="small" label="Traslados" />}
+                  </Stack>
+                </TableCell>
+                <TableCell>
+                  <Typography variant="body2">{b.visibleVendedores ? "Visible vendedores" : "Asignacion manual"}</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {b._count?.usuariosPermitidos || 0} adicionales
+                  </Typography>
+                </TableCell>
                 <TableCell align="right">
                   <Stack direction="row" spacing={1} justifyContent="flex-end">
                     <Button
@@ -222,7 +304,7 @@ export default function Bodegas() {
             ))}
             {!loading && !bodegas.length && (
               <TableRow>
-                <TableCell colSpan={4} align="center">
+                <TableCell colSpan={8} align="center">
                   No hay bodegas registradas.
                 </TableCell>
               </TableRow>
@@ -232,7 +314,7 @@ export default function Bodegas() {
       </TableContainer>
       <TablePagination {...paginationProps} />
 
-      <Dialog open={openForm} onClose={() => setOpenForm(false)} fullWidth maxWidth="sm">
+      <Dialog open={openForm} onClose={() => setOpenForm(false)} fullWidth maxWidth="md">
         <DialogTitle>{editing ? "Editar bodega" : "Nueva bodega"}</DialogTitle>
         <DialogContent sx={{ pt: 2 }}>
           <Stack spacing={2}>
@@ -250,6 +332,27 @@ export default function Bodegas() {
               fullWidth
               disabled={!canManage}
             />
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+              <TextField label="Tipo" select value={tipo} onChange={(e) => setTipo(e.target.value)} fullWidth disabled={!canManage}>
+                {tiposBodega.map((item) => (
+                  <MenuItem key={item} value={item}>{item}</MenuItem>
+                ))}
+              </TextField>
+              <TextField label="Orden de prioridad" type="number" value={ordenPrioridad} onChange={(e) => setOrdenPrioridad(e.target.value)} fullWidth disabled={!canManage} />
+            </Stack>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1} flexWrap="wrap">
+              <FormControlLabel control={<Checkbox checked={activa} onChange={(e) => setActiva(e.target.checked)} disabled={!canManage} />} label="Activa" />
+              <FormControlLabel control={<Checkbox checked={permiteVentas} onChange={(e) => {
+                setPermiteVentas(e.target.checked);
+                if (!e.target.checked) setUsaInventarioVentas(false);
+              }} disabled={!canManage} />} label="Permite ventas" />
+              <FormControlLabel control={<Checkbox checked={usaInventarioVentas} onChange={(e) => setUsaInventarioVentas(e.target.checked)} disabled={!canManage || !permiteVentas} />} label="Controlar inventario en ventas" />
+              <FormControlLabel control={<Checkbox checked={permitePedidos} onChange={(e) => setPermitePedidos(e.target.checked)} disabled={!canManage} />} label="Permite pedidos" />
+              <FormControlLabel control={<Checkbox checked={permiteTraslados} onChange={(e) => setPermiteTraslados(e.target.checked)} disabled={!canManage} />} label="Permite traslados" />
+              <FormControlLabel control={<Checkbox checked={visibleVendedores} onChange={(e) => setVisibleVendedores(e.target.checked)} disabled={!canManage} />} label="Visible para vendedores" />
+              <FormControlLabel control={<Checkbox checked={requiereAutorizacion} onChange={(e) => setRequiereAutorizacion(e.target.checked)} disabled={!canManage} />} label="Requiere autorizacion" />
+            </Stack>
+            <TextField label="Observaciones" value={observaciones} onChange={(e) => setObservaciones(e.target.value)} fullWidth multiline minRows={2} disabled={!canManage} />
           </Stack>
         </DialogContent>
         <DialogActions>
