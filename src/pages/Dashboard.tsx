@@ -53,6 +53,7 @@ interface Venta {
   fecha: string;
   total: number;
   bodegaId?: number | null;
+  usuarioId?: number | null;
   vendedor?: string | null;
   bodega?: { nombre?: string };
 }
@@ -68,6 +69,9 @@ interface PedidoProduccion {
   bodega?: { nombre?: string };
   cliente?: { nombre?: string };
   clienteNombre?: string | null;
+  usuarioId?: number | null;
+  solicitadoPor?: string | null;
+  usuario?: { id?: number; nombre?: string | null; usuario?: string | null } | null;
   displayFolio?: string | null;
   folio?: string | null;
   postventaId?: number | null;
@@ -84,6 +88,8 @@ interface PostventaRow {
   motivo: string;
   estado: string;
   monto: number;
+  usuarioId?: number | null;
+  usuario?: { id?: number; nombre?: string | null; usuario?: string | null } | null;
 }
 
 interface DocumentoRow {
@@ -93,13 +99,14 @@ interface DocumentoRow {
   titulo?: string | null;
   data?: any;
   creadoEn: string;
-  usuario?: { nombre?: string | null; usuario?: string | null } | null;
+  usuarioId?: number | null;
+  usuario?: { id?: number; nombre?: string | null; usuario?: string | null; bodegaId?: number | null } | null;
 }
 
 interface MetaMensualResumen {
   metaMes: number;
   promedioDiario: number;
-  source: "vendedor" | "tienda" | "global" | "none";
+  source: "vendedor" | "tienda" | "global" | "consolidado" | "none";
 }
 
 interface ProductoResumen {
@@ -122,6 +129,14 @@ interface InventarioRow {
 interface Bodega {
   id: number;
   nombre: string;
+}
+
+interface UsuarioOption {
+  id: number;
+  nombre?: string | null;
+  usuario?: string | null;
+  bodegaId?: number | null;
+  bodega?: { id?: number; nombre?: string | null } | null;
 }
 
 interface WhatsappUltimoMensaje {
@@ -154,6 +169,28 @@ const toDateOnly = (value: string | Date) => {
   if (Number.isNaN(date.getTime())) return "";
   date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
   return date.toISOString().slice(0, 10);
+};
+
+const normalizeDashboardText = (value?: string | null) =>
+  `${value || ""}`
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ");
+
+const valuesMatchUser = (values: Array<string | number | null | undefined>, usuario?: UsuarioOption | null) => {
+  if (!usuario) return true;
+  const usuarioId = Number(usuario.id);
+  if (values.some((value) => Number(value) === usuarioId)) return true;
+  const userValues = [usuario.nombre, usuario.usuario]
+    .map((value) => normalizeDashboardText(value))
+    .filter(Boolean);
+  if (!userValues.length) return false;
+  const rowValues = values.map((value) => normalizeDashboardText(String(value || ""))).filter(Boolean);
+  return rowValues.some((rowValue) =>
+    userValues.some((userValue) => rowValue === userValue || rowValue.includes(userValue) || userValue.includes(rowValue)),
+  );
 };
 
 const asArray = (value: unknown): any[] => (Array.isArray(value) ? value : []);
@@ -381,17 +418,23 @@ export default function Dashboard() {
   const [inventario, setInventario] = useState<InventarioRow[]>([]);
   const [productos, setProductos] = useState<ProductoResumen[]>([]);
   const [bodegas, setBodegas] = useState<Bodega[]>([]);
+  const [usuarios, setUsuarios] = useState<UsuarioOption[]>([]);
   const [whatsappResumen, setWhatsappResumen] = useState<WhatsappResumen | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [rango, setRango] = useState<"7" | "30" | "90">("30");
   const [bodegaFiltro, setBodegaFiltro] = useState<"all" | number>("all");
+  const [vendedorFiltro, setVendedorFiltro] = useState<"all" | number>("all");
   const [saldoModalOpen, setSaldoModalOpen] = useState(false);
   const [metaModalOpen, setMetaModalOpen] = useState(false);
   const navigate = useNavigate();
-  const { rol, permisos, bodegaId: userBodegaId, id: userId } = useAuthStore();
+  const { rol, permisos, bodegaId: userBodegaId, id: userId, nombre: userNombre, usuario: userUsuario } = useAuthStore();
   const { fetchConfig } = useSystemConfigStore();
-  const canAccessAllBodegas = hasPermission(rol, permisos, "sistema.multi-tienda");
+  const canAccessAllBodegas =
+    hasPermission(rol, permisos, "sistema.multi-tienda") || hasPermission(rol, permisos, "dashboard.filtro-tienda");
+  const canFilterVendedores =
+    hasPermission(rol, permisos, "sistema.selector-vendedores") || hasPermission(rol, permisos, "dashboard.filtro-vendedor");
+  const canViewDashboardAll = hasPermission(rol, permisos, "dashboard.ver-todo");
   const canManageWhatsapp = rol === "ADMIN";
 
   const cargarWhatsapp = useCallback(async () => {
@@ -404,6 +447,34 @@ export default function Dashboard() {
     }
   }, []);
 
+  const usuarioActualOption = useMemo<UsuarioOption | null>(() => {
+    if (!userId) return null;
+    const parsedBodegaId = Number(userBodegaId);
+    return {
+      id: Number(userId),
+      nombre: userNombre || userUsuario || "Mi usuario",
+      usuario: userUsuario || userNombre || "Mi usuario",
+      bodegaId: Number.isFinite(parsedBodegaId) ? parsedBodegaId : null,
+    };
+  }, [userBodegaId, userId, userNombre, userUsuario]);
+
+  const usuariosDashboard = useMemo(() => {
+    const map = new Map<number, UsuarioOption>();
+    if (usuarioActualOption) map.set(usuarioActualOption.id, usuarioActualOption);
+    usuarios.forEach((usuario) => {
+      const id = Number(usuario.id);
+      if (Number.isInteger(id) && id > 0) map.set(id, { ...usuario, id });
+    });
+    return Array.from(map.values()).sort((a, b) =>
+      `${a.nombre || a.usuario || ""}`.localeCompare(`${b.nombre || b.usuario || ""}`, "es"),
+    );
+  }, [usuarioActualOption, usuarios]);
+
+  const vendedorSeleccionado = useMemo(
+    () => (vendedorFiltro === "all" ? null : usuariosDashboard.find((usuario) => Number(usuario.id) === Number(vendedorFiltro)) || null),
+    [usuariosDashboard, vendedorFiltro],
+  );
+
   useEffect(() => {
     const load = async () => {
       setLoading(true);
@@ -412,28 +483,61 @@ export default function Dashboard() {
         const currentDate = new Date();
         const currentYear = currentDate.getFullYear();
         const currentMonth = currentDate.getMonth() + 1;
-        const [respVentas, respPedidos, respPostventa, respDocumentos, respReportesDiarios, respMeta, respInv, respProd, respBod, respWhatsapp] = await Promise.all([
+        const parsedUserBodegaId = Number(userBodegaId);
+        const effectiveVendedorId =
+          vendedorFiltro === "all" ? (canViewDashboardAll ? undefined : userId || undefined) : Number(vendedorFiltro);
+        const effectiveBodegaId =
+          bodegaFiltro === "all"
+            ? !canViewDashboardAll && Number.isFinite(parsedUserBodegaId) && parsedUserBodegaId > 0
+              ? parsedUserBodegaId
+              : undefined
+            : Number(bodegaFiltro);
+        const metaParams: Record<string, string | number | undefined> = {
+          year: currentYear,
+          month: currentMonth,
+          _ts: Date.now(),
+        };
+        if (effectiveVendedorId) {
+          metaParams.usuarioId = effectiveVendedorId;
+          if (effectiveBodegaId) metaParams.bodegaId = effectiveBodegaId;
+        } else if (effectiveBodegaId) {
+          metaParams.scope = "tienda";
+          metaParams.bodegaId = effectiveBodegaId;
+        } else {
+          metaParams.scope = "consolidado";
+        }
+        const reportesParams: Record<string, string | number> = { tipo: "reporteDiario", _ts: Date.now() };
+        if (effectiveVendedorId) reportesParams.usuarioId = effectiveVendedorId;
+        const postventaParams: Record<string, number> = {};
+        if (effectiveVendedorId) postventaParams.usuarioId = effectiveVendedorId;
+
+        const [
+          respVentas,
+          respPedidos,
+          respPostventa,
+          respDocumentos,
+          respReportesDiarios,
+          respMeta,
+          respInv,
+          respProd,
+          respBod,
+          respUsuarios,
+          respWhatsapp,
+        ] = await Promise.all([
           api.get("/ventas").catch(() => ({ data: [] })),
           api.get("/produccion").catch(() => ({ data: [] })),
-          api.get("/postventa").catch(() => ({ data: [] })),
+          api.get("/postventa", { params: postventaParams }).catch(() => ({ data: [] })),
           api.get("/documentos").catch(() => ({ data: [] })),
-          userId
-            ? api.get("/documentos", { params: { tipo: "reporteDiario", usuarioId: userId, _ts: Date.now() } }).catch(() => ({ data: [] }))
-            : Promise.resolve({ data: [] }),
+          api.get("/documentos", { params: reportesParams }).catch(() => ({ data: [] })),
           api
             .get("/metas/mensuales/actual", {
-              params: {
-                year: currentYear,
-                month: currentMonth,
-                usuarioId: userId || undefined,
-                bodegaId: userBodegaId || undefined,
-                _ts: Date.now(),
-              },
+              params: metaParams,
             })
             .catch(() => ({ data: { metaMes: 0, promedioDiario: 0, source: "none" } })),
           api.get("/inventario/reporte").catch(() => ({ data: [] })),
           api.get("/productos").catch(() => ({ data: [] })),
           api.get("/bodegas").catch(() => ({ data: [] })),
+          api.get("/usuarios").catch(() => ({ data: [] })),
           whatsappFeatureEnabled ? api.get("/whatsapp/resumen").catch(() => ({ data: null })) : Promise.resolve({ data: null }),
         ]);
         setVentas(respVentas.data || []);
@@ -449,6 +553,7 @@ export default function Dashboard() {
         setInventario(respInv.data || []);
         setProductos(respProd.data || []);
         setBodegas(respBod.data || []);
+        setUsuarios(respUsuarios.data || []);
         setWhatsappResumen(respWhatsapp.data || null);
       } catch (error) {
         setLoadError("No se pudieron cargar todos los datos del dashboard.");
@@ -458,7 +563,7 @@ export default function Dashboard() {
     };
     void load();
     void fetchConfig();
-  }, [cargarWhatsapp, fetchConfig, userBodegaId, userId]);
+  }, [bodegaFiltro, canViewDashboardAll, cargarWhatsapp, fetchConfig, userBodegaId, userId, vendedorFiltro]);
 
   const marcarWhatsappLeidos = async (vendedorId?: number) => {
     if (!whatsappFeatureEnabled) return;
@@ -467,13 +572,21 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
+    const parsed = Number(userBodegaId);
     if (!canAccessAllBodegas) {
-      const parsed = Number(userBodegaId);
       setBodegaFiltro(Number.isFinite(parsed) && parsed > 0 ? parsed : "all");
       return;
     }
-    setBodegaFiltro("all");
-  }, [canAccessAllBodegas, userBodegaId]);
+    setBodegaFiltro(canViewDashboardAll ? "all" : Number.isFinite(parsed) && parsed > 0 ? parsed : "all");
+  }, [canAccessAllBodegas, canViewDashboardAll, userBodegaId]);
+
+  useEffect(() => {
+    if (!canFilterVendedores) {
+      setVendedorFiltro(userId || "all");
+      return;
+    }
+    setVendedorFiltro(canViewDashboardAll ? "all" : userId || "all");
+  }, [canFilterVendedores, canViewDashboardAll, userId]);
 
   const stats = useMemo(() => {
     const hoy = toDateOnly(new Date());
@@ -483,11 +596,50 @@ export default function Dashboard() {
 
     const filtraBodega = (bodegaId?: number | null) =>
       bodegaFiltro === "all" ? true : Number(bodegaId) === Number(bodegaFiltro);
+    const filtraBodegaDocumento = (doc: DocumentoRow) => {
+      if (bodegaFiltro === "all") return true;
+      const data = doc.data || {};
+      const docBodegaId = Number(doc.usuario?.bodegaId || data.bodegaId || data.tiendaId || data.bodega?.id);
+      if (Number.isFinite(docBodegaId) && docBodegaId > 0) return docBodegaId === Number(bodegaFiltro);
+      const bodega = bodegas.find((item) => Number(item.id) === Number(bodegaFiltro));
+      const tiendaValues = [data.tienda, data.bodega, data.bodegaNombre, doc.usuario?.bodegaId].map((value) =>
+        normalizeDashboardText(String(value || "")),
+      );
+      return Boolean(bodega && tiendaValues.includes(normalizeDashboardText(bodega.nombre)));
+    };
+    const usuarioFiltroActual =
+      vendedorFiltro === "all"
+        ? null
+        : vendedorSeleccionado || { id: Number(vendedorFiltro), nombre: null, usuario: null };
+    const filtraVendedor = (values: Array<string | number | null | undefined>) =>
+      vendedorFiltro === "all" ? true : valuesMatchUser(values, usuarioFiltroActual);
+    const filtraVendedorDocumento = (doc: DocumentoRow) => {
+      const data = doc.data || {};
+      return filtraVendedor([
+        doc.usuarioId,
+        doc.usuario?.id,
+        doc.usuario?.nombre,
+        doc.usuario?.usuario,
+        data.usuarioId,
+        data.vendedorId,
+        data.vendedor,
+        data.usuario,
+        data.usuarioNombre,
+        data.vendedorNombre,
+        data.generadoPor,
+      ]);
+    };
 
-    const ventasFiltradas = ventas.filter((venta) => filtraBodega(venta.bodegaId));
+    const ventasFiltradas = ventas.filter(
+      (venta) => filtraBodega(venta.bodegaId) && filtraVendedor([venta.usuarioId, venta.vendedor]),
+    );
     const ventasRango = ventasFiltradas.filter((venta) => new Date(venta.fecha) >= desde);
     const ventasHoy = ventasFiltradas.filter((venta) => toDateOnly(venta.fecha) === hoy);
-    const pedidosFiltrados = pedidos.filter((pedido) => filtraBodega(pedido.bodegaId));
+    const pedidosFiltrados = pedidos.filter(
+      (pedido) =>
+        filtraBodega(pedido.bodegaId) &&
+        filtraVendedor([pedido.usuarioId, pedido.usuario?.id, pedido.usuario?.nombre, pedido.usuario?.usuario, pedido.solicitadoPor]),
+    );
     const inventarioFiltrado = inventario.filter((row) => filtraBodega(row.bodegaId));
 
     const totalVentasRango = ventasRango.reduce((sum, venta) => sum + Number(venta.total || 0), 0);
@@ -508,12 +660,19 @@ export default function Dashboard() {
     const saldoPendiente = pedidosSaldoOrdenados.reduce((sum, pedido) => sum + Number(pedido.saldoPendiente || 0), 0);
     const pedidosSinCobro = pedidosFiltrados.filter((pedido) => pedido.postventaCobro === "sin_cobro");
 
-    const postventaAbierta = postventa.filter((row) =>
-      ["pendiente", "en_revision"].includes(`${row.estado || ""}`.trim().toLowerCase())
+    const postventaAbierta = postventa.filter(
+      (row) =>
+        ["pendiente", "en_revision"].includes(`${row.estado || ""}`.trim().toLowerCase()) &&
+        filtraVendedor([row.usuarioId, row.usuario?.id, row.usuario?.nombre, row.usuario?.usuario]),
     );
 
     const reportesRecientes = documentos
-      .filter((doc) => ["reporteDiario", "reporteQuincenal"].includes(doc.tipo))
+      .filter(
+        (doc) =>
+          ["reporteDiario", "reporteQuincenal"].includes(doc.tipo) &&
+          filtraBodegaDocumento(doc) &&
+          filtraVendedorDocumento(doc),
+      )
       .slice()
       .sort((a, b) => new Date(b.creadoEn).getTime() - new Date(a.creadoEn).getTime())
       .slice(0, 5);
@@ -545,6 +704,7 @@ export default function Dashboard() {
     const currentDay = mesActual.getDate();
     const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
     const reportesDiariosMes = reportesDiariosUsuario.filter((doc) => {
+      if (!filtraBodegaDocumento(doc) || !filtraVendedorDocumento(doc)) return false;
       const fechaReporte = `${doc?.data?.fecha || doc.creadoEn || ""}`.slice(0, 10);
       if (!fechaReporte) return false;
       const [yearValue, monthValue] = fechaReporte.split("-").map(Number);
@@ -597,9 +757,11 @@ export default function Dashboard() {
         ? "Meta de vendedor"
         : metaMensual.source === "tienda"
           ? "Meta de tienda"
-          : metaMensual.source === "global"
-            ? "Meta global"
-            : "Sin meta configurada";
+          : metaMensual.source === "consolidado"
+            ? "Meta consolidada"
+            : metaMensual.source === "global"
+              ? "Meta global"
+              : "Sin meta configurada";
 
     const actividad = [
       ...pedidosProduccion.slice(0, 4).map((pedido) => ({
@@ -662,7 +824,21 @@ export default function Dashboard() {
       productosActivos: productos.length,
       stockTotal: inventarioFiltrado.reduce((sum, row) => sum + Number(row.stock || 0), 0),
     };
-  }, [ventas, pedidos, postventa, documentos, reportesDiariosUsuario, metaMensual, inventario, productos, rango, bodegaFiltro]);
+  }, [
+    ventas,
+    pedidos,
+    postventa,
+    documentos,
+    reportesDiariosUsuario,
+    metaMensual,
+    inventario,
+    productos,
+    rango,
+    bodegaFiltro,
+    bodegas,
+    vendedorFiltro,
+    vendedorSeleccionado,
+  ]);
   const { paginatedRows: pedidosSaldoPaginados, paginationProps: pedidosSaldoPaginationProps } =
     useTablePagination(stats.pedidosSaldo, 10);
 
@@ -676,6 +852,21 @@ export default function Dashboard() {
           </Typography>
         </Stack>
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" justifyContent="flex-end">
+          <FormControl size="small" sx={{ minWidth: 220 }} disabled={!canFilterVendedores}>
+            <InputLabel>Vendedor</InputLabel>
+            <Select
+              label="Vendedor"
+              value={vendedorFiltro === "all" ? "all" : String(vendedorFiltro)}
+              onChange={(event) => setVendedorFiltro(event.target.value === "all" ? "all" : Number(event.target.value))}
+            >
+              {canViewDashboardAll && <MenuItem value="all">Todos los vendedores</MenuItem>}
+              {usuariosDashboard.map((usuario) => (
+                <MenuItem key={usuario.id} value={usuario.id}>
+                  {usuario.nombre || usuario.usuario || `Usuario #${usuario.id}`}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
           <FormControl size="small" sx={{ minWidth: 190 }} disabled={!canAccessAllBodegas}>
             <InputLabel>Tienda</InputLabel>
             <Select
@@ -683,7 +874,7 @@ export default function Dashboard() {
               value={bodegaFiltro === "all" ? "all" : String(bodegaFiltro)}
               onChange={(event) => setBodegaFiltro(event.target.value === "all" ? "all" : Number(event.target.value))}
             >
-              <MenuItem value="all">Todas</MenuItem>
+              {canViewDashboardAll && <MenuItem value="all">Todas las tiendas</MenuItem>}
               {bodegas.map((bodega) => (
                 <MenuItem key={bodega.id} value={bodega.id}>{bodega.nombre}</MenuItem>
               ))}
@@ -714,9 +905,9 @@ export default function Dashboard() {
       >
         <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={2} sx={{ mb: 1.5 }}>
           <Stack spacing={0.5}>
-            <Typography variant="h6">Meta mensual del vendedor</Typography>
+            <Typography variant="h6">Meta mensual</Typography>
             <Typography variant="body2" color="text.secondary">
-              Acumulado desde reportes diarios del mes actual.
+              Acumulado desde reportes diarios segun el vendedor y tienda seleccionados.
             </Typography>
           </Stack>
           <Stack direction="row" spacing={1} flexWrap="wrap" justifyContent={{ xs: "flex-start", md: "flex-end" }}>

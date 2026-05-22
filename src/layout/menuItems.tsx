@@ -29,6 +29,7 @@ import SwapHorizOutlined from "@mui/icons-material/SwapHorizOutlined";
 import ManageSearchOutlined from "@mui/icons-material/ManageSearchOutlined";
 import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
 import LocalShippingOutlined from "@mui/icons-material/LocalShippingOutlined";
+import BusinessOutlined from "@mui/icons-material/BusinessOutlined";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import { whatsappFeatureEnabled } from "../config/features";
 
@@ -87,6 +88,7 @@ export const menuSections: MenuSection[] = [
       { label: "Ingreso", icon: <AddBusinessOutlined />, path: "/inventario" },
       { label: "Bodegas", icon: <Inventory2Outlined />, path: "/bodegas" },
       { label: "Resumen", icon: <TableChartOutlined />, path: "/inventario/resumen" },
+      { label: "Inventario de telas", icon: <CheckroomOutlined />, path: "/inventario/telas" },
       { label: "Traslados", icon: <CompareArrowsOutlined />, path: "/inventario/traslados" },
     ],
   },
@@ -113,6 +115,7 @@ export const menuSections: MenuSection[] = [
     items: [
       { label: "Cotizaciones", icon: <RequestQuoteOutlined />, path: "/cotizaciones" },
       { label: "Clientes", icon: <PeopleOutline />, path: "/clientes" },
+      { label: "Proveedores", icon: <BusinessOutlined />, path: "/proveedores" },
       { label: "Usuarios", icon: <SettingsOutlined />, path: "/usuarios" },
       { label: "Roles", icon: <AdminPanelSettingsOutlined />, path: "/roles" },
       { label: "Correlativos", icon: <SettingsOutlined />, path: "/correlativos" },

@@ -13,11 +13,13 @@ import Colores from "./pages/Colores";
 import Tallas from "./pages/Tallas";
 import IngresoInventario from "./pages/IngresoInventario";
 import InventarioResumen from "./pages/InventarioResumen";
+import InventarioTelas from "./pages/InventarioTelas";
 import Traslados from "./pages/Traslados";
 import VentaNueva from "./pages/VentaNueva";
 import Bodegas from "./pages/Bodegas";
 import Clientes from "./pages/Clientes";
 import ClienteFicha from "./pages/ClienteFicha";
+import Proveedores from "./pages/Proveedores";
 import Cotizaciones from "./pages/Cotizaciones";
 import Usuarios from "./pages/Usuarios";
 import Admin from "./pages/Admin";
@@ -75,11 +77,13 @@ export default function App() {
           <Route path="/productos/nuevo" element={<ProductoNuevo />} />
           <Route path="/inventario" element={<IngresoInventario />} />
           <Route path="/inventario/resumen" element={<InventarioResumen />} />
+          <Route path="/inventario/telas" element={<InventarioTelas />} />
           <Route path="/inventario/traslados" element={<Traslados />} />
           <Route path="/bodegas" element={<Bodegas />} />
           <Route path="/cotizaciones" element={<Cotizaciones />} />
           <Route path="/clientes" element={<Clientes />} />
           <Route path="/clientes/:id/ficha" element={<ClienteFicha />} />
+          <Route path="/proveedores" element={<Proveedores />} />
           <Route path="/usuarios" element={<Usuarios />} />
           <Route path="/roles" element={<Roles />} />
           <Route path="/admin" element={<Admin />} />

@@ -1,12 +1,20 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
   Divider,
+  FormControl,
   Grid,
+  InputLabel,
   LinearProgress,
+  ListItemText,
+  MenuItem,
+  OutlinedInput,
   Paper,
+  Select,
   Stack,
   Table,
   TableBody,
@@ -16,11 +24,14 @@ import {
   TablePagination,
   TableRow,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
+import AssessmentOutlined from "@mui/icons-material/AssessmentOutlined";
 import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
 import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
 import StorefrontOutlined from "@mui/icons-material/StorefrontOutlined";
+import TrendingDownOutlined from "@mui/icons-material/TrendingDownOutlined";
 import TrendingUpOutlined from "@mui/icons-material/TrendingUpOutlined";
 import WarningAmberOutlined from "@mui/icons-material/WarningAmberOutlined";
 import Swal from "sweetalert2";
@@ -38,7 +49,11 @@ interface Venta {
   id: number;
   fecha: string;
   total: number;
+  metodoPago?: string | null;
+  vendedor?: string | null;
   bodegaId?: number | null;
+  bodega?: { id?: number; nombre?: string | null } | null;
+  cliente?: { nombre?: string | null } | null;
 }
 
 interface Pedido {
@@ -46,14 +61,24 @@ interface Pedido {
   fecha: string;
   estado: string;
   totalEstimado: number;
+  anticipo?: number | null;
   saldoPendiente: number;
   bodegaId?: number | null;
+  bodega?: { id?: number; nombre?: string | null } | null;
+  cliente?: { nombre?: string | null } | null;
+  clienteNombre?: string | null;
+  folio?: string | null;
+  displayFolio?: string | null;
 }
 
-interface Postventa {
+interface DocumentoRow {
   id: number;
-  estado: string;
-  monto: number;
+  tipo: string;
+  correlativo: string;
+  titulo?: string | null;
+  data?: any;
+  creadoEn: string;
+  usuario?: { nombre?: string | null; usuario?: string | null; bodegaId?: number | null } | null;
 }
 
 interface Inventario {
@@ -72,8 +97,23 @@ interface TiendaRow {
   pedidosCantidad: number;
   pedidosAbiertos: number;
   saldoPendiente: number;
+  cierresTotal: number;
+  cierresCantidad: number;
+  diferenciaVentaCierre: number;
   stockTotal: number;
   stockBajo: number;
+  participacionVentas: number;
+  productividad: number;
+}
+
+interface VentaRanking {
+  id: number;
+  fecha: string;
+  tienda: string;
+  cliente: string;
+  vendedor: string;
+  metodoPago: string;
+  total: number;
 }
 
 const money = formatCurrency;
@@ -91,10 +131,63 @@ const daysAgo = (days: number) => {
   return date.toISOString().slice(0, 10);
 };
 
-const toDateOnly = (value: string) => {
-  const date = new Date(value);
+const toDateOnly = (value?: string | null) => {
+  const date = new Date(value || "");
+  if (Number.isNaN(date.getTime())) return "";
   date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
   return date.toISOString().slice(0, 10);
+};
+
+const normalizeText = (value?: string | null) =>
+  `${value || ""}`
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ");
+
+const asArray = (value: unknown): any[] => (Array.isArray(value) ? value : []);
+
+const getTiendaRowTotal = (row: any) =>
+  Number(row?.total || 0) ||
+  Number(row?.transferencia || 0) + Number(row?.tarjeta || 0) + Number(row?.efectivo || 0);
+
+const metodoCuentaComoTarjeta = (metodo?: string | null) => {
+  const normalized = `${metodo || ""}`.trim().toLowerCase();
+  return normalized === "tarjeta" || normalized === "visalink";
+};
+
+const getReporteDiarioTotal = (data: any) => {
+  const capital = asArray(data?.capitalRows).reduce(
+    (sum, row) =>
+      sum + Number(row?.transferencia || 0) + Number(row?.deposito || 0) + Number(row?.efectivo || 0),
+    0,
+  );
+  const departamento = asArray(data?.departamentoRows).reduce(
+    (sum, row) => sum + Number(row?.transferencia || 0) + Number(row?.deposito || 0),
+    0,
+  );
+  const ventasSnapshotRows = asArray(data?.ventasSnapshot).map((venta) => {
+    const total = Number(venta?.total || 0);
+    const metodo = `${venta?.metodoPago || ""}`.trim().toLowerCase();
+    return {
+      transferencia: metodo === "transferencia" ? total : 0,
+      tarjeta: metodoCuentaComoTarjeta(metodo) ? total : 0,
+      efectivo: metodo === "efectivo" ? total : 0,
+      total,
+    };
+  });
+  return [...ventasSnapshotRows, ...asArray(data?.tiendaManualRows)].reduce(
+    (sum, row) => sum + getTiendaRowTotal(row),
+    capital + departamento,
+  );
+};
+
+const inRange = (fecha: string, desde: string, hasta: string) => {
+  if (!fecha) return false;
+  if (desde && fecha < desde) return false;
+  if (hasta && fecha > hasta) return false;
+  return true;
 };
 
 const exportCsv = (rows: TiendaRow[]) => {
@@ -106,6 +199,10 @@ const exportCsv = (rows: TiendaRow[]) => {
     "Pedidos",
     "Pedidos abiertos",
     "Saldo pendiente",
+    "Cierres diarios",
+    "Total cierres",
+    "Diferencia venta cierre",
+    "Participacion ventas",
     "Stock total",
     "Stock bajo",
   ];
@@ -118,11 +215,15 @@ const exportCsv = (rows: TiendaRow[]) => {
       row.pedidosCantidad,
       row.pedidosAbiertos,
       row.saldoPendiente.toFixed(2),
+      row.cierresCantidad,
+      row.cierresTotal.toFixed(2),
+      row.diferenciaVentaCierre.toFixed(2),
+      row.participacionVentas.toFixed(2),
       row.stockTotal,
       row.stockBajo,
     ]
       .map((value) => `"${`${value}`.replace(/"/g, '""')}"`)
-      .join(";")
+      .join(";"),
   );
   const blob = new Blob(["\ufeff", [headers.join(";"), ...lines].join("\n")], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
@@ -133,14 +234,26 @@ const exportCsv = (rows: TiendaRow[]) => {
   URL.revokeObjectURL(url);
 };
 
-const Metric = ({ title, value, helper, icon }: { title: string; value: string | number; helper?: string; icon: React.ReactNode }) => (
+const Metric = ({
+  title,
+  value,
+  helper,
+  icon,
+  tone = "primary",
+}: {
+  title: string;
+  value: string | number;
+  helper?: string;
+  icon: React.ReactNode;
+  tone?: "primary" | "success" | "warning" | "error" | "info";
+}) => (
   <Paper variant="outlined" sx={{ p: 2, borderRadius: 1, height: "100%" }}>
-    <Stack direction="row" justifyContent="space-between" spacing={2}>
+    <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
       <Stack spacing={0.5}>
         <Typography variant="caption" color="text.secondary">
           {title}
         </Typography>
-        <Typography variant="h5" sx={{ fontWeight: 700 }}>
+        <Typography variant="h5" sx={{ fontWeight: 600 }}>
           {value}
         </Typography>
         {helper && (
@@ -149,7 +262,63 @@ const Metric = ({ title, value, helper, icon }: { title: string; value: string |
           </Typography>
         )}
       </Stack>
-      <Box sx={{ color: "primary.main", display: "flex" }}>{icon}</Box>
+      <Box sx={{ color: `${tone}.main`, display: "flex" }}>{icon}</Box>
+    </Stack>
+  </Paper>
+);
+
+const Bar = ({ value, max, color = "primary.main" }: { value: number; max: number; color?: string }) => {
+  const width = max > 0 ? Math.max((value / max) * 100, value > 0 ? 4 : 0) : 0;
+  return (
+    <Box sx={{ height: 8, bgcolor: "grey.100", borderRadius: 1, overflow: "hidden", minWidth: 120 }}>
+      <Box sx={{ width: `${width}%`, height: "100%", bgcolor: color, borderRadius: 1 }} />
+    </Box>
+  );
+};
+
+const RankingPanel = ({
+  title,
+  rows,
+  tone,
+}: {
+  title: string;
+  rows: VentaRanking[];
+  tone: "success" | "warning";
+}) => (
+  <Paper variant="outlined" sx={{ p: 2, borderRadius: 1, height: "100%" }}>
+    <Stack spacing={1.5}>
+      <Stack direction="row" justifyContent="space-between" alignItems="center">
+        <Typography variant="subtitle1" fontWeight={600}>
+          {title}
+        </Typography>
+        <Chip
+          size="small"
+          color={tone}
+          icon={tone === "success" ? <TrendingUpOutlined /> : <TrendingDownOutlined />}
+          label={tone === "success" ? "Mas altas" : "Mas bajas"}
+        />
+      </Stack>
+      {!rows.length ? (
+        <Typography variant="body2" color="text.secondary">
+          No hay ventas en el rango.
+        </Typography>
+      ) : (
+        rows.map((row, index) => (
+          <Stack key={`${row.id}-${index}`} direction="row" justifyContent="space-between" spacing={2}>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="body2" fontWeight={500} noWrap>
+                {row.tienda}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
+                {row.fecha} | {row.cliente} | {row.vendedor}
+              </Typography>
+            </Box>
+            <Typography variant="body2" fontWeight={600} sx={{ whiteSpace: "nowrap" }}>
+              {money(row.total)}
+            </Typography>
+          </Stack>
+        ))
+      )}
     </Stack>
   </Paper>
 );
@@ -158,27 +327,29 @@ export default function ComparativoTiendas() {
   const [bodegas, setBodegas] = useState<Bodega[]>([]);
   const [ventas, setVentas] = useState<Venta[]>([]);
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
-  const [postventa, setPostventa] = useState<Postventa[]>([]);
+  const [documentos, setDocumentos] = useState<DocumentoRow[]>([]);
   const [inventario, setInventario] = useState<Inventario[]>([]);
   const [desde, setDesde] = useState(() => daysAgo(30));
   const [hasta, setHasta] = useState(() => today());
+  const [bodegaIds, setBodegaIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
 
   const cargar = async () => {
     try {
       setLoading(true);
-      const [respBodegas, respVentas, respPedidos, respPostventa, respInventario] = await Promise.all([
+      const [respBodegas, respVentas, respPedidos, respDocumentos, respInventario] = await Promise.all([
         api.get("/bodegas").catch(() => ({ data: [] })),
         api.get("/ventas").catch(() => ({ data: [] })),
         api.get("/produccion").catch(() => ({ data: [] })),
-        api.get("/postventa").catch(() => ({ data: [] })),
+        api.get("/documentos", { params: { tipo: "reporteDiario", _ts: Date.now() } }).catch(() => ({ data: [] })),
         api.get("/inventario/reporte").catch(() => ({ data: [] })),
       ]);
       setBodegas(respBodegas.data || []);
       setVentas(respVentas.data || []);
       setPedidos(respPedidos.data || []);
-      setPostventa(respPostventa.data || []);
+      setDocumentos(respDocumentos.data || []);
       setInventario(respInventario.data || []);
+      setBodegaIds((prev) => (prev.length ? prev : (respBodegas.data || []).map((bodega: Bodega) => Number(bodega.id))));
     } catch {
       Swal.fire("Error", "No se pudo cargar el comparativo de tiendas", "error");
     } finally {
@@ -190,30 +361,32 @@ export default function ComparativoTiendas() {
     void cargar();
   }, []);
 
+  const bodegaById = useMemo(() => new Map(bodegas.map((bodega) => [Number(bodega.id), bodega])), [bodegas]);
+  const selectedIds = useMemo(() => new Set(bodegaIds.map(Number)), [bodegaIds]);
+
+  const getBodegaName = useCallback((id?: number | null, fallback?: string | null) => {
+    const parsed = Number(id || 0);
+    return bodegaById.get(parsed)?.nombre || fallback || (parsed ? `Tienda ${parsed}` : "Sin tienda");
+  }, [bodegaById]);
+
+  const resolveDocumentoBodegaId = useCallback((doc: DocumentoRow) => {
+    const data = doc.data || {};
+    const direct = Number(doc.usuario?.bodegaId || data.bodegaId || data.tiendaId || data.bodega?.id);
+    if (Number.isFinite(direct) && direct > 0) return direct;
+    const tiendaText = normalizeText(data.tienda || data.bodega || data.bodegaNombre);
+    if (!tiendaText) return 0;
+    const match = bodegas.find((bodega) => normalizeText(bodega.nombre) === tiendaText);
+    return Number(match?.id || 0);
+  }, [bodegas]);
+
   const rows = useMemo<TiendaRow[]>(() => {
     const base = new Map<number, TiendaRow>();
-    bodegas.forEach((bodega) => {
-      base.set(bodega.id, {
-        bodegaId: bodega.id,
-        bodega: bodega.nombre,
-        ventasTotal: 0,
-        ventasTickets: 0,
-        ticketPromedio: 0,
-        pedidosTotal: 0,
-        pedidosCantidad: 0,
-        pedidosAbiertos: 0,
-        saldoPendiente: 0,
-        stockTotal: 0,
-        stockBajo: 0,
-      });
-    });
-
-    const ensureRow = (bodegaId?: number | null) => {
-      const id = Number(bodegaId || 0);
-      if (!base.has(id)) {
-        base.set(id, {
-          bodegaId: id,
-          bodega: id ? `Tienda ${id}` : "Sin tienda",
+    bodegas
+      .filter((bodega) => selectedIds.has(Number(bodega.id)))
+      .forEach((bodega) => {
+        base.set(Number(bodega.id), {
+          bodegaId: Number(bodega.id),
+          bodega: bodega.nombre,
           ventasTotal: 0,
           ventasTickets: 0,
           ticketPromedio: 0,
@@ -221,8 +394,37 @@ export default function ComparativoTiendas() {
           pedidosCantidad: 0,
           pedidosAbiertos: 0,
           saldoPendiente: 0,
+          cierresTotal: 0,
+          cierresCantidad: 0,
+          diferenciaVentaCierre: 0,
           stockTotal: 0,
           stockBajo: 0,
+          participacionVentas: 0,
+          productividad: 0,
+        });
+      });
+
+    const ensureRow = (bodegaId?: number | null, fallbackName?: string | null) => {
+      const id = Number(bodegaId || 0);
+      if (!selectedIds.has(id)) return null;
+      if (!base.has(id)) {
+        base.set(id, {
+          bodegaId: id,
+          bodega: getBodegaName(id, fallbackName),
+          ventasTotal: 0,
+          ventasTickets: 0,
+          ticketPromedio: 0,
+          pedidosTotal: 0,
+          pedidosCantidad: 0,
+          pedidosAbiertos: 0,
+          saldoPendiente: 0,
+          cierresTotal: 0,
+          cierresCantidad: 0,
+          diferenciaVentaCierre: 0,
+          stockTotal: 0,
+          stockBajo: 0,
+          participacionVentas: 0,
+          productividad: 0,
         });
       }
       return base.get(id)!;
@@ -230,164 +432,365 @@ export default function ComparativoTiendas() {
 
     ventas.forEach((venta) => {
       const fecha = toDateOnly(venta.fecha);
-      if (desde && fecha < desde) return;
-      if (hasta && fecha > hasta) return;
-      const row = ensureRow(venta.bodegaId);
+      if (!inRange(fecha, desde, hasta)) return;
+      const row = ensureRow(venta.bodegaId, venta.bodega?.nombre);
+      if (!row) return;
       row.ventasTickets += 1;
       row.ventasTotal += Number(venta.total || 0);
     });
 
     const estadosAbiertos = new Set(["nuevo", "en_produccion", "pendiente", "regresado_produccion"]);
+    const estadosSinSaldo = new Set(["anulado", "recibido", "completado"]);
     pedidos.forEach((pedido) => {
       const fecha = toDateOnly(pedido.fecha);
-      if (desde && fecha < desde) return;
-      if (hasta && fecha > hasta) return;
-      const row = ensureRow(pedido.bodegaId);
+      if (!inRange(fecha, desde, hasta)) return;
+      const row = ensureRow(pedido.bodegaId, pedido.bodega?.nombre);
+      if (!row) return;
+      const estado = `${pedido.estado || ""}`.trim().toLowerCase();
       row.pedidosCantidad += 1;
       row.pedidosTotal += Number(pedido.totalEstimado || 0);
-      row.saldoPendiente += Number(pedido.saldoPendiente || 0);
-      if (estadosAbiertos.has(`${pedido.estado || ""}`.toLowerCase())) row.pedidosAbiertos += 1;
+      if (!estadosSinSaldo.has(estado)) row.saldoPendiente += Number(pedido.saldoPendiente || 0);
+      if (estadosAbiertos.has(estado)) row.pedidosAbiertos += 1;
+    });
+
+    documentos.forEach((doc) => {
+      const fecha = `${doc.data?.fecha || doc.creadoEn || ""}`.slice(0, 10);
+      if (doc.tipo !== "reporteDiario" || !inRange(fecha, desde, hasta)) return;
+      const row = ensureRow(resolveDocumentoBodegaId(doc));
+      if (!row) return;
+      row.cierresCantidad += 1;
+      row.cierresTotal += getReporteDiarioTotal(doc.data || {});
     });
 
     inventario.forEach((item) => {
       const row = ensureRow(item.bodegaId);
+      if (!row) return;
       row.stockTotal += Number(item.stock || 0);
       if (Number(item.stockMax || 0) > 0 && Number(item.stock || 0) < Number(item.stockMax || 0)) {
         row.stockBajo += 1;
       }
     });
 
-    return Array.from(base.values())
+    const rowsBase = Array.from(base.values());
+    const totalVentas = rowsBase.reduce((sum, row) => sum + row.ventasTotal, 0);
+    return rowsBase
       .map((row) => ({
         ...row,
         ticketPromedio: row.ventasTickets ? row.ventasTotal / row.ventasTickets : 0,
+        diferenciaVentaCierre: row.ventasTotal - row.cierresTotal,
+        participacionVentas: totalVentas > 0 ? (row.ventasTotal / totalVentas) * 100 : 0,
+        productividad: row.pedidosCantidad > 0 ? row.ventasTotal / row.pedidosCantidad : row.ventasTotal,
       }))
       .sort((a, b) => b.ventasTotal - a.ventasTotal);
-  }, [bodegas, ventas, pedidos, inventario, desde, hasta]);
+  }, [bodegas, documentos, desde, getBodegaName, hasta, inventario, pedidos, resolveDocumentoBodegaId, selectedIds, ventas]);
 
-  const totals = rows.reduce(
-    (acc, row) => ({
-      ventasTotal: acc.ventasTotal + row.ventasTotal,
-      ventasTickets: acc.ventasTickets + row.ventasTickets,
-      pedidosCantidad: acc.pedidosCantidad + row.pedidosCantidad,
-      pedidosAbiertos: acc.pedidosAbiertos + row.pedidosAbiertos,
-      saldoPendiente: acc.saldoPendiente + row.saldoPendiente,
-      stockBajo: acc.stockBajo + row.stockBajo,
-    }),
-    { ventasTotal: 0, ventasTickets: 0, pedidosCantidad: 0, pedidosAbiertos: 0, saldoPendiente: 0, stockBajo: 0 }
+  const totals = useMemo(
+    () =>
+      rows.reduce(
+        (acc, row) => ({
+          ventasTotal: acc.ventasTotal + row.ventasTotal,
+          ventasTickets: acc.ventasTickets + row.ventasTickets,
+          pedidosTotal: acc.pedidosTotal + row.pedidosTotal,
+          pedidosCantidad: acc.pedidosCantidad + row.pedidosCantidad,
+          pedidosAbiertos: acc.pedidosAbiertos + row.pedidosAbiertos,
+          saldoPendiente: acc.saldoPendiente + row.saldoPendiente,
+          cierresTotal: acc.cierresTotal + row.cierresTotal,
+          cierresCantidad: acc.cierresCantidad + row.cierresCantidad,
+          stockBajo: acc.stockBajo + row.stockBajo,
+        }),
+        {
+          ventasTotal: 0,
+          ventasTickets: 0,
+          pedidosTotal: 0,
+          pedidosCantidad: 0,
+          pedidosAbiertos: 0,
+          saldoPendiente: 0,
+          cierresTotal: 0,
+          cierresCantidad: 0,
+          stockBajo: 0,
+        },
+      ),
+    [rows],
   );
 
+  const ventasRanking = useMemo(() => {
+    return ventas
+      .map((venta) => ({
+        id: venta.id,
+        fecha: toDateOnly(venta.fecha),
+        tienda: getBodegaName(venta.bodegaId, venta.bodega?.nombre),
+        cliente: venta.cliente?.nombre || "Mostrador",
+        vendedor: venta.vendedor || "N/D",
+        metodoPago: venta.metodoPago || "N/D",
+        bodegaId: Number(venta.bodegaId || 0),
+        total: Number(venta.total || 0),
+      }))
+      .filter((venta) => selectedIds.has(venta.bodegaId) && inRange(venta.fecha, desde, hasta) && venta.total > 0);
+  }, [desde, getBodegaName, hasta, selectedIds, ventas]);
+
+  const mejoresVentas = useMemo(() => ventasRanking.slice().sort((a, b) => b.total - a.total).slice(0, 5), [ventasRanking]);
+  const peoresVentas = useMemo(() => ventasRanking.slice().sort((a, b) => a.total - b.total).slice(0, 5), [ventasRanking]);
+  const maxVentas = Math.max(...rows.map((row) => row.ventasTotal), 1);
+  const maxPedidos = Math.max(...rows.map((row) => row.pedidosCantidad), 1);
   const lider = rows[0];
+  const menorVenta = rows.filter((row) => row.ventasTickets > 0).slice().sort((a, b) => a.ventasTotal - b.ventasTotal)[0];
+  const diferenciaCierres = totals.ventasTotal - totals.cierresTotal;
+  const ticketPromedioGeneral = totals.ventasTickets ? totals.ventasTotal / totals.ventasTickets : 0;
+  const tiendasSeleccionadas = bodegaIds.length;
   const { page, rowsPerPage, paginatedRows, paginationProps } = useTablePagination(rows, 10);
-  const postventaAbierta = postventa.filter((row) => ["pendiente", "en_revision"].includes(`${row.estado || ""}`.toLowerCase())).length;
 
   return (
-    <Paper sx={{ p: 3 }}>
-      <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" alignItems={{ xs: "stretch", md: "center" }} spacing={2} sx={{ mb: 2 }}>
-        <Stack direction="row" spacing={1} alignItems="center">
-          <StorefrontOutlined color="primary" />
-          <Box>
-            <Typography variant="h4">Comparativo entre tiendas</Typography>
-            <Typography variant="body2" color="text.secondary">
-              Ranking operativo por ventas, pedidos, saldos y stock bajo.
-            </Typography>
-          </Box>
+    <Box sx={{ p: 3, bgcolor: "background.default", minHeight: "100%" }}>
+      <Paper variant="outlined" sx={{ p: 3, borderRadius: 1, mb: 2 }}>
+        <Stack direction={{ xs: "column", lg: "row" }} justifyContent="space-between" alignItems={{ xs: "stretch", lg: "center" }} spacing={2}>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box sx={{ color: "primary.main", display: "flex" }}>
+              <StorefrontOutlined fontSize="large" />
+            </Box>
+            <Box>
+              <Typography variant="h4" fontWeight={600}>
+                Comparativo entre tiendas
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Compara ventas, pedidos, cierres diarios, saldos, stock y desempeno entre dos o mas tiendas.
+              </Typography>
+            </Box>
+          </Stack>
+          <Stack direction="row" spacing={1} justifyContent={{ xs: "flex-start", lg: "flex-end" }}>
+            <Button startIcon={<RefreshOutlined />} variant="outlined" size="small" onClick={() => void cargar()} disabled={loading}>
+              Recargar
+            </Button>
+            <Button startIcon={<FileDownloadOutlined />} variant="contained" size="small" onClick={() => exportCsv(rows)} disabled={!rows.length}>
+              Excel/CSV
+            </Button>
+          </Stack>
         </Stack>
-        <Stack direction="row" spacing={1}>
-          <Button startIcon={<RefreshOutlined />} variant="outlined" size="small" onClick={() => void cargar()} disabled={loading}>
-            Recargar
-          </Button>
-          <Button startIcon={<FileDownloadOutlined />} variant="contained" size="small" onClick={() => exportCsv(rows)} disabled={!rows.length}>
-            Excel/CSV
-          </Button>
-        </Stack>
-      </Stack>
+      </Paper>
 
       {loading && <LinearProgress sx={{ mb: 2 }} />}
 
+      <Paper variant="outlined" sx={{ p: 2, borderRadius: 1, mb: 2 }}>
+        <Grid container spacing={2} alignItems="center">
+          <Grid size={{ xs: 12, md: 3 }}>
+            <TextField
+              label="Desde"
+              type="date"
+              value={desde}
+              onChange={(e) => setDesde(e.target.value)}
+              size="small"
+              fullWidth
+              InputLabelProps={{ shrink: true }}
+            />
+          </Grid>
+          <Grid size={{ xs: 12, md: 3 }}>
+            <TextField
+              label="Hasta"
+              type="date"
+              value={hasta}
+              onChange={(e) => setHasta(e.target.value)}
+              size="small"
+              fullWidth
+              InputLabelProps={{ shrink: true }}
+            />
+          </Grid>
+          <Grid size={{ xs: 12, md: 6 }}>
+            <FormControl size="small" fullWidth>
+              <InputLabel>Tiendas a comparar</InputLabel>
+              <Select
+                multiple
+                value={bodegaIds.map(String)}
+                input={<OutlinedInput label="Tiendas a comparar" />}
+                renderValue={(selected) =>
+                  selected
+                    .map((value) => bodegaById.get(Number(value))?.nombre || `Tienda ${value}`)
+                    .join(", ")
+                }
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setBodegaIds((typeof value === "string" ? value.split(",") : value).map(Number));
+                }}
+              >
+                {bodegas.map((bodega) => (
+                  <MenuItem key={bodega.id} value={String(bodega.id)}>
+                    <Checkbox checked={bodegaIds.includes(Number(bodega.id))} />
+                    <ListItemText primary={bodega.nombre} />
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+        </Grid>
+        {tiendasSeleccionadas < 2 && (
+          <Alert severity="info" sx={{ mt: 2 }}>
+            Selecciona dos o mas tiendas para ver un comparativo real. Con una sola tienda se muestran sus indicadores individuales.
+          </Alert>
+        )}
+      </Paper>
+
       <Grid container spacing={2} sx={{ mb: 2 }}>
-        <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-          <TextField label="Desde" type="date" value={desde} onChange={(e) => setDesde(e.target.value)} size="small" fullWidth InputLabelProps={{ shrink: true }} />
+        <Grid size={{ xs: 12, sm: 6, xl: 3 }}>
+          <Metric title="Ventas seleccionadas" value={money(totals.ventasTotal)} helper={`${totals.ventasTickets} tickets | prom. ${money(ticketPromedioGeneral)}`} icon={<TrendingUpOutlined />} tone="success" />
         </Grid>
-        <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-          <TextField label="Hasta" type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} size="small" fullWidth InputLabelProps={{ shrink: true }} />
+        <Grid size={{ xs: 12, sm: 6, xl: 3 }}>
+          <Metric title="Pedidos" value={totals.pedidosCantidad} helper={`${totals.pedidosAbiertos} abiertos | ${money(totals.pedidosTotal)}`} icon={<AssessmentOutlined />} />
         </Grid>
-        <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-          <Metric title="Ventas totales" value={money(totals.ventasTotal)} helper={`${totals.ventasTickets} tickets`} icon={<TrendingUpOutlined />} />
+        <Grid size={{ xs: 12, sm: 6, xl: 3 }}>
+          <Metric title="Cierres diarios" value={money(totals.cierresTotal)} helper={`${totals.cierresCantidad} cierre(s) | Dif. ${money(diferenciaCierres)}`} icon={<StorefrontOutlined />} tone={Math.abs(diferenciaCierres) > 1 ? "warning" : "info"} />
         </Grid>
-        <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-          <Metric title="Tienda lider" value={lider?.bodega || "N/D"} helper={lider ? money(lider.ventasTotal) : "Sin ventas"} icon={<StorefrontOutlined />} />
+        <Grid size={{ xs: 12, sm: 6, xl: 3 }}>
+          <Metric title="Saldo pendiente" value={money(totals.saldoPendiente)} helper={`${totals.stockBajo} productos en stock bajo`} icon={<WarningAmberOutlined />} tone="warning" />
         </Grid>
       </Grid>
 
       <Grid container spacing={2} sx={{ mb: 2 }}>
-        <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-          <Metric title="Pedidos" value={totals.pedidosCantidad} helper={`${totals.pedidosAbiertos} abiertos`} icon={<StorefrontOutlined />} />
-        </Grid>
-        <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-          <Metric title="Saldo pendiente" value={money(totals.saldoPendiente)} helper="Pedidos con saldo acumulado" icon={<WarningAmberOutlined />} />
-        </Grid>
-        <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-          <Metric title="Stock bajo" value={totals.stockBajo} helper="Productos por debajo del maximo" icon={<WarningAmberOutlined />} />
-        </Grid>
-        <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-          <Metric title="Postventa abierta" value={postventaAbierta} helper="Cambios/devoluciones pendientes" icon={<WarningAmberOutlined />} />
-        </Grid>
-      </Grid>
-
-      <Divider sx={{ mb: 2 }} />
-
-      <TableContainer>
-        <Table size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell>#</TableCell>
-              <TableCell>Tienda</TableCell>
-              <TableCell>Ventas</TableCell>
-              <TableCell>Tickets</TableCell>
-              <TableCell>Ticket prom.</TableCell>
-              <TableCell>Pedidos</TableCell>
-              <TableCell>Abiertos</TableCell>
-              <TableCell>Saldo</TableCell>
-              <TableCell>Stock total</TableCell>
-              <TableCell>Stock bajo</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {loading ? (
-              <UniformaTableLoadingRow colSpan={10} />
-            ) : paginatedRows.map((row, index) => (
-              <TableRow key={row.bodegaId} hover>
-                <TableCell>{page * rowsPerPage + index + 1}</TableCell>
-                <TableCell>
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+        <Grid size={{ xs: 12, lg: 8 }}>
+          <Paper variant="outlined" sx={{ p: 2, borderRadius: 1, height: "100%" }}>
+            <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={1.5} sx={{ mb: 2 }}>
+              <Box>
+                <Typography variant="h6" fontWeight={600}>
+                  Participacion y desempeno por tienda
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Barras comparativas por ventas y volumen de pedidos.
+                </Typography>
+              </Box>
+              <Stack direction="row" spacing={1} flexWrap="wrap">
+                {lider && <Chip color="success" label={`Lider: ${lider.bodega}`} />}
+                {menorVenta && <Chip color="warning" variant="outlined" label={`Menor venta: ${menorVenta.bodega}`} />}
+              </Stack>
+            </Stack>
+            <Stack spacing={1.5}>
+              {rows.slice(0, 8).map((row) => (
+                <Grid container key={row.bodegaId} spacing={1.5} alignItems="center">
+                  <Grid size={{ xs: 12, md: 3 }}>
+                    <Typography variant="body2" fontWeight={500}>
                       {row.bodega}
                     </Typography>
-                    {page === 0 && index === 0 && row.ventasTotal > 0 && <Chip label="Lider" size="small" color="success" />}
-                  </Stack>
-                </TableCell>
-                <TableCell>{money(row.ventasTotal)}</TableCell>
-                <TableCell>{row.ventasTickets}</TableCell>
-                <TableCell>{money(row.ticketPromedio)}</TableCell>
-                <TableCell>{row.pedidosCantidad}</TableCell>
-                <TableCell>{row.pedidosAbiertos}</TableCell>
-                <TableCell>{money(row.saldoPendiente)}</TableCell>
-                <TableCell>{row.stockTotal}</TableCell>
-                <TableCell>{row.stockBajo}</TableCell>
-              </TableRow>
-            ))}
-            {!loading && !rows.length && (
+                    <Typography variant="caption" color="text.secondary">
+                      {row.participacionVentas.toFixed(1)}% de ventas
+                    </Typography>
+                  </Grid>
+                  <Grid size={{ xs: 8, md: 6 }}>
+                    <Bar value={row.ventasTotal} max={maxVentas} color="#1d4ed8" />
+                  </Grid>
+                  <Grid size={{ xs: 4, md: 3 }}>
+                    <Stack direction="row" spacing={1} justifyContent="flex-end" alignItems="center">
+                      <Typography variant="body2" fontWeight={600}>
+                        {money(row.ventasTotal)}
+                      </Typography>
+                      <Tooltip title={`${row.pedidosCantidad} pedido(s)`}>
+                        <Box sx={{ minWidth: 46 }}>
+                          <Bar value={row.pedidosCantidad} max={maxPedidos} color="#16a34a" />
+                        </Box>
+                      </Tooltip>
+                    </Stack>
+                  </Grid>
+                </Grid>
+              ))}
+              {!rows.length && (
+                <Typography variant="body2" color="text.secondary">
+                  No hay tiendas seleccionadas.
+                </Typography>
+              )}
+            </Stack>
+          </Paper>
+        </Grid>
+        <Grid size={{ xs: 12, lg: 4 }}>
+          <Stack spacing={2} sx={{ height: "100%" }}>
+            <RankingPanel title="Mejores ventas" rows={mejoresVentas} tone="success" />
+            <RankingPanel title="Peores ventas" rows={peoresVentas} tone="warning" />
+          </Stack>
+        </Grid>
+      </Grid>
+
+      <Paper variant="outlined" sx={{ p: 2, borderRadius: 1 }}>
+        <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={1.5} sx={{ mb: 1.5 }}>
+          <Box>
+            <Typography variant="h6" fontWeight={600}>
+              Matriz comparativa
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Ordenada por ventas totales del rango seleccionado.
+            </Typography>
+          </Box>
+          <Stack direction="row" spacing={1} flexWrap="wrap">
+            <Chip size="small" label={`${rows.length} tienda(s)`} />
+            <Chip size="small" variant="outlined" label={`Rango ${desde} a ${hasta}`} />
+          </Stack>
+        </Stack>
+        <Divider sx={{ mb: 1 }} />
+        <TableContainer>
+          <Table size="small">
+            <TableHead>
               <TableRow>
-                <TableCell colSpan={10} align="center">
-                  No hay tiendas para comparar.
-                </TableCell>
+                <TableCell>#</TableCell>
+                <TableCell>Tienda</TableCell>
+                <TableCell>Ventas</TableCell>
+                <TableCell>Participacion</TableCell>
+                <TableCell>Tickets</TableCell>
+                <TableCell>Ticket prom.</TableCell>
+                <TableCell>Pedidos</TableCell>
+                <TableCell>Abiertos</TableCell>
+                <TableCell>Saldo</TableCell>
+                <TableCell>Cierres</TableCell>
+                <TableCell>Diferencia</TableCell>
+                <TableCell>Stock bajo</TableCell>
               </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </TableContainer>
-      <TablePagination {...paginationProps} />
-    </Paper>
+            </TableHead>
+            <TableBody>
+              {loading ? (
+                <UniformaTableLoadingRow colSpan={12} />
+              ) : paginatedRows.map((row, index) => (
+                <TableRow key={row.bodegaId} hover>
+                  <TableCell>{page * rowsPerPage + index + 1}</TableCell>
+                  <TableCell>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                        {row.bodega}
+                      </Typography>
+                      {page === 0 && index === 0 && row.ventasTotal > 0 && <Chip label="Lider" size="small" color="success" />}
+                    </Stack>
+                  </TableCell>
+                  <TableCell>{money(row.ventasTotal)}</TableCell>
+                  <TableCell>
+                    <Stack spacing={0.5}>
+                      <Typography variant="caption">{row.participacionVentas.toFixed(2)}%</Typography>
+                      <Bar value={row.participacionVentas} max={100} color="#2563eb" />
+                    </Stack>
+                  </TableCell>
+                  <TableCell>{row.ventasTickets}</TableCell>
+                  <TableCell>{money(row.ticketPromedio)}</TableCell>
+                  <TableCell>{row.pedidosCantidad}</TableCell>
+                  <TableCell>{row.pedidosAbiertos}</TableCell>
+                  <TableCell>{money(row.saldoPendiente)}</TableCell>
+                  <TableCell>
+                    <Stack spacing={0.25}>
+                      <Typography variant="body2">{money(row.cierresTotal)}</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {row.cierresCantidad} cierre(s)
+                      </Typography>
+                    </Stack>
+                  </TableCell>
+                  <TableCell>
+                    <Typography color={Math.abs(row.diferenciaVentaCierre) > 1 ? "warning.main" : "text.primary"} fontWeight={500}>
+                      {money(row.diferenciaVentaCierre)}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>{row.stockBajo}</TableCell>
+                </TableRow>
+              ))}
+              {!loading && !rows.length && (
+                <TableRow>
+                  <TableCell colSpan={12} align="center">
+                    No hay tiendas para comparar.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+        <TablePagination {...paginationProps} />
+      </Paper>
+    </Box>
   );
 }
