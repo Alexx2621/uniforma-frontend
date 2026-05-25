@@ -165,6 +165,23 @@ const detalleInicial: CapturaArticulo = {
   stock: null,
 };
 
+const calcularImportesDetalleVenta = (row: Pick<DetalleRow, "cantidad" | "precio" | "bordado" | "estiloEspecial" | "estiloEspecialMonto" | "descuento">) => {
+  const cantidad = Number(row.cantidad) || 0;
+  const precio = Number(row.precio) || 0;
+  const estilo = row.estiloEspecial ? Number(row.estiloEspecialMonto) || 0 : 0;
+  const bordado = Number(row.bordado) || 0;
+  const descuentoFactor = 1 - (Number(row.descuento) || 0) / 100;
+  const precioNeto = cantidad * precio * descuentoFactor;
+  const estiloNeto = cantidad * estilo * descuentoFactor;
+  const bordadoTotal = cantidad * bordado;
+  return {
+    precio: precioNeto,
+    estiloEspecial: estiloNeto,
+    bordado: bordadoTotal,
+    subtotal: precioNeto + estiloNeto + bordadoTotal,
+  };
+};
+
 const resolveTelaNombre = (prod: Producto | undefined, telas: any[]) => {
   if (!prod) return "N/D";
   const telaId =
@@ -728,12 +745,7 @@ export default function VentaNueva() {
 
   const totals = useMemo(() => {
     const subtotal = detalle.reduce(
-      (sum, item) =>
-        sum +
-        (Number(item.cantidad) || 0) *
-          (((Number(item.precio) || 0) + (item.estiloEspecial ? Number(item.estiloEspecialMonto || 0) : 0)) *
-            (1 - (Number(item.descuento || 0) / 100)) +
-            Number(item.bordado || 0)),
+      (sum, item) => sum + calcularImportesDetalleVenta(item).subtotal,
       0,
     );
     const recargo = metodoUsaRecargo ? subtotal * ((porcentajeRecargo || 0) / 100) : 0;
@@ -743,9 +755,7 @@ export default function VentaNueva() {
   }, [detalle, metodoUsaRecargo, porcentajeRecargo, envio]);
 
   const calcularSubtotal = (item: DetalleRow) => {
-    const precioBase = (Number(item.precio) || 0) + (item.estiloEspecial ? Number(item.estiloEspecialMonto || 0) : 0);
-    const precioConDescuento = precioBase * (1 - (Number(item.descuento || 0) / 100));
-    return (Number(item.cantidad) || 0) * (precioConDescuento + (Number(item.bordado) || 0));
+    return calcularImportesDetalleVenta(item).subtotal;
   };
 
   const detalleTableTotals = useMemo(
@@ -753,11 +763,12 @@ export default function VentaNueva() {
       detalle.reduce(
         (sum, row) => ({
           cantidad: sum.cantidad + (Number(row.cantidad) || 0),
-          precio: sum.precio + (Number(row.precio) || 0),
-          bordado: sum.bordado + (Number(row.bordado) || 0),
-          estiloEspecial: sum.estiloEspecial + (row.estiloEspecial ? Number(row.estiloEspecialMonto) || 0 : 0),
+          precio: sum.precio + calcularImportesDetalleVenta(row).precio,
+          bordado: sum.bordado + calcularImportesDetalleVenta(row).bordado,
+          estiloEspecial: sum.estiloEspecial + calcularImportesDetalleVenta(row).estiloEspecial,
+          subtotal: sum.subtotal + calcularImportesDetalleVenta(row).subtotal,
         }),
-        { cantidad: 0, precio: 0, bordado: 0, estiloEspecial: 0 },
+        { cantidad: 0, precio: 0, bordado: 0, estiloEspecial: 0, subtotal: 0 },
       ),
     [detalle],
   );
@@ -1666,7 +1677,9 @@ export default function VentaNueva() {
                 <TableCell align="center">-</TableCell>
                 {mostrarColumnaStock && <TableCell align="center">-</TableCell>}
                 <TableCell align="center">-</TableCell>
-                <TableCell align="center">-</TableCell>
+                <TableCell align="center" sx={{ fontWeight: 700 }}>
+                  {formatCurrency(detalleTableTotals.subtotal)}
+                </TableCell>
                 <TableCell align="center">-</TableCell>
               </TableRow>
             )}

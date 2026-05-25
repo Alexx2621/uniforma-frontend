@@ -274,6 +274,34 @@ const buildBordadoDesdeArticulo = (articulo: CapturaArticulo): BordadoArticulo |
 const getBordadoTotal = (bordados: BordadoArticulo[]) =>
   bordados.reduce((sum, bordado) => sum + Number(bordado.monto || 0), 0);
 
+const bordadosIguales = (a: BordadoArticulo, b: BordadoArticulo) =>
+  Number(a.monto || 0) === Number(b.monto || 0) &&
+  `${a.color || ""}`.trim().toUpperCase() === `${b.color || ""}`.trim().toUpperCase() &&
+  `${a.tamano || ""}`.trim().toUpperCase() === `${b.tamano || ""}`.trim().toUpperCase() &&
+  `${a.posicion || ""}`.trim().toUpperCase() === `${b.posicion || ""}`.trim().toUpperCase() &&
+  `${a.observaciones || ""}`.trim().toUpperCase() === `${b.observaciones || ""}`.trim().toUpperCase() &&
+  `${a.imagenUrl || ""}` === `${b.imagenUrl || ""}`;
+
+const agregarBordadoSiNoExiste = (bordados: BordadoArticulo[], bordado: BordadoArticulo | null) =>
+  bordado && !bordados.some((item) => bordadosIguales(item, bordado)) ? [...bordados, bordado] : bordados;
+
+const calcularImportesDetallePedido = (row: Pick<DetalleRow, "cantidad" | "precioUnit" | "bordado" | "estiloEspecial" | "estiloEspecialMonto" | "descuento">) => {
+  const cantidad = Number(row.cantidad) || 0;
+  const precio = Number(row.precioUnit) || 0;
+  const estilo = row.estiloEspecial ? Number(row.estiloEspecialMonto) || 0 : 0;
+  const bordado = Number(row.bordado) || 0;
+  const descuentoFactor = 1 - (Number(row.descuento) || 0) / 100;
+  const precioNeto = cantidad * precio * descuentoFactor;
+  const estiloNeto = cantidad * estilo * descuentoFactor;
+  const bordadoTotal = cantidad * bordado;
+  return {
+    precio: precioNeto,
+    estiloEspecial: estiloNeto,
+    bordado: bordadoTotal,
+    subtotal: precioNeto + estiloNeto + bordadoTotal,
+  };
+};
+
 const fileToDataUrl = (file: File) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -645,14 +673,7 @@ export default function PedidoNuevo() {
 
   const totals = useMemo(() => {
     const subtotal = detalle.reduce((sum, d) => {
-      const precio = Number(d.precioUnit) || 0;
-      const bordado = Number(d.bordado) || 0;
-      const estiloEspecialMonto = d.estiloEspecial ? Number(d.estiloEspecialMonto) || 0 : 0;
-      const desc = Number(d.descuento) || 0;
-      const cantidad = Number(d.cantidad) || 0;
-      const baseConEstilo = precio + estiloEspecialMonto;
-      const precioConDescuento = baseConEstilo * (1 - desc / 100);
-      return sum + cantidad * (precioConDescuento + bordado);
+      return sum + calcularImportesDetallePedido(d).subtotal;
     }, 0);
     const recargo = metodoUsaRecargo ? subtotal * ((porcentajeRecargo || 0) / 100) : 0;
     const envioMonto = Math.max(0, Number(envio) || 0);
@@ -670,17 +691,17 @@ export default function PedidoNuevo() {
       detalle.reduce(
         (sum, row) => ({
           cantidad: sum.cantidad + (Number(row.cantidad) || 0),
-          precio: sum.precio + (Number(row.precioUnit) || 0),
-          bordado: sum.bordado + (Number(row.bordado) || 0),
-          estiloEspecial:
-            sum.estiloEspecial +
-            (row.estiloEspecial ? Number(row.estiloEspecialMonto) || 0 : 0),
+          precio: sum.precio + calcularImportesDetallePedido(row).precio,
+          bordado: sum.bordado + calcularImportesDetallePedido(row).bordado,
+          estiloEspecial: sum.estiloEspecial + calcularImportesDetallePedido(row).estiloEspecial,
+          subtotal: sum.subtotal + calcularImportesDetallePedido(row).subtotal,
         }),
         {
           cantidad: 0,
           precio: 0,
           bordado: 0,
           estiloEspecial: 0,
+          subtotal: 0,
         },
       ),
     [detalle],
@@ -1052,15 +1073,15 @@ export default function PedidoNuevo() {
     }
     const bordadoEnCaptura = buildBordadoDesdeArticulo(articuloActual);
     const bordadosFinales = !pedidoParaStock
-      ? [
-          ...articuloActual.bordados.filter(
+      ? agregarBordadoSiNoExiste(
+          articuloActual.bordados.filter(
             (bordado) =>
               Number(bordado.monto || 0) > 0 ||
               Boolean(`${bordado.observaciones || ""}`.trim()) ||
               Boolean(bordado.imagenUrl),
           ),
-          ...(bordadoEnCaptura ? [bordadoEnCaptura] : []),
-        ]
+          bordadoEnCaptura,
+        )
       : [];
     const tieneBordado = !pedidoParaStock && (Boolean(articuloActual.bordadoActivo) || bordadosFinales.length > 0);
     if (
@@ -1191,6 +1212,10 @@ export default function PedidoNuevo() {
     }
     if (!bordado.color || !bordado.tamano || !bordado.posicion) {
       Swal.fire("Validacion", "Color, tamano y posicion de bordado son obligatorios", "warning");
+      return;
+    }
+    if (articuloActual.bordados.some((item) => bordadosIguales(item, bordado))) {
+      Swal.fire("Bordado duplicado", "Este bordado ya esta agregado a la prenda", "info");
       return;
     }
     setArticuloActual((prev) => ({
@@ -2360,6 +2385,7 @@ export default function PedidoNuevo() {
                   <TableCell align="center" sx={{ fontWeight: 700 }}>Bordado</TableCell>
                   <TableCell align="center" sx={{ fontWeight: 700 }}>Estilo especial</TableCell>
                   <TableCell align="center" sx={{ fontWeight: 700 }}>Descuento</TableCell>
+                  <TableCell align="center" sx={{ fontWeight: 700 }}>Subtotal</TableCell>
                 </>
               )}
               <TableCell align="center" sx={{ fontWeight: 700 }}>Observacion</TableCell>
@@ -2395,6 +2421,7 @@ export default function PedidoNuevo() {
                         {row.estiloEspecial ? formatCurrency(row.estiloEspecialMonto || 0) : "No"}
                       </TableCell>
                       <TableCell align="center">{`${Number(row.descuento || 0).toFixed(2)}%`}</TableCell>
+                      <TableCell align="center">{formatCurrency(calcularImportesDetallePedido(row).subtotal)}</TableCell>
                     </>
                   )}
                   <TableCell align="center">{row.descripcion || "-"}</TableCell>
@@ -2442,6 +2469,9 @@ export default function PedidoNuevo() {
                       {formatCurrency(detalleTableTotals.estiloEspecial)}
                     </TableCell>
                     <TableCell align="center">-</TableCell>
+                    <TableCell align="center" sx={{ fontWeight: 700 }}>
+                      {formatCurrency(detalleTableTotals.subtotal)}
+                    </TableCell>
                   </>
                 )}
                 <TableCell align="center">-</TableCell>
@@ -2450,7 +2480,7 @@ export default function PedidoNuevo() {
             )}
             {!detalle.length && (
               <TableRow>
-                <TableCell colSpan={pedidoParaStock ? 9 : 13} align="center">
+                <TableCell colSpan={pedidoParaStock ? 9 : 14} align="center">
                   Aun no has agregado articulos al pedido.
                 </TableCell>
               </TableRow>
