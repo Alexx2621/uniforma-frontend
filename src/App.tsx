@@ -12,9 +12,11 @@ import Telas from "./pages/Telas";
 import Colores from "./pages/Colores";
 import Tallas from "./pages/Tallas";
 import IngresoInventario from "./pages/IngresoInventario";
+import InventarioPanel from "./pages/InventarioPanel";
 import InventarioResumen from "./pages/InventarioResumen";
 import InventarioTelas from "./pages/InventarioTelas";
 import ConteosFisicos from "./pages/ConteosFisicos";
+import KardexInventario from "./pages/KardexInventario";
 import Traslados from "./pages/Traslados";
 import VentaNueva from "./pages/VentaNueva";
 import Bodegas from "./pages/Bodegas";
@@ -77,9 +79,11 @@ export default function App() {
           <Route path="/productos" element={<Productos />} />
           <Route path="/productos/nuevo" element={<ProductoNuevo />} />
           <Route path="/inventario" element={<IngresoInventario />} />
+          <Route path="/inventario/panel" element={<InventarioPanel />} />
           <Route path="/inventario/resumen" element={<InventarioResumen />} />
           <Route path="/inventario/telas" element={<InventarioTelas />} />
           <Route path="/inventario/conteos" element={<ConteosFisicos />} />
+          <Route path="/inventario/kardex" element={<KardexInventario />} />
           <Route path="/inventario/traslados" element={<Traslados />} />
           <Route path="/bodegas" element={<Bodegas />} />
           <Route path="/cotizaciones" element={<Cotizaciones />} />

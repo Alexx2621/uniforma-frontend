@@ -85,11 +85,13 @@ export const menuSections: MenuSection[] = [
   {
     title: "INVENTARIO",
     items: [
+      { label: "Panel operativo", icon: <ManageSearchOutlined />, path: "/inventario/panel" },
       { label: "Ingreso", icon: <AddBusinessOutlined />, path: "/inventario" },
       { label: "Bodegas", icon: <Inventory2Outlined />, path: "/bodegas" },
       { label: "Resumen", icon: <TableChartOutlined />, path: "/inventario/resumen" },
       { label: "Inventario de telas", icon: <CheckroomOutlined />, path: "/inventario/telas" },
       { label: "Conteos fisicos", icon: <FactCheckOutlined />, path: "/inventario/conteos" },
+      { label: "Kardex", icon: <TimelineOutlined />, path: "/inventario/kardex" },
       { label: "Traslados", icon: <CompareArrowsOutlined />, path: "/inventario/traslados" },
     ],
   },

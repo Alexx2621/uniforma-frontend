@@ -38,7 +38,11 @@ interface Cliente {
   logoUrl?: string | null;
   creadoEn?: string | null;
   fechaRegistro?: string | null;
-  _count?: { ventas?: number };
+  _count?: { ventas?: number; pedidos?: number };
+  ventasCantidad?: number;
+  pedidosCantidad?: number;
+  contadorVentas?: number;
+  contadorPedidos?: number;
   usuarioId?: number | null;
   usuario?: { id: number; nombre?: string | null; usuario?: string | null } | null;
 }
@@ -71,6 +75,8 @@ const getImageUrl = (path?: string | null) => {
 };
 
 const formatDate = (value?: string | null) => (value ? new Date(value).toLocaleString("es-GT") : "N/D");
+const getVentasCount = (cliente: Cliente) => Number(cliente.contadorVentas ?? cliente.ventasCantidad ?? cliente._count?.ventas ?? 0);
+const getPedidosCount = (cliente: Cliente) => Number(cliente.contadorPedidos ?? cliente.pedidosCantidad ?? cliente._count?.pedidos ?? 0);
 
 export default function Clientes() {
   const navigate = useNavigate();
@@ -317,7 +323,13 @@ export default function Clientes() {
         field: "ventas",
         headerName: "Ventas",
         width: 110,
-        valueGetter: (_, row) => row._count?.ventas || 0,
+        valueGetter: (_, row) => getVentasCount(row),
+      },
+      {
+        field: "pedidos",
+        headerName: "Pedidos",
+        width: 110,
+        valueGetter: (_, row) => getPedidosCount(row),
       },
       {
         field: "acciones",
@@ -443,7 +455,8 @@ export default function Clientes() {
                   <Typography variant="h6">{selected.nombre}</Typography>
                   <Stack direction="row" spacing={1} sx={{ mt: 0.5 }}>
                     <Chip size="small" label={selected.tipoCliente || "Sin tipo"} />
-                    <Chip size="small" color="primary" label={`${selected._count?.ventas || 0} venta(s)`} />
+                    <Chip size="small" color="primary" label={`${getVentasCount(selected)} venta(s)`} />
+                    <Chip size="small" color="secondary" label={`${getPedidosCount(selected)} pedido(s)`} />
                   </Stack>
                 </Box>
               </Stack>

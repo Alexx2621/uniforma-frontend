@@ -152,6 +152,14 @@ const formatDateTime = (value?: string | null) => {
   });
 };
 
+const fileToBase64 = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(`${reader.result || ""}`);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+
 export default function IngresoInventario() {
   const today = useMemo(() => toInputDate(new Date()), []);
   const [vista, setVista] = useState<"listado" | "nuevo">("listado");
@@ -669,42 +677,80 @@ export default function IngresoInventario() {
       .map((bodega) => `<option value="${bodega.id}">${bodega.nombre}</option>`)
       .join("");
     const resp = await Swal.fire({
-      title: "Importacion masiva",
-      width: 720,
+      title: "Importacion masiva con vista previa",
+      width: 780,
       html: `
         <div style="text-align:left;display:grid;gap:12px">
           <label>Bodega</label>
           <select id="import-bodega" class="swal2-input" style="width:100%;margin:0">${bodegaOptions}</select>
-          <label>Codigos y cantidades</label>
-          <textarea id="import-data" class="swal2-textarea" style="width:100%;height:220px;margin:0" placeholder="CODIGO,CANTIDAD&#10;FDSSVMU,5&#10;PDSXVMU,2"></textarea>
-          <small>Formato aceptado: codigo,cantidad. Tambien puedes pegar datos separados por tabulacion desde Excel.</small>
+          <label>Archivo Excel</label>
+          <input id="import-file" type="file" accept=".xlsx,.xls" class="swal2-file" style="width:100%;margin:0" />
+          <label>O pega codigos y cantidades</label>
+          <textarea id="import-data" class="swal2-textarea" style="width:100%;height:180px;margin:0" placeholder="CODIGO,CANTIDAD&#10;FDSSVMU,5&#10;PDSXVMU,2"></textarea>
+          <small>El Excel debe tener codigo en la columna A y cantidad en la columna B. Tambien puedes pegar datos desde Excel separados por tabulacion.</small>
         </div>
       `,
       showCancelButton: true,
-      confirmButtonText: "Importar",
-      preConfirm: () => {
+      confirmButtonText: "Validar",
+      preConfirm: async () => {
         const bodega = Number((document.getElementById("import-bodega") as HTMLSelectElement)?.value || 0);
         const raw = (document.getElementById("import-data") as HTMLTextAreaElement)?.value || "";
-        const items = raw
-          .split(/\r?\n/)
-          .map((line) => line.trim())
-          .filter(Boolean)
-          .map((line) => {
-            const [codigo, cantidad] = line.split(/[,\t;]/).map((value) => value.trim());
-            return { codigo, cantidad: Number(cantidad || 0) };
-          })
-          .filter((item) => item.codigo && item.cantidad > 0);
-        if (!bodega || !items.length) {
-          Swal.showValidationMessage("Selecciona bodega y pega al menos una linea valida");
+        const file = ((document.getElementById("import-file") as HTMLInputElement)?.files || [])[0];
+        if (!bodega || (!raw.trim() && !file)) {
+          Swal.showValidationMessage("Selecciona bodega y carga un Excel o pega datos");
           return false;
         }
-        return { bodegaId: bodega, items };
+        const fileBase64 = file ? await fileToBase64(file) : "";
+        return { bodegaId: bodega, raw, fileBase64, fileName: file?.name || "" };
       },
     });
     if (!resp.isConfirmed || !resp.value) return;
     try {
+      const previewResp = await api.post("/ingresos/importar/preview", resp.value);
+      const preview = previewResp.data || {};
+      const rows = Array.isArray(preview.rows) ? preview.rows : [];
+      const tableRows = rows
+        .slice(0, 80)
+        .map((row: any) => {
+          const errores = row.errores?.length ? row.errores.join(", ") : row.advertencias?.join(", ") || "OK";
+          const color = row.errores?.length ? "#b91c1c" : row.advertencias?.length ? "#92400e" : "#166534";
+          return `<tr>
+            <td>${row.linea}</td>
+            <td>${row.codigo}</td>
+            <td>${row.cantidad}</td>
+            <td>${row.producto?.nombre || "-"}</td>
+            <td style="color:${color};font-weight:600">${errores}</td>
+          </tr>`;
+        })
+        .join("");
+      const confirmar = await Swal.fire({
+        title: "Vista previa de importacion",
+        width: 980,
+        html: `
+          <div style="display:flex;gap:16px;margin-bottom:12px;text-align:left">
+            <div><b>Filas:</b> ${preview.totalFilas || 0}</div>
+            <div><b>Validas:</b> ${preview.filasValidas || 0}</div>
+            <div><b>Errores:</b> ${preview.filasInvalidas || 0}</div>
+            <div><b>Unidades:</b> ${preview.totalUnidades || 0}</div>
+          </div>
+          <div style="max-height:390px;overflow:auto">
+            <table style="width:100%;border-collapse:collapse;text-align:left;font-size:12px">
+              <thead><tr><th>Linea</th><th>Codigo</th><th>Cantidad</th><th>Producto</th><th>Estado</th></tr></thead>
+              <tbody>${tableRows}</tbody>
+            </table>
+          </div>
+        `,
+        icon: preview.filasInvalidas ? "warning" : "question",
+        showCancelButton: true,
+        confirmButtonText: preview.filasInvalidas ? "Corregir archivo" : "Aplicar ingreso",
+        cancelButtonText: "Cancelar",
+        showConfirmButton: !preview.filasInvalidas,
+      });
+      if (!confirmar.isConfirmed) return;
+
       const result = await api.post("/ingresos/importar", {
-        ...resp.value,
+        bodegaId: preview.bodegaId,
+        items: preview.items || [],
         responsable: usuario || null,
         observaciones: "Importacion masiva de inventario",
       });

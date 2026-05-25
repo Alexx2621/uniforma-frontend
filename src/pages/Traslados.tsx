@@ -116,6 +116,8 @@ interface SolicitudTrasladoRegistro {
     id: number;
     productoId: number;
     cantidad: number;
+    cantidadRecibida?: number;
+    estado?: string;
     producto?: Producto | null;
   }>;
 }
@@ -709,6 +711,7 @@ export default function Traslados() {
   const estadoColor = (estado: string) => {
     const normalized = `${estado || ""}`.toUpperCase();
     if (normalized === "RECIBIDO") return "success";
+    if (normalized === "RECIBIDO_PARCIAL") return "warning";
     if (normalized === "CANCELADO") return "error";
     if (normalized === "PENDIENTE_APROBACION") return "warning";
     if (normalized === "EN_TRANSITO") return "info";
@@ -731,6 +734,91 @@ export default function Traslados() {
       await cargarTraslados();
     } catch (error: any) {
       Swal.fire("Error", error?.response?.data?.message || "No se pudo actualizar la solicitud", "error");
+    }
+  };
+
+  const recibirParcialSolicitud = async (solicitud: SolicitudTrasladoRegistro) => {
+    const detallePendiente = (solicitud.detalle || [])
+      .map((item) => ({
+        ...item,
+        pendiente: Math.max(0, Number(item.cantidad || 0) - Number(item.cantidadRecibida || 0)),
+      }))
+      .filter((item) => item.pendiente > 0);
+
+    if (!detallePendiente.length) {
+      Swal.fire("Solicitud recibida", "No hay cantidades pendientes para recibir", "info");
+      return;
+    }
+
+    const rowsHtml = detallePendiente
+      .map((item) => {
+        const producto = item.producto;
+        const codigo = producto?.codigo || item.productoId;
+        const nombre = producto?.nombre || "Producto";
+        return `
+          <tr>
+            <td style="padding:6px;border-bottom:1px solid #ddd">${codigo}</td>
+            <td style="padding:6px;border-bottom:1px solid #ddd">${nombre}</td>
+            <td style="padding:6px;border-bottom:1px solid #ddd;text-align:center">${item.cantidad}</td>
+            <td style="padding:6px;border-bottom:1px solid #ddd;text-align:center">${item.cantidadRecibida || 0}</td>
+            <td style="padding:6px;border-bottom:1px solid #ddd;text-align:center">${item.pendiente}</td>
+            <td style="padding:6px;border-bottom:1px solid #ddd;text-align:center">
+              <input id="recibir-${item.id}" type="number" min="0" max="${item.pendiente}" value="${item.pendiente}" class="swal2-input" style="width:90px;margin:0;height:34px" />
+            </td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    const resp = await Swal.fire({
+      title: `Recibir parcial ${solicitud.folio || `ST-${solicitud.id}`}`,
+      width: 980,
+      html: `
+        <div style="text-align:left;margin-bottom:10px">
+          Registra solo la cantidad que llegó físicamente. El saldo quedará pendiente.
+        </div>
+        <div style="max-height:420px;overflow:auto">
+          <table style="width:100%;border-collapse:collapse;text-align:left;font-size:12px">
+            <thead>
+              <tr>
+                <th>Codigo</th><th>Producto</th><th>Solicitado</th><th>Recibido</th><th>Pendiente</th><th>Recibir</th>
+              </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>
+      `,
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "Registrar recepcion",
+      cancelButtonText: "Cancelar",
+      preConfirm: () => {
+        const detalle = detallePendiente
+          .map((item) => {
+            const value = Number((document.getElementById(`recibir-${item.id}`) as HTMLInputElement | null)?.value || 0);
+            return { detalleId: item.id, cantidad: value, pendiente: item.pendiente };
+          })
+          .filter((item) => item.cantidad > 0);
+        const invalid = detalle.find((item) => item.cantidad > item.pendiente);
+        if (!detalle.length) {
+          Swal.showValidationMessage("Ingresa al menos una cantidad a recibir");
+          return false;
+        }
+        if (invalid) {
+          Swal.showValidationMessage("Una cantidad supera lo pendiente");
+          return false;
+        }
+        return { detalle };
+      },
+    });
+    if (!resp.isConfirmed || !resp.value) return;
+
+    try {
+      await api.patch(`/traslados/solicitudes/${solicitud.id}/recibir-parcial`, resp.value);
+      Swal.fire("Registrado", "Recepcion parcial registrada correctamente", "success");
+      await cargarTraslados();
+    } catch (error: any) {
+      Swal.fire("Error", error?.response?.data?.message || "No se pudo registrar la recepcion parcial", "error");
     }
   };
 
@@ -857,6 +945,7 @@ export default function Traslados() {
               ) : solicitudes.length ? (
                 solicitudes.map((solicitud) => {
                   const items = solicitud.detalle?.reduce((sum, item) => sum + Number(item.cantidad || 0), 0) || 0;
+                  const recibidos = solicitud.detalle?.reduce((sum, item) => sum + Number(item.cantidadRecibida || 0), 0) || 0;
                   return (
                     <TableRow key={solicitud.id} hover>
                       <TableCell>
@@ -866,7 +955,16 @@ export default function Traslados() {
                       <TableCell>{formatDateTime(solicitud.fecha)}</TableCell>
                       <TableCell>{solicitud.desdeBodega?.nombre || "N/D"}</TableCell>
                       <TableCell>{solicitud.haciaBodega?.nombre || "N/D"}</TableCell>
-                      <TableCell align="center">{items}</TableCell>
+                      <TableCell align="center">
+                        <Stack spacing={0.25} alignItems="center">
+                          <Typography variant="body2">{items}</Typography>
+                          {recibidos > 0 && (
+                            <Typography variant="caption" color="text.secondary">
+                              Recibido: {recibidos}
+                            </Typography>
+                          )}
+                        </Stack>
+                      </TableCell>
                       <TableCell>
                         <Chip size="small" color={estadoColor(solicitud.estado) as any} label={solicitud.estado} />
                       </TableCell>
@@ -881,6 +979,9 @@ export default function Traslados() {
                             <>
                               <Button size="small" onClick={() => cambiarEstadoSolicitud(solicitud, "EN_TRANSITO")}>
                                 En transito
+                              </Button>
+                              <Button size="small" color="warning" onClick={() => recibirParcialSolicitud(solicitud)}>
+                                Parcial
                               </Button>
                               <Button size="small" color="success" onClick={() => cambiarEstadoSolicitud(solicitud, "RECIBIDO")}>
                                 Recibir
