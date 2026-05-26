@@ -103,6 +103,15 @@ interface DocumentoRow {
   usuario?: { id?: number; nombre?: string | null; usuario?: string | null; bodegaId?: number | null } | null;
 }
 
+interface TopCierreDiaAnterior {
+  id: number;
+  correlativo: string;
+  vendedor: string;
+  tienda: string;
+  fecha: string;
+  total: number;
+}
+
 interface MetaMensualResumen {
   metaMes: number;
   promedioDiario: number;
@@ -239,21 +248,6 @@ const getPedidoFolio = (pedido: PedidoProduccion) =>
 
 const getPedidoCliente = (pedido: PedidoProduccion) =>
   pedido.clienteNombre || pedido.cliente?.nombre || "Mostrador";
-
-const getDocumentoFechaReporte = (doc: DocumentoRow) => `${doc?.data?.fecha || doc.creadoEn || ""}`.slice(0, 10);
-
-const getDocumentoVendedor = (doc: DocumentoRow) =>
-  doc.usuario?.nombre ||
-  doc.usuario?.usuario ||
-  doc.data?.vendedorNombre ||
-  doc.data?.usuarioNombre ||
-  doc.data?.vendedor ||
-  doc.data?.usuario ||
-  doc.data?.generadoPor ||
-  "N/D";
-
-const getDocumentoTienda = (doc: DocumentoRow) =>
-  doc.data?.tienda || doc.data?.bodegaNombre || doc.data?.bodega || "N/D";
 
 const MiniBars = ({ data }: { data: { label: string; value: number }[] }) => {
   if (!data.length) {
@@ -429,6 +423,7 @@ export default function Dashboard() {
   const [postventa, setPostventa] = useState<PostventaRow[]>([]);
   const [documentos, setDocumentos] = useState<DocumentoRow[]>([]);
   const [reportesDiariosUsuario, setReportesDiariosUsuario] = useState<DocumentoRow[]>([]);
+  const [topCierresGlobal, setTopCierresGlobal] = useState<TopCierreDiaAnterior[]>([]);
   const [metaMensual, setMetaMensual] = useState<MetaMensualResumen>({ metaMes: 0, promedioDiario: 0, source: "none" });
   const [inventario, setInventario] = useState<InventarioRow[]>([]);
   const [productos, setProductos] = useState<ProductoResumen[]>([]);
@@ -498,6 +493,8 @@ export default function Dashboard() {
         const currentDate = new Date();
         const currentYear = currentDate.getFullYear();
         const currentMonth = currentDate.getMonth() + 1;
+        const diaAnteriorDate = new Date();
+        diaAnteriorDate.setDate(diaAnteriorDate.getDate() - 1);
         const parsedUserBodegaId = Number(userBodegaId);
         const effectiveVendedorId =
           vendedorFiltro === "all" ? (canViewDashboardAll ? undefined : userId || undefined) : Number(vendedorFiltro);
@@ -532,6 +529,7 @@ export default function Dashboard() {
           respPostventa,
           respDocumentos,
           respReportesDiarios,
+          respTopCierresGlobal,
           respMeta,
           respInv,
           respProd,
@@ -544,6 +542,11 @@ export default function Dashboard() {
           api.get("/postventa", { params: postventaParams }).catch(() => ({ data: [] })),
           api.get("/documentos").catch(() => ({ data: [] })),
           api.get("/documentos", { params: reportesParams }).catch(() => ({ data: [] })),
+          api
+            .get("/documentos/dashboard/top-cierres-dia-anterior", {
+              params: { fecha: toDateOnly(diaAnteriorDate), _ts: Date.now() },
+            })
+            .catch(() => ({ data: [] })),
           api
             .get("/metas/mensuales/actual", {
               params: metaParams,
@@ -560,6 +563,7 @@ export default function Dashboard() {
         setPostventa(respPostventa.data || []);
         setDocumentos(respDocumentos.data || []);
         setReportesDiariosUsuario(respReportesDiarios.data || []);
+        setTopCierresGlobal(respTopCierresGlobal.data || []);
         setMetaMensual({
           metaMes: Number(respMeta.data?.metaMes || 0),
           promedioDiario: Number(respMeta.data?.promedioDiario || 0),
@@ -695,19 +699,10 @@ export default function Dashboard() {
       .sort((a, b) => new Date(b.creadoEn).getTime() - new Date(a.creadoEn).getTime())
       .slice(0, 5);
 
-    const topCierresDiaAnterior = reportesDiariosUsuario
-      .filter(
-        (doc) =>
-          doc.tipo === "reporteDiario" &&
-          getDocumentoFechaReporte(doc) === diaAnterior,
-      )
-      .map((doc) => ({
-        id: doc.id,
-        correlativo: doc.correlativo,
-        vendedor: getDocumentoVendedor(doc),
-        tienda: getDocumentoTienda(doc),
-        fecha: getDocumentoFechaReporte(doc),
-        total: getReporteDiarioTotal(doc.data || {}),
+    const topCierresDiaAnterior = topCierresGlobal
+      .map((cierre) => ({
+        ...cierre,
+        total: Number(cierre.total || 0),
       }))
       .sort((a, b) => Number(b.total || 0) - Number(a.total || 0))
       .slice(0, 3);
@@ -867,6 +862,7 @@ export default function Dashboard() {
     postventa,
     documentos,
     reportesDiariosUsuario,
+    topCierresGlobal,
     metaMensual,
     inventario,
     productos,
