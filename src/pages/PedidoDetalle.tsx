@@ -101,6 +101,11 @@ interface Pedido {
   cliente?: { nombre: string };
   bodega?: { nombre: string };
   bodegaId?: number | null;
+  unificadoCorrelativo?: string | null;
+  unificaciones?: Array<{
+    produccionUnificadoId?: number;
+    produccionUnificado?: { id?: number; correlativo?: string | null } | null;
+  }>;
   detalle: Detalle[];
   pagos: Pago[];
 }
@@ -279,6 +284,11 @@ const normalizePedido = (pedido: any): Pedido => ({
       }))
     : [],
 });
+
+const getUnificadoCorrelativo = (pedido?: Pedido | null) =>
+  pedido?.unificadoCorrelativo ||
+  pedido?.unificaciones?.find((item) => item.produccionUnificado?.correlativo)?.produccionUnificado?.correlativo ||
+  null;
 
 const getDetalleSubtotal = (detalle: Detalle) => {
   const precio = Number(detalle.precioUnit || 0);
@@ -587,6 +597,7 @@ export default function PedidoDetalle() {
     const fechaImpresion = new Date();
     const fechaDocumento = pedido.fecha ? new Date(pedido.fecha) : fechaImpresion;
     const logoUrl = uniformaLogo;
+    const unificadoCorrelativo = getUnificadoCorrelativo(pedido);
     const filasHtml = pedido.detalle
       .map((d: any) => {
         const prod: any = d.producto || {};
@@ -656,6 +667,13 @@ export default function PedidoDetalle() {
             </thead>
             <tbody>${filasHtml}</tbody>
           </table>
+          ${
+            unificadoCorrelativo
+              ? `<div style="margin-top:8px;text-align:right;font-size:9px;color:#4b5563;font-family:${PDF_FONT_FAMILY};">
+                  Ref. unificado: ${escapeHtml(unificadoCorrelativo)}
+                </div>`
+              : ""
+          }
         </div>
         <script>window.onload = function(){ window.print(); }</script>
       </body></html>`;

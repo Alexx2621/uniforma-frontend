@@ -53,6 +53,7 @@ interface Proveedor {
   _count?: {
     ordenes?: number;
     rollosTela?: number;
+    facturasProveedor?: number;
   };
 }
 
@@ -237,6 +238,12 @@ export default function Proveedores() {
       headerName: "Ordenes",
       width: 105,
       valueGetter: (_, row) => row._count?.ordenes || 0,
+    },
+    {
+      field: "facturasProveedor",
+      headerName: "Facturas",
+      width: 105,
+      valueGetter: (_, row) => row._count?.facturasProveedor || 0,
     },
     { field: "creadoEn", headerName: "Creado", width: 120, valueFormatter: (value) => formatDate(String(value || "")) },
     {

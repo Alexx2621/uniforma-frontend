@@ -23,6 +23,7 @@ import Bodegas from "./pages/Bodegas";
 import Clientes from "./pages/Clientes";
 import ClienteFicha from "./pages/ClienteFicha";
 import Proveedores from "./pages/Proveedores";
+import FacturasProveedores from "./pages/FacturasProveedores";
 import Cotizaciones from "./pages/Cotizaciones";
 import Usuarios from "./pages/Usuarios";
 import Admin from "./pages/Admin";
@@ -90,6 +91,7 @@ export default function App() {
           <Route path="/clientes" element={<Clientes />} />
           <Route path="/clientes/:id/ficha" element={<ClienteFicha />} />
           <Route path="/proveedores" element={<Proveedores />} />
+          <Route path="/proveedores/facturas" element={<FacturasProveedores />} />
           <Route path="/usuarios" element={<Usuarios />} />
           <Route path="/roles" element={<Roles />} />
           <Route path="/admin" element={<Admin />} />

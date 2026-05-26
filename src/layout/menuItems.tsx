@@ -114,11 +114,17 @@ export const menuSections: MenuSection[] = [
     ],
   },
   {
+    title: "PROVEEDORES",
+    items: [
+      { label: "Proveedores", icon: <BusinessOutlined />, path: "/proveedores" },
+      { label: "Facturas proveedores", icon: <ReceiptLongOutlined />, path: "/proveedores/facturas" },
+    ],
+  },
+  {
     title: "GESTION",
     items: [
       { label: "Cotizaciones", icon: <RequestQuoteOutlined />, path: "/cotizaciones" },
       { label: "Clientes", icon: <PeopleOutline />, path: "/clientes" },
-      { label: "Proveedores", icon: <BusinessOutlined />, path: "/proveedores" },
       { label: "Usuarios", icon: <SettingsOutlined />, path: "/usuarios" },
       { label: "Roles", icon: <AdminPanelSettingsOutlined />, path: "/roles" },
       { label: "Correlativos", icon: <SettingsOutlined />, path: "/correlativos" },

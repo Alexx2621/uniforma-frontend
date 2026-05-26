@@ -80,7 +80,11 @@ interface PedidoRow {
   displayFolio?: string;
   solicitadoPor?: string | null;
   unificado?: boolean;
-  unificaciones?: Array<{ produccionUnificadoId: number }>;
+  unificadoCorrelativo?: string | null;
+  unificaciones?: Array<{
+    produccionUnificadoId: number;
+    produccionUnificado?: { id?: number; correlativo?: string | null } | null;
+  }>;
   detalle?: PedidoDetalle[];
   pagos?: Array<{ id: number; total: number; fecha?: string }>;
   avances?: Array<{ id: number; total: number; fecha?: string }>;
@@ -935,6 +939,7 @@ export default function Pedidos() {
         totalPedidos: pedidosUnificables.length,
         fechasPedidos: pedidosUnificables.map((pedido) => pedido.fecha),
       });
+      await cargar();
     } catch (error: any) {
       Swal.fire(
         "Error",
@@ -1015,9 +1020,13 @@ export default function Pedidos() {
       width: 140,
       renderCell: (p) => {
         const unificado = Boolean(p.row.unificado);
+        const correlativo =
+          p.row.unificadoCorrelativo ||
+          p.row.unificaciones?.find((item: any) => item?.produccionUnificado?.correlativo)?.produccionUnificado?.correlativo ||
+          null;
         return (
           <Chip
-            label={unificado ? "Unificado" : "Sin unificar"}
+            label={unificado ? correlativo || "Unificado" : "Sin unificar"}
             size="small"
             color={unificado ? "success" : "default"}
             variant={unificado ? "filled" : "outlined"}

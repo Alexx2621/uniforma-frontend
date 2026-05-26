@@ -240,6 +240,21 @@ const getPedidoFolio = (pedido: PedidoProduccion) =>
 const getPedidoCliente = (pedido: PedidoProduccion) =>
   pedido.clienteNombre || pedido.cliente?.nombre || "Mostrador";
 
+const getDocumentoFechaReporte = (doc: DocumentoRow) => `${doc?.data?.fecha || doc.creadoEn || ""}`.slice(0, 10);
+
+const getDocumentoVendedor = (doc: DocumentoRow) =>
+  doc.usuario?.nombre ||
+  doc.usuario?.usuario ||
+  doc.data?.vendedorNombre ||
+  doc.data?.usuarioNombre ||
+  doc.data?.vendedor ||
+  doc.data?.usuario ||
+  doc.data?.generadoPor ||
+  "N/D";
+
+const getDocumentoTienda = (doc: DocumentoRow) =>
+  doc.data?.tienda || doc.data?.bodegaNombre || doc.data?.bodega || "N/D";
+
 const MiniBars = ({ data }: { data: { label: string; value: number }[] }) => {
   if (!data.length) {
     return <Typography variant="body2" color="text.secondary">Sin datos para graficar.</Typography>;
@@ -590,6 +605,9 @@ export default function Dashboard() {
 
   const stats = useMemo(() => {
     const hoy = toDateOnly(new Date());
+    const diaAnteriorDate = new Date();
+    diaAnteriorDate.setDate(diaAnteriorDate.getDate() - 1);
+    const diaAnterior = toDateOnly(diaAnteriorDate);
     const desde = new Date();
     desde.setDate(desde.getDate() - Number(rango) + 1);
     desde.setHours(0, 0, 0, 0);
@@ -676,6 +694,23 @@ export default function Dashboard() {
       .slice()
       .sort((a, b) => new Date(b.creadoEn).getTime() - new Date(a.creadoEn).getTime())
       .slice(0, 5);
+
+    const topCierresDiaAnterior = reportesDiariosUsuario
+      .filter(
+        (doc) =>
+          doc.tipo === "reporteDiario" &&
+          getDocumentoFechaReporte(doc) === diaAnterior,
+      )
+      .map((doc) => ({
+        id: doc.id,
+        correlativo: doc.correlativo,
+        vendedor: getDocumentoVendedor(doc),
+        tienda: getDocumentoTienda(doc),
+        fecha: getDocumentoFechaReporte(doc),
+        total: getReporteDiarioTotal(doc.data || {}),
+      }))
+      .sort((a, b) => Number(b.total || 0) - Number(a.total || 0))
+      .slice(0, 3);
 
     const bajosStock = inventarioFiltrado
       .filter((row) => Number(row.stockMax || 0) > 0 && Number(row.stock || 0) < Number(row.stockMax || 0))
@@ -790,6 +825,8 @@ export default function Dashboard() {
       pedidosSinCobro,
       postventaAbierta,
       reportesRecientes,
+      topCierresDiaAnterior,
+      diaAnterior,
       bajosStock,
       ventasPorDia: Array.from(ventasPorDia.entries()).map(([date, value]) => ({
         label: date.slice(5).replace("-", "/"),
@@ -1185,6 +1222,47 @@ export default function Dashboard() {
           />
         </Grid>
       </Grid>
+
+      <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 1 }}>
+        <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" alignItems={{ xs: "flex-start", sm: "center" }} spacing={1} sx={{ mb: 1 }}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <ReceiptLongOutlined color="primary" />
+            <Box>
+              <Typography variant="h6">Top 3 ventas del dia anterior</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Ranking general basado en el total del cierre diario del {stats.diaAnterior ? new Date(`${stats.diaAnterior}T00:00:00`).toLocaleDateString("es-GT") : "dia anterior"}.
+              </Typography>
+            </Box>
+          </Stack>
+          <Button size="small" endIcon={<OpenInNewOutlined />} onClick={() => navigate("/reportes/reporte-diario")}>
+            Ver cierres
+          </Button>
+        </Stack>
+        <Divider sx={{ mb: 1 }} />
+        {stats.topCierresDiaAnterior.length === 0 ? (
+          <Typography variant="body2" color="text.secondary">
+            No hay cierres diarios del dia anterior para mostrar el ranking.
+          </Typography>
+        ) : (
+          <Grid container spacing={1}>
+            {stats.topCierresDiaAnterior.map((cierre, index) => (
+              <Grid key={cierre.id} size={{ xs: 12, md: 4 }}>
+                <Box sx={{ p: 1.5, border: "1px solid", borderColor: "divider", borderRadius: 1, height: "100%" }}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
+                    <Box>
+                      <Typography variant="caption" color="text.secondary">#{index + 1} | {cierre.correlativo}</Typography>
+                      <Typography variant="h6" sx={{ mt: 0.25 }}>{formatCurrency(cierre.total)}</Typography>
+                    </Box>
+                    <Chip size="small" color={index === 0 ? "success" : "default"} label={index === 0 ? "Mayor" : "Top"} />
+                  </Stack>
+                  <Typography variant="body2" sx={{ mt: 0.75 }}>{cierre.vendedor}</Typography>
+                  <Typography variant="caption" color="text.secondary">{cierre.tienda}</Typography>
+                </Box>
+              </Grid>
+            ))}
+          </Grid>
+        )}
+      </Paper>
 
       <Dialog open={saldoModalOpen} onClose={() => setSaldoModalOpen(false)} maxWidth="lg" fullWidth>
         <DialogTitle>Pedidos que suman el saldo pendiente</DialogTitle>
