@@ -18,6 +18,8 @@ import ClearIcon from "@mui/icons-material/Clear";
 import { DataGrid, GridColDef } from "@mui/x-data-grid";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
+import { hasPermission } from "../auth/permissions";
+import { useAuthStore } from "../auth/useAuthStore";
 
 interface Bodega {
   id: number;
@@ -46,6 +48,10 @@ interface ReporteRow {
 const sortOptions = (values: string[]) => values.sort((a, b) => a.localeCompare(b));
 
 export default function InventarioResumen() {
+  const { rol, permisos } = useAuthStore();
+  const canViewKardex = hasPermission(rol, permisos, "inventario.kardex.view");
+  const canViewMinimos = hasPermission(rol, permisos, "inventario.minimos.view") || hasPermission(rol, permisos, "inventario.minimos.manage");
+  const canManageMinimos = hasPermission(rol, permisos, "inventario.minimos.manage");
   const [bodegas, setBodegas] = useState<Bodega[]>([]);
   const [rows, setRows] = useState<ReporteRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -243,22 +249,26 @@ export default function InventarioResumen() {
       { field: "color", headerName: "Color", width: 120 },
       { field: "tela", headerName: "Tela", width: 140 },
       { field: "total", headerName: "Total", width: 100 },
-      {
+      ...(canViewKardex || canManageMinimos ? [{
         field: "acciones",
         headerName: "Acciones",
         width: 180,
         sortable: false,
-        renderCell: ({ row }) => (
+        renderCell: ({ row }: { row: ReporteRow }) => (
           <Stack direction="row" spacing={0.5}>
-            <Button size="small" onClick={() => verKardex(row)}>
-              Kardex
-            </Button>
-            <Button size="small" onClick={() => guardarMinimo(row)}>
-              Minimo
-            </Button>
+            {canViewKardex && (
+              <Button size="small" onClick={() => verKardex(row)}>
+                Kardex
+              </Button>
+            )}
+            {canManageMinimos && (
+              <Button size="small" onClick={() => guardarMinimo(row)}>
+                Minimo
+              </Button>
+            )}
           </Stack>
         ),
-      },
+      }] : []),
     ];
 
     const dynamic = bodegas.map((b) => ({
@@ -326,9 +336,11 @@ export default function InventarioResumen() {
         <Button variant="outlined" onClick={limpiarFiltros} sx={{ flex: "0 0 auto" }}>
           Limpiar
         </Button>
-        <Button variant="contained" onClick={verAlertas} sx={{ flex: "0 0 auto" }}>
-          Alertas
-        </Button>
+        {canViewMinimos && (
+          <Button variant="contained" onClick={verAlertas} sx={{ flex: "0 0 auto" }}>
+            Alertas
+          </Button>
+        )}
       </Stack>
 
       <Divider sx={{ mb: 2 }} />

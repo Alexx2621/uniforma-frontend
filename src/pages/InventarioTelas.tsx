@@ -105,6 +105,23 @@ interface ConsumoTela {
   talla?: Catalogo | null;
 }
 
+interface AliasTelaProveedor {
+  id: number;
+  proveedorId: number;
+  telaId: number;
+  colorId?: number | null;
+  codigoProveedor?: string | null;
+  nombreProveedor: string;
+  colorProveedor?: string | null;
+  unidad?: string | null;
+  ancho: number;
+  activo: boolean;
+  descripcionProveedor?: string | null;
+  proveedor?: Proveedor;
+  tela?: Catalogo;
+  color?: Catalogo | null;
+}
+
 const today = () => {
   const date = new Date();
   date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
@@ -153,6 +170,19 @@ const emptyConsumo = {
   observaciones: "",
 };
 
+const emptyAlias = {
+  proveedorId: "",
+  telaId: "",
+  colorId: "",
+  codigoProveedor: "",
+  nombreProveedor: "",
+  colorProveedor: "",
+  unidad: "metros",
+  ancho: "0",
+  activo: "true",
+  descripcionProveedor: "",
+};
+
 export default function InventarioTelas() {
   const { rol, permisos } = useAuthStore();
   const canManage = hasPermission(rol, permisos, "inventario.telas.manage");
@@ -161,6 +191,7 @@ export default function InventarioTelas() {
   const [rollos, setRollos] = useState<RolloTela[]>([]);
   const [movimientos, setMovimientos] = useState<MovimientoTela[]>([]);
   const [consumos, setConsumos] = useState<ConsumoTela[]>([]);
+  const [aliases, setAliases] = useState<AliasTelaProveedor[]>([]);
   const [resumen, setResumen] = useState<any>(null);
   const [telas, setTelas] = useState<Catalogo[]>([]);
   const [colores, setColores] = useState<Catalogo[]>([]);
@@ -179,6 +210,11 @@ export default function InventarioTelas() {
     open: false,
     editing: null,
     form: emptyConsumo,
+  });
+  const [aliasDialog, setAliasDialog] = useState<{ open: boolean; editing?: AliasTelaProveedor | null; form: any }>({
+    open: false,
+    editing: null,
+    form: emptyAlias,
   });
 
   const loadCatalogos = async () => {
@@ -202,15 +238,17 @@ export default function InventarioTelas() {
     setLoading(true);
     try {
       const params = Object.fromEntries(Object.entries(filtros).filter(([, value]) => value));
-      const [respRollos, respMovimientos, respConsumos, respResumen] = await Promise.all([
+      const [respRollos, respMovimientos, respConsumos, respAliases, respResumen] = await Promise.all([
         api.get("/inventario-telas/rollos", { params }),
         api.get("/inventario-telas/movimientos"),
         api.get("/inventario-telas/consumos"),
+        api.get("/inventario-telas/aliases"),
         api.get("/inventario-telas/resumen", { params }),
       ]);
       setRollos(respRollos.data || []);
       setMovimientos(respMovimientos.data || []);
       setConsumos(respConsumos.data || []);
+      setAliases(respAliases.data || []);
       setResumen(respResumen.data || null);
     } catch (error: any) {
       Swal.fire("Error", error?.response?.data?.message || "No se pudo cargar inventario de telas", "error");
@@ -348,6 +386,56 @@ export default function InventarioTelas() {
     await loadData();
   };
 
+  const openAlias = (row?: AliasTelaProveedor) => {
+    setAliasDialog({
+      open: true,
+      editing: row || null,
+      form: row
+        ? {
+            proveedorId: String(row.proveedorId || ""),
+            telaId: String(row.telaId || ""),
+            colorId: row.colorId ? String(row.colorId) : "",
+            codigoProveedor: row.codigoProveedor || "",
+            nombreProveedor: row.nombreProveedor || "",
+            colorProveedor: row.colorProveedor || "",
+            unidad: row.unidad || "metros",
+            ancho: String(row.ancho || 0),
+            activo: String(row.activo !== false),
+            descripcionProveedor: row.descripcionProveedor || "",
+          }
+        : emptyAlias,
+    });
+  };
+
+  const saveAlias = async () => {
+    try {
+      if (aliasDialog.editing) {
+        await api.patch(`/inventario-telas/aliases/${aliasDialog.editing.id}`, aliasDialog.form);
+      } else {
+        await api.post("/inventario-telas/aliases", aliasDialog.form);
+      }
+      setAliasDialog({ open: false, editing: null, form: emptyAlias });
+      await loadData();
+      Swal.fire("Listo", "Catalogo proveedor-tela guardado", "success");
+    } catch (error: any) {
+      Swal.fire("Error", error?.response?.data?.message || "No se pudo guardar el catalogo", "error");
+    }
+  };
+
+  const deleteAlias = async (row: AliasTelaProveedor) => {
+    const result = await Swal.fire({
+      title: "Eliminar equivalencia",
+      text: "Se eliminara este mapeo proveedor-tela.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Eliminar",
+      cancelButtonText: "Cancelar",
+    });
+    if (!result.isConfirmed) return;
+    await api.delete(`/inventario-telas/aliases/${row.id}`);
+    await loadData();
+  };
+
   const rolloColumns: GridColDef<RolloTela>[] = [
     { field: "codigo", headerName: "Rollo", width: 130 },
     { field: "tela", headerName: "Tela", width: 140, valueGetter: (_, row) => row.tela?.nombre || "N/D" },
@@ -425,6 +513,39 @@ export default function InventarioTelas() {
             <EditOutlined fontSize="small" />
           </IconButton>
           <IconButton size="small" color="error" disabled={!canManage} onClick={() => void deleteConsumo(row)}>
+            <DeleteOutline fontSize="small" />
+          </IconButton>
+        </Stack>
+      ),
+    },
+  ];
+
+  const aliasColumns: GridColDef<AliasTelaProveedor>[] = [
+    { field: "proveedor", headerName: "Proveedor", width: 190, valueGetter: (_, row) => row.proveedor?.nombre || row.proveedorId },
+    { field: "codigoProveedor", headerName: "Codigo prov.", width: 130 },
+    { field: "nombreProveedor", headerName: "Tela proveedor", minWidth: 190, flex: 1 },
+    { field: "colorProveedor", headerName: "Color prov.", width: 130 },
+    { field: "tela", headerName: "Tela interna", width: 160, valueGetter: (_, row) => row.tela?.nombre || "N/D" },
+    { field: "color", headerName: "Color interno", width: 140, valueGetter: (_, row) => row.color?.nombre || "Sin color" },
+    { field: "unidad", headerName: "Unidad", width: 95 },
+    { field: "ancho", headerName: "Ancho", width: 95, valueFormatter: (value) => Number(value || 0).toFixed(2) },
+    {
+      field: "activo",
+      headerName: "Estado",
+      width: 110,
+      renderCell: ({ row }) => <Chip size="small" color={row.activo ? "success" : "default"} label={row.activo ? "Activo" : "Inactivo"} />,
+    },
+    {
+      field: "acciones",
+      headerName: "Acciones",
+      width: 120,
+      sortable: false,
+      renderCell: ({ row }) => (
+        <Stack direction="row" spacing={0.5}>
+          <IconButton size="small" disabled={!canManage} onClick={() => openAlias(row)}>
+            <EditOutlined fontSize="small" />
+          </IconButton>
+          <IconButton size="small" color="error" disabled={!canManage} onClick={() => void deleteAlias(row)}>
             <DeleteOutline fontSize="small" />
           </IconButton>
         </Stack>
@@ -538,6 +659,7 @@ export default function InventarioTelas() {
           <Tab label="Rollos" />
           <Tab label="Movimientos" />
           <Tab label="Consumo estimado" />
+          <Tab label="Catalogo proveedor" />
         </Tabs>
         <Box sx={{ height: 620, p: 2 }}>
           {tab === 0 && <DataGrid rows={rollos} columns={rolloColumns} loading={loading} pageSizeOptions={[10, 25, 50]} initialState={{ pagination: { paginationModel: { pageSize: 10 } } }} />}
@@ -553,6 +675,15 @@ export default function InventarioTelas() {
               <Box sx={{ flex: 1 }}><DataGrid rows={consumos} columns={consumoColumns} loading={loading} pageSizeOptions={[10, 25, 50]} initialState={{ pagination: { paginationModel: { pageSize: 10 } } }} /></Box>
             </Stack>
           )}
+          {tab === 3 && (
+            <Stack spacing={1} sx={{ height: "100%" }}>
+              <Box><Button startIcon={<AddOutlined />} variant="contained" size="small" disabled={!canManage} onClick={() => openAlias()}>Nueva equivalencia</Button></Box>
+              <Alert severity="info">
+                Registra como llama cada proveedor a sus telas y colores. Este catalogo permite que las facturas creen ingresos de tela ya vinculados a la tela y color internos.
+              </Alert>
+              <Box sx={{ flex: 1 }}><DataGrid rows={aliases} columns={aliasColumns} loading={loading} pageSizeOptions={[10, 25, 50]} initialState={{ pagination: { paginationModel: { pageSize: 10 } } }} /></Box>
+            </Stack>
+          )}
         </Box>
       </Paper>
 
@@ -563,7 +694,7 @@ export default function InventarioTelas() {
             <Grid size={{ xs: 12, md: 4 }}><TextField label="Codigo" fullWidth value={rolloDialog.form.codigo} onChange={(e) => setRolloDialog((p) => ({ ...p, form: { ...p.form, codigo: e.target.value } }))} helperText="Si lo dejas vacio se genera automatico" /></Grid>
             <Grid size={{ xs: 12, md: 4 }}><TextField select label="Tela" fullWidth required value={rolloDialog.form.telaId} onChange={(e) => setRolloDialog((p) => ({ ...p, form: { ...p.form, telaId: e.target.value } }))}>{telas.map((item) => <MenuItem key={item.id} value={item.id}>{item.nombre}</MenuItem>)}</TextField></Grid>
             <Grid size={{ xs: 12, md: 4 }}><TextField select label="Color" fullWidth value={rolloDialog.form.colorId} onChange={(e) => setRolloDialog((p) => ({ ...p, form: { ...p.form, colorId: e.target.value } }))}><MenuItem value="">Sin color</MenuItem>{colores.map((item) => <MenuItem key={item.id} value={item.id}>{item.nombre}</MenuItem>)}</TextField></Grid>
-            <Grid size={{ xs: 12, md: 4 }}><TextField select label="Bodega" fullWidth value={rolloDialog.form.bodegaId} onChange={(e) => setRolloDialog((p) => ({ ...p, form: { ...p.form, bodegaId: e.target.value } }))}><MenuItem value="">Sin bodega</MenuItem>{bodegas.map((item) => <MenuItem key={item.id} value={item.id}>{item.nombre}</MenuItem>)}</TextField></Grid>
+            <Grid size={{ xs: 12, md: 4 }}><TextField select label="Bodega" fullWidth required value={rolloDialog.form.bodegaId} onChange={(e) => setRolloDialog((p) => ({ ...p, form: { ...p.form, bodegaId: e.target.value } }))}>{bodegas.map((item) => <MenuItem key={item.id} value={item.id}>{item.nombre}</MenuItem>)}</TextField></Grid>
             <Grid size={{ xs: 12, md: 4 }}><TextField select label="Proveedor" fullWidth value={rolloDialog.form.proveedorId} onChange={(e) => setRolloDialog((p) => ({ ...p, form: { ...p.form, proveedorId: e.target.value } }))}><MenuItem value="">Sin proveedor</MenuItem>{proveedores.map((item) => <MenuItem key={item.id} value={item.id}>{item.nombre}{item.nit ? ` - ${item.nit}` : ""}</MenuItem>)}</TextField></Grid>
             <Grid size={{ xs: 12, md: 4 }}><TextField label="Proveedor manual" fullWidth value={rolloDialog.form.proveedor} onChange={(e) => setRolloDialog((p) => ({ ...p, form: { ...p.form, proveedor: e.target.value } }))} helperText="Usalo solo si aun no existe en catalogo" /></Grid>
             <Grid size={{ xs: 12, md: 2 }}><TextField label="Lote" fullWidth value={rolloDialog.form.lote} onChange={(e) => setRolloDialog((p) => ({ ...p, form: { ...p.form, lote: e.target.value } }))} /></Grid>
@@ -620,6 +751,58 @@ export default function InventarioTelas() {
         <DialogActions>
           <Button onClick={() => setConsumoDialog((prev) => ({ ...prev, open: false }))}>Cancelar</Button>
           <Button variant="contained" onClick={() => void saveConsumo()}>Guardar</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={aliasDialog.open} onClose={() => setAliasDialog((prev) => ({ ...prev, open: false }))} maxWidth="md" fullWidth>
+        <DialogTitle>{aliasDialog.editing ? "Editar equivalencia proveedor-tela" : "Nueva equivalencia proveedor-tela"}</DialogTitle>
+        <DialogContent dividers>
+          <Grid container spacing={2} sx={{ mt: 0 }}>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <TextField select label="Proveedor" fullWidth required value={aliasDialog.form.proveedorId} onChange={(e) => setAliasDialog((p) => ({ ...p, form: { ...p.form, proveedorId: e.target.value } }))}>
+                {proveedores.map((item) => <MenuItem key={item.id} value={item.id}>{item.nombre}{item.nit ? ` - ${item.nit}` : ""}</MenuItem>)}
+              </TextField>
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <TextField select label="Tela interna" fullWidth required value={aliasDialog.form.telaId} onChange={(e) => setAliasDialog((p) => ({ ...p, form: { ...p.form, telaId: e.target.value } }))}>
+                {telas.map((item) => <MenuItem key={item.id} value={item.id}>{item.nombre}</MenuItem>)}
+              </TextField>
+            </Grid>
+            <Grid size={{ xs: 12, md: 4 }}>
+              <TextField label="Codigo proveedor" fullWidth value={aliasDialog.form.codigoProveedor} onChange={(e) => setAliasDialog((p) => ({ ...p, form: { ...p.form, codigoProveedor: e.target.value } }))} />
+            </Grid>
+            <Grid size={{ xs: 12, md: 4 }}>
+              <TextField label="Nombre tela proveedor" fullWidth required value={aliasDialog.form.nombreProveedor} onChange={(e) => setAliasDialog((p) => ({ ...p, form: { ...p.form, nombreProveedor: e.target.value } }))} />
+            </Grid>
+            <Grid size={{ xs: 12, md: 4 }}>
+              <TextField label="Color proveedor" fullWidth value={aliasDialog.form.colorProveedor} onChange={(e) => setAliasDialog((p) => ({ ...p, form: { ...p.form, colorProveedor: e.target.value } }))} helperText="Ejemplo: BASIL" />
+            </Grid>
+            <Grid size={{ xs: 12, md: 4 }}>
+              <TextField select label="Color interno" fullWidth value={aliasDialog.form.colorId} onChange={(e) => setAliasDialog((p) => ({ ...p, form: { ...p.form, colorId: e.target.value } }))}>
+                <MenuItem value="">Sin color</MenuItem>
+                {colores.map((item) => <MenuItem key={item.id} value={item.id}>{item.nombre}</MenuItem>)}
+              </TextField>
+            </Grid>
+            <Grid size={{ xs: 12, md: 3 }}>
+              <TextField label="Unidad" fullWidth value={aliasDialog.form.unidad} onChange={(e) => setAliasDialog((p) => ({ ...p, form: { ...p.form, unidad: e.target.value } }))} />
+            </Grid>
+            <Grid size={{ xs: 12, md: 3 }}>
+              <TextField label="Ancho" type="number" fullWidth value={aliasDialog.form.ancho} onChange={(e) => setAliasDialog((p) => ({ ...p, form: { ...p.form, ancho: e.target.value } }))} />
+            </Grid>
+            <Grid size={{ xs: 12, md: 2 }}>
+              <TextField select label="Estado" fullWidth value={aliasDialog.form.activo} onChange={(e) => setAliasDialog((p) => ({ ...p, form: { ...p.form, activo: e.target.value } }))}>
+                <MenuItem value="true">Activo</MenuItem>
+                <MenuItem value="false">Inactivo</MenuItem>
+              </TextField>
+            </Grid>
+            <Grid size={{ xs: 12 }}>
+              <TextField label="Descripcion o texto completo de factura" multiline minRows={2} fullWidth value={aliasDialog.form.descripcionProveedor} onChange={(e) => setAliasDialog((p) => ({ ...p, form: { ...p.form, descripcionProveedor: e.target.value } }))} />
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAliasDialog((prev) => ({ ...prev, open: false }))}>Cancelar</Button>
+          <Button variant="contained" onClick={() => void saveAlias()}>Guardar</Button>
         </DialogActions>
       </Dialog>
     </Box>

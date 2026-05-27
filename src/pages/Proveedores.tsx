@@ -24,6 +24,7 @@ import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
 import StorefrontOutlined from "@mui/icons-material/StorefrontOutlined";
 import Swal from "sweetalert2";
+import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api/axios";
 import { hasPermission } from "../auth/permissions";
 import { useAuthStore } from "../auth/useAuthStore";
@@ -105,9 +106,16 @@ const toForm = (row: Proveedor) => ({
 
 const formatDate = (value?: string | null) => (value ? new Date(value).toLocaleDateString("es-GT") : "N/D");
 
+type ProveedorLocationState = {
+  openCreate?: boolean;
+  proveedorDraft?: Partial<typeof emptyForm>;
+};
+
 export default function Proveedores() {
   const { rol, permisos } = useAuthStore();
   const canManage = hasPermission(rol, permisos, "proveedores.manage");
+  const location = useLocation();
+  const navigate = useNavigate();
   const [rows, setRows] = useState<Proveedor[]>([]);
   const [loading, setLoading] = useState(false);
   const [filtros, setFiltros] = useState({ q: "", estado: "", tipo: "" });
@@ -133,6 +141,22 @@ export default function Proveedores() {
   useEffect(() => {
     void cargar();
   }, [cargar]);
+
+  useEffect(() => {
+    const state = location.state as ProveedorLocationState | null;
+    if (!state?.openCreate || !canManage) return;
+    setDialog({
+      open: true,
+      editing: null,
+      form: {
+        ...emptyForm,
+        ...Object.fromEntries(
+          Object.entries(state.proveedorDraft || {}).map(([key, value]) => [key, `${value ?? ""}`]),
+        ),
+      },
+    });
+    navigate(location.pathname, { replace: true, state: null });
+  }, [canManage, location.pathname, location.state, navigate]);
 
   const resumen = useMemo(() => {
     const activos = rows.filter((row) => row.estado === "activo").length;

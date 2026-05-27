@@ -90,6 +90,7 @@ export const menuSections: MenuSection[] = [
       { label: "Bodegas", icon: <Inventory2Outlined />, path: "/bodegas" },
       { label: "Resumen", icon: <TableChartOutlined />, path: "/inventario/resumen" },
       { label: "Inventario de telas", icon: <CheckroomOutlined />, path: "/inventario/telas" },
+      { label: "Ingreso de telas", icon: <AddBusinessOutlined />, path: "/inventario/ingreso-telas" },
       { label: "Conteos fisicos", icon: <FactCheckOutlined />, path: "/inventario/conteos" },
       { label: "Kardex", icon: <TimelineOutlined />, path: "/inventario/kardex" },
       { label: "Traslados", icon: <CompareArrowsOutlined />, path: "/inventario/traslados" },

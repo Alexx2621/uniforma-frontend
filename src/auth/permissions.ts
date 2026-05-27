@@ -14,6 +14,7 @@ export const routePermissionMap: Record<string, string> = {
   "/inventario/panel": "inventario.panel.view",
   "/inventario/resumen": "inventario.resumen.view",
   "/inventario/telas": "inventario.telas.view",
+  "/inventario/ingreso-telas": "inventario.telas.view",
   "/inventario/conteos": "inventario.conteos.view",
   "/inventario/kardex": "inventario.kardex.view",
   "/inventario/traslados": "inventario.traslados.view",

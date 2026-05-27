@@ -15,6 +15,7 @@ import IngresoInventario from "./pages/IngresoInventario";
 import InventarioPanel from "./pages/InventarioPanel";
 import InventarioResumen from "./pages/InventarioResumen";
 import InventarioTelas from "./pages/InventarioTelas";
+import IngresoTelas from "./pages/IngresoTelas";
 import ConteosFisicos from "./pages/ConteosFisicos";
 import KardexInventario from "./pages/KardexInventario";
 import Traslados from "./pages/Traslados";
@@ -83,6 +84,7 @@ export default function App() {
           <Route path="/inventario/panel" element={<InventarioPanel />} />
           <Route path="/inventario/resumen" element={<InventarioResumen />} />
           <Route path="/inventario/telas" element={<InventarioTelas />} />
+          <Route path="/inventario/ingreso-telas" element={<IngresoTelas />} />
           <Route path="/inventario/conteos" element={<ConteosFisicos />} />
           <Route path="/inventario/kardex" element={<KardexInventario />} />
           <Route path="/inventario/traslados" element={<Traslados />} />
