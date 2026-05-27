@@ -118,6 +118,30 @@ const escapeHtml = (value?: string | number | null) =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 
+const BORDADO_OBSERVACION_RE = /^(BORDADO\b.*?\.)\s*(.*)$/i;
+
+const formatDetalleObservacionesHtml = (descripcion?: string | null) => {
+  const texto = `${descripcion || ""}`.trim();
+  const match = texto.match(BORDADO_OBSERVACION_RE);
+  if (!match) return escapeHtml(texto);
+  return `<span class="bordado-prefix">${escapeHtml(match[1])}</span>${match[2] ? ` ${escapeHtml(match[2])}` : ""}`;
+};
+
+const renderDetalleObservaciones = (descripcion?: string | null) => {
+  const texto = `${descripcion || ""}`.trim();
+  if (!texto) return "-";
+  const match = texto.match(BORDADO_OBSERVACION_RE);
+  if (!match) return texto;
+  return (
+    <>
+      <Box component="span" sx={{ color: "error.main", fontWeight: 700 }}>
+        {match[1]}
+      </Box>
+      {match[2] ? ` ${match[2]}` : ""}
+    </>
+  );
+};
+
 const buildPdfStyles = () => `
   <style>
     @page { size: letter landscape; margin: 8mm; }
@@ -227,6 +251,11 @@ const buildPdfStyles = () => `
     tbody td.money,
     tbody td.nowrap {
       white-space:nowrap;
+    }
+    .bordado-prefix {
+      color:#d60000;
+      font-family:${PDF_FONT_SEMIBOLD_FAMILY};
+      font-weight:600;
     }
     .totals {
       width: 340px;
@@ -608,7 +637,7 @@ export default function PedidoDetalle() {
           <td>${escapeHtml(obtenerTela(prod))}</td>
           <td>${escapeHtml(obtenerColor(prod))}</td>
           <td>${escapeHtml(obtenerTalla(prod))}</td>
-          <td class="text-left">${escapeHtml(d.descripcion || "")}</td>
+          <td class="text-left">${formatDetalleObservacionesHtml(d.descripcion)}</td>
         </tr>`;
       })
       .join("");
@@ -790,7 +819,7 @@ export default function PedidoDetalle() {
                 </TableCell>
                 <TableCell>{`${Number(d.descuento || 0).toFixed(2)}%`}</TableCell>
                 <TableCell>{formatCurrency(getDetalleSubtotal(d))}</TableCell>
-                <TableCell>{d.descripcion?.trim() ? d.descripcion : "-"}</TableCell>
+                <TableCell>{renderDetalleObservaciones(d.descripcion)}</TableCell>
               </TableRow>
             ))}
           </TableBody>

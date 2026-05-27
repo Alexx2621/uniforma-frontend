@@ -204,6 +204,49 @@ const escapeHtml = (value?: string | number | null) =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 
+const BORDADO_OBSERVACION_RE = /^(BORDADO\b.*?\.)\s*(.*)$/i;
+
+const buildBordadoObservacionPrefix = (bordados: Array<Pick<BordadoArticulo, "posicion">>) => {
+  const posiciones = Array.from(
+    new Set(
+      (bordados || [])
+        .map((bordado) => `${bordado.posicion || ""}`.trim().toUpperCase())
+        .filter(Boolean)
+    )
+  );
+  return posiciones.length ? `BORDADO ${posiciones.join(" / ")}.` : "";
+};
+
+const formatDetalleObservaciones = (descripcion: string, bordados: Array<Pick<BordadoArticulo, "posicion">>) => {
+  const prefix = buildBordadoObservacionPrefix(bordados);
+  const texto = `${descripcion || ""}`.trim();
+  if (!prefix) return texto;
+  const sinPrefixAnterior = texto.replace(/^BORDADO\b.*?\.\s*/i, "").trim();
+  return [prefix, sinPrefixAnterior].filter(Boolean).join(" ");
+};
+
+const formatDetalleObservacionesHtml = (descripcion?: string | null) => {
+  const texto = `${descripcion || ""}`.trim();
+  const match = texto.match(BORDADO_OBSERVACION_RE);
+  if (!match) return escapeHtml(texto);
+  return `<span class="bordado-prefix">${escapeHtml(match[1])}</span>${match[2] ? ` ${escapeHtml(match[2])}` : ""}`;
+};
+
+const renderDetalleObservaciones = (descripcion?: string | null) => {
+  const texto = `${descripcion || ""}`.trim();
+  if (!texto) return "-";
+  const match = texto.match(BORDADO_OBSERVACION_RE);
+  if (!match) return texto;
+  return (
+    <>
+      <Box component="span" sx={{ color: "error.main", fontWeight: 700 }}>
+        {match[1]}
+      </Box>
+      {match[2] ? ` ${match[2]}` : ""}
+    </>
+  );
+};
+
 const formatClienteOption = (cliente: Cliente) => {
   const telefono = formatTelefono(cliente.telefono);
   return telefono ? `${telefono} - ${cliente.nombre}` : cliente.nombre;
@@ -446,6 +489,11 @@ const buildPdfStyles = () => `
     tbody td.money,
     tbody td.nowrap {
       white-space:nowrap;
+    }
+    .bordado-prefix {
+      color:#d60000;
+      font-family:${PDF_FONT_SEMIBOLD_FAMILY};
+      font-weight:600;
     }
     .totals {
       width: 340px;
@@ -1049,23 +1097,6 @@ export default function PedidoNuevo() {
     }
     const cantidad = Number(cantidadInput) || 0;
     const productoId = Number(articuloActual.productoId);
-    const descripcionNormalizada = `${articuloActual.descripcion || ""}`.trim().toLowerCase();
-    const productoDuplicado = detalle.find(
-      (item) =>
-        item.productoId === productoId &&
-        `${item.descripcion || ""}`.trim().toLowerCase() === descripcionNormalizada &&
-        item.key !== editingDetalleKey,
-    );
-
-    if (productoDuplicado) {
-      const producto = productos.find((p) => p.id === productoId);
-      Swal.fire(
-        "Articulo ya agregado",
-        `Este articulo${producto?.nombre ? ` (${producto.nombre})` : ""} con la misma observacion ya esta en la lista temporal. Puedes editarlo o eliminarlo desde la tabla.`,
-        "info",
-      );
-      return;
-    }
 
     if (cantidad <= 0) {
       Swal.fire("Validacion", "Ingresa una cantidad mayor a 0", "warning");
@@ -1094,6 +1125,24 @@ export default function PedidoNuevo() {
     }
     const bordadoTotal = getBordadoTotal(bordadosFinales);
     const primerBordado = bordadosFinales[0] || null;
+    const descripcion = formatDetalleObservaciones(articuloActual.descripcion || "", bordadosFinales);
+    const descripcionNormalizada = descripcion.trim().toLowerCase();
+    const productoDuplicado = detalle.find(
+      (item) =>
+        item.productoId === productoId &&
+        `${item.descripcion || ""}`.trim().toLowerCase() === descripcionNormalizada &&
+        item.key !== editingDetalleKey,
+    );
+
+    if (productoDuplicado) {
+      const producto = productos.find((p) => p.id === productoId);
+      Swal.fire(
+        "Articulo ya agregado",
+        `Este articulo${producto?.nombre ? ` (${producto.nombre})` : ""} con la misma observacion ya esta en la lista temporal. Puedes editarlo o eliminarlo desde la tabla.`,
+        "info",
+      );
+      return;
+    }
 
     const row: DetalleRow = {
       key: editingDetalleKey ?? Date.now(),
@@ -1111,7 +1160,7 @@ export default function PedidoNuevo() {
       estiloEspecial: pedidoParaStock ? false : Boolean(articuloActual.estiloEspecial),
       estiloEspecialMonto: pedidoParaStock || !articuloActual.estiloEspecial ? 0 : Number(articuloActual.estiloEspecialMonto) || 0,
       descuento: pedidoParaStock ? 0 : Number(articuloActual.descuento) || 0,
-      descripcion: articuloActual.descripcion || "",
+      descripcion,
     };
 
     setDetalle((prev) =>
@@ -1670,7 +1719,7 @@ export default function PedidoNuevo() {
           <td>${escapeHtml(obtenerTela(prod))}</td>
           <td>${escapeHtml(obtenerColor(prod))}</td>
           <td>${escapeHtml(obtenerTalla(prod))}</td>
-          <td class="text-left">${escapeHtml(d.descripcion || "")}</td>
+          <td class="text-left">${formatDetalleObservacionesHtml(d.descripcion)}</td>
         </tr>`;
       })
       .join("");
@@ -2424,7 +2473,7 @@ export default function PedidoNuevo() {
                       <TableCell align="center">{formatCurrency(calcularImportesDetallePedido(row).subtotal)}</TableCell>
                     </>
                   )}
-                  <TableCell align="center">{row.descripcion || "-"}</TableCell>
+                  <TableCell align="center">{renderDetalleObservaciones(row.descripcion)}</TableCell>
                   <TableCell align="center">
                     <Stack direction="row" spacing={1} justifyContent="center">
                       <Button
