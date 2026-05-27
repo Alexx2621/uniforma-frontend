@@ -129,6 +129,7 @@ export default function IngresoTelas() {
 
   const normalize = (value: any) =>
     `${value ?? ""}`.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ");
+  const normalizeProviderCode = (value: any) => `${value ?? ""}`.replace(/^#\s*/, "").trim().toUpperCase();
 
   const detectarColorProveedor = (item: Partial<IngresoTelaDetalle>) => {
     const descripcion = `${item.descripcionFactura || ""}`.replace(/\s+/g, " ").trim();
@@ -150,12 +151,13 @@ export default function IngresoTelas() {
 
   const resolverColorProveedor = (proveedorId: any, item: Partial<IngresoTelaDetalle>) => {
     const colorProveedor = detectarColorProveedor(item);
-    const texto = normalize(`${item.descripcionFactura || ""} ${item.proveedorCodigo || ""} ${colorProveedor}`);
+    const codigoProveedor = normalizeProviderCode(item.proveedorCodigo);
+    const colorNormalizado = normalize(colorProveedor);
     const alias = colorAliases.find((row) => {
       if (Number(row.proveedorId) !== Number(proveedorId) || row.activo === false) return false;
-      const codigo = normalize(row.codigoProveedor);
+      const codigo = normalizeProviderCode(row.codigoProveedor);
       const nombre = normalize(row.nombreProveedor);
-      return Boolean((codigo && texto.includes(codigo)) || (nombre && texto.includes(nombre)));
+      return Boolean((nombre && colorNormalizado && nombre === colorNormalizado) || (codigo && codigoProveedor && codigo === codigoProveedor));
     });
     return { colorProveedor, colorId: alias?.colorId || item.colorId || "" };
   };
