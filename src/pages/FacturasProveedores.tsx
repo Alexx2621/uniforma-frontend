@@ -215,6 +215,8 @@ export default function FacturasProveedores() {
   const [uploading, setUploading] = useState(false);
   const [archivo, setArchivo] = useState<File | null>(null);
   const [filtros, setFiltros] = useState({ q: "", estado: "", proveedorId: "", desde: "", hasta: "" });
+  const [paginationModel, setPaginationModel] = useState({ page: 0, pageSize: 25 });
+  const [rowCount, setRowCount] = useState(0);
   const [dialog, setDialog] = useState<{ open: boolean; editing: FacturaProveedor | null; form: typeof emptyForm; detalle: FacturaProveedorDetalle[] }>({
     open: false,
     editing: null,
@@ -227,19 +229,25 @@ export default function FacturasProveedores() {
   const cargar = useCallback(async () => {
     setLoading(true);
     try {
-      const params = Object.fromEntries(Object.entries(filtros).filter(([, value]) => value));
+      const params = {
+        ...Object.fromEntries(Object.entries(filtros).filter(([, value]) => value)),
+        page: paginationModel.page,
+        pageSize: paginationModel.pageSize,
+      };
       const [respFacturas, respProveedores] = await Promise.all([
         api.get("/facturas-proveedores", { params }),
         api.get("/proveedores", { params: { estado: "activo" } }).catch(() => ({ data: [] })),
       ]);
-      setRows(respFacturas.data || []);
+      const payload = respFacturas.data;
+      setRows(Array.isArray(payload) ? payload : payload?.data || []);
+      setRowCount(Array.isArray(payload) ? payload.length : Number(payload?.total || 0));
       setProveedores(respProveedores.data || []);
     } catch (error: any) {
       Swal.fire("Error", error?.response?.data?.message || "No se pudieron cargar las facturas", "error");
     } finally {
       setLoading(false);
     }
-  }, [filtros]);
+  }, [filtros, paginationModel]);
 
   useEffect(() => {
     void cargar();
@@ -498,11 +506,11 @@ export default function FacturasProveedores() {
 
       <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
         <Grid container spacing={2}>
-          <Grid size={{ xs: 12, md: 3 }}><TextField label="Buscar" size="small" fullWidth value={filtros.q} onChange={(e) => setFiltros((p) => ({ ...p, q: e.target.value }))} /></Grid>
-          <Grid size={{ xs: 12, md: 3 }}><TextField select label="Proveedor" size="small" fullWidth value={filtros.proveedorId} onChange={(e) => setFiltros((p) => ({ ...p, proveedorId: e.target.value }))}><MenuItem value="">Todos</MenuItem>{proveedores.map((p) => <MenuItem key={p.id} value={String(p.id)}>{p.nombre}</MenuItem>)}</TextField></Grid>
-          <Grid size={{ xs: 12, sm: 4, md: 2 }}><TextField select label="Estado" size="small" fullWidth value={filtros.estado} onChange={(e) => setFiltros((p) => ({ ...p, estado: e.target.value }))}><MenuItem value="">Todos</MenuItem>{estados.map((e) => <MenuItem key={e} value={e}>{e}</MenuItem>)}</TextField></Grid>
-          <Grid size={{ xs: 12, sm: 4, md: 2 }}><TextField label="Desde" type="date" size="small" fullWidth value={filtros.desde} onChange={(e) => setFiltros((p) => ({ ...p, desde: e.target.value }))} InputLabelProps={{ shrink: true }} /></Grid>
-          <Grid size={{ xs: 12, sm: 4, md: 2 }}><TextField label="Hasta" type="date" size="small" fullWidth value={filtros.hasta} onChange={(e) => setFiltros((p) => ({ ...p, hasta: e.target.value }))} InputLabelProps={{ shrink: true }} /></Grid>
+          <Grid size={{ xs: 12, md: 3 }}><TextField label="Buscar" size="small" fullWidth value={filtros.q} onChange={(e) => { setPaginationModel((p) => ({ ...p, page: 0 })); setFiltros((p) => ({ ...p, q: e.target.value })); }} /></Grid>
+          <Grid size={{ xs: 12, md: 3 }}><TextField select label="Proveedor" size="small" fullWidth value={filtros.proveedorId} onChange={(e) => { setPaginationModel((p) => ({ ...p, page: 0 })); setFiltros((p) => ({ ...p, proveedorId: e.target.value })); }}><MenuItem value="">Todos</MenuItem>{proveedores.map((p) => <MenuItem key={p.id} value={String(p.id)}>{p.nombre}</MenuItem>)}</TextField></Grid>
+          <Grid size={{ xs: 12, sm: 4, md: 2 }}><TextField select label="Estado" size="small" fullWidth value={filtros.estado} onChange={(e) => { setPaginationModel((p) => ({ ...p, page: 0 })); setFiltros((p) => ({ ...p, estado: e.target.value })); }}><MenuItem value="">Todos</MenuItem>{estados.map((e) => <MenuItem key={e} value={e}>{e}</MenuItem>)}</TextField></Grid>
+          <Grid size={{ xs: 12, sm: 4, md: 2 }}><TextField label="Desde" type="date" size="small" fullWidth value={filtros.desde} onChange={(e) => { setPaginationModel((p) => ({ ...p, page: 0 })); setFiltros((p) => ({ ...p, desde: e.target.value })); }} InputLabelProps={{ shrink: true }} /></Grid>
+          <Grid size={{ xs: 12, sm: 4, md: 2 }}><TextField label="Hasta" type="date" size="small" fullWidth value={filtros.hasta} onChange={(e) => { setPaginationModel((p) => ({ ...p, page: 0 })); setFiltros((p) => ({ ...p, hasta: e.target.value })); }} InputLabelProps={{ shrink: true }} /></Grid>
         </Grid>
       </Paper>
 
@@ -513,7 +521,10 @@ export default function FacturasProveedores() {
             columns={columns}
             loading={loading}
             pageSizeOptions={[10, 25, 50]}
-            initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
+            paginationMode="server"
+            paginationModel={paginationModel}
+            onPaginationModelChange={setPaginationModel}
+            rowCount={rowCount}
             disableRowSelectionOnClick
             sx={{
               "& .MuiDataGrid-columnHeaderTitle": { whiteSpace: "normal", lineHeight: 1.2 },

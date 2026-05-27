@@ -203,6 +203,7 @@ const valuesMatchUser = (values: Array<string | number | null | undefined>, usua
 };
 
 const asArray = (value: unknown): any[] => (Array.isArray(value) ? value : []);
+const apiRows = (value: any): any[] => (Array.isArray(value) ? value : Array.isArray(value?.data) ? value.data : []);
 
 const metodoCuentaComoTarjeta = (metodo?: string | null) => {
   const normalized = `${metodo || ""}`.trim().toLowerCase();
@@ -537,8 +538,8 @@ export default function Dashboard() {
           respUsuarios,
           respWhatsapp,
         ] = await Promise.all([
-          api.get("/ventas").catch(() => ({ data: [] })),
-          api.get("/produccion").catch(() => ({ data: [] })),
+          api.get("/ventas", { params: { lite: 1 } }).catch(() => ({ data: [] })),
+          api.get("/produccion", { params: { lite: 1 } }).catch(() => ({ data: [] })),
           api.get("/postventa", { params: postventaParams }).catch(() => ({ data: [] })),
           api.get("/documentos").catch(() => ({ data: [] })),
           api.get("/documentos", { params: reportesParams }).catch(() => ({ data: [] })),
@@ -558,8 +559,8 @@ export default function Dashboard() {
           api.get("/usuarios").catch(() => ({ data: [] })),
           whatsappFeatureEnabled ? api.get("/whatsapp/resumen").catch(() => ({ data: null })) : Promise.resolve({ data: null }),
         ]);
-        setVentas(respVentas.data || []);
-        setPedidos(respPedidos.data || []);
+        setVentas(apiRows(respVentas.data));
+        setPedidos(apiRows(respPedidos.data));
         setPostventa(respPostventa.data || []);
         setDocumentos(respDocumentos.data || []);
         setReportesDiariosUsuario(respReportesDiarios.data || []);

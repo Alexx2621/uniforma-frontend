@@ -111,6 +111,8 @@ export default function IngresoTelas() {
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
   const [loading, setLoading] = useState(false);
   const [filtros, setFiltros] = useState({ estado: "", proveedorId: "" });
+  const [paginationModel, setPaginationModel] = useState({ page: 0, pageSize: 25 });
+  const [rowCount, setRowCount] = useState(0);
   const [dialog, setDialog] = useState<{ open: boolean; ingreso: IngresoTela | null; detalle: IngresoTelaDetalle[] }>({
     open: false,
     ingreso: null,
@@ -165,7 +167,11 @@ export default function IngresoTelas() {
   const cargar = useCallback(async () => {
     setLoading(true);
     try {
-      const params = Object.fromEntries(Object.entries(filtros).filter(([, value]) => value));
+      const params = {
+        ...Object.fromEntries(Object.entries(filtros).filter(([, value]) => value)),
+        page: paginationModel.page,
+        pageSize: paginationModel.pageSize,
+      };
       const [respIng, respTelas, respBod, respCol, respColorAliases, respProv] = await Promise.all([
         api.get("/inventario-telas/ingresos", { params }),
         api.get("/telas"),
@@ -174,7 +180,9 @@ export default function IngresoTelas() {
         api.get("/colores/proveedor-aliases").catch(() => ({ data: [] })),
         api.get("/proveedores", { params: { estado: "activo" } }).catch(() => ({ data: [] })),
       ]);
-      setRows(respIng.data || []);
+      const payload = respIng.data;
+      setRows(Array.isArray(payload) ? payload : payload?.data || []);
+      setRowCount(Array.isArray(payload) ? payload.length : Number(payload?.total || 0));
       setTelas(respTelas.data || []);
       setBodegas(respBod.data || []);
       setColores(respCol.data || []);
@@ -185,7 +193,7 @@ export default function IngresoTelas() {
     } finally {
       setLoading(false);
     }
-  }, [filtros]);
+  }, [filtros, paginationModel]);
 
   useEffect(() => {
     void cargar();
@@ -415,7 +423,7 @@ export default function IngresoTelas() {
       <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
         <Grid container spacing={2}>
           <Grid size={{ xs: 12, md: 3 }}>
-            <TextField select label="Estado" size="small" fullWidth value={filtros.estado} onChange={(e) => setFiltros((p) => ({ ...p, estado: e.target.value }))}>
+            <TextField select label="Estado" size="small" fullWidth value={filtros.estado} onChange={(e) => { setPaginationModel((p) => ({ ...p, page: 0 })); setFiltros((p) => ({ ...p, estado: e.target.value })); }}>
               <MenuItem value="">Todos</MenuItem>
               <MenuItem value="abierto">Abierto</MenuItem>
               <MenuItem value="parcial">Parcial</MenuItem>
@@ -423,7 +431,7 @@ export default function IngresoTelas() {
             </TextField>
           </Grid>
           <Grid size={{ xs: 12, md: 4 }}>
-            <TextField select label="Proveedor" size="small" fullWidth value={filtros.proveedorId} onChange={(e) => setFiltros((p) => ({ ...p, proveedorId: e.target.value }))}>
+            <TextField select label="Proveedor" size="small" fullWidth value={filtros.proveedorId} onChange={(e) => { setPaginationModel((p) => ({ ...p, page: 0 })); setFiltros((p) => ({ ...p, proveedorId: e.target.value })); }}>
               <MenuItem value="">Todos</MenuItem>
               {proveedores.map((item) => <MenuItem key={item.id} value={item.id}>{item.nombre}</MenuItem>)}
             </TextField>
@@ -433,7 +441,7 @@ export default function IngresoTelas() {
 
       <Paper variant="outlined" sx={{ p: 2 }}>
         <Box sx={{ height: 590 }}>
-          <DataGrid rows={rows} columns={columns} loading={loading} pageSizeOptions={[10, 25, 50]} initialState={{ pagination: { paginationModel: { pageSize: 25 } } }} disableRowSelectionOnClick />
+          <DataGrid rows={rows} columns={columns} loading={loading} pageSizeOptions={[10, 25, 50]} paginationMode="server" paginationModel={paginationModel} onPaginationModelChange={setPaginationModel} rowCount={rowCount} disableRowSelectionOnClick />
         </Box>
       </Paper>
 
