@@ -173,6 +173,24 @@ interface WhatsappResumen {
   usuarios: WhatsappResumenUsuario[];
 }
 
+interface DashboardBackendResumen {
+  checkedAt?: string;
+  filtros?: { alcance?: string; bodegaId?: number | null; usuarioId?: number | null };
+  ventas?: {
+    totalRango?: number;
+    cantidadRango?: number;
+    totalHoy?: number;
+    cantidadHoy?: number;
+  };
+  pedidos?: {
+    abiertos?: number;
+    conSaldo?: number;
+    saldoPendiente?: number;
+    totalRango?: number;
+  };
+  inventario?: { bajoMinimo?: number };
+}
+
 const toDateOnly = (value: string | Date) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
@@ -431,6 +449,7 @@ export default function Dashboard() {
   const [bodegas, setBodegas] = useState<Bodega[]>([]);
   const [usuarios, setUsuarios] = useState<UsuarioOption[]>([]);
   const [whatsappResumen, setWhatsappResumen] = useState<WhatsappResumen | null>(null);
+  const [backendResumen, setBackendResumen] = useState<DashboardBackendResumen | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [rango, setRango] = useState<"7" | "30" | "90">("30");
@@ -523,8 +542,18 @@ export default function Dashboard() {
         if (effectiveVendedorId) reportesParams.usuarioId = effectiveVendedorId;
         const postventaParams: Record<string, number> = {};
         if (effectiveVendedorId) postventaParams.usuarioId = effectiveVendedorId;
+        const resumenDesde = new Date();
+        resumenDesde.setDate(resumenDesde.getDate() - (Number(rango) - 1));
+        const resumenParams: Record<string, string | number> = {
+          desde: toDateOnly(resumenDesde),
+          hasta: toDateOnly(new Date()),
+          _ts: Date.now(),
+        };
+        if (effectiveVendedorId) resumenParams.usuarioId = effectiveVendedorId;
+        if (effectiveBodegaId) resumenParams.bodegaId = effectiveBodegaId;
 
         const [
+          respResumen,
           respVentas,
           respPedidos,
           respPostventa,
@@ -538,6 +567,7 @@ export default function Dashboard() {
           respUsuarios,
           respWhatsapp,
         ] = await Promise.all([
+          api.get("/dashboard/resumen", { params: resumenParams }).catch(() => ({ data: null })),
           api.get("/ventas", { params: { lite: 1 } }).catch(() => ({ data: [] })),
           api.get("/produccion", { params: { lite: 1 } }).catch(() => ({ data: [] })),
           api.get("/postventa", { params: postventaParams }).catch(() => ({ data: [] })),
@@ -559,6 +589,7 @@ export default function Dashboard() {
           api.get("/usuarios").catch(() => ({ data: [] })),
           whatsappFeatureEnabled ? api.get("/whatsapp/resumen").catch(() => ({ data: null })) : Promise.resolve({ data: null }),
         ]);
+        setBackendResumen(respResumen.data || null);
         setVentas(apiRows(respVentas.data));
         setPedidos(apiRows(respPedidos.data));
         setPostventa(respPostventa.data || []);
@@ -583,7 +614,7 @@ export default function Dashboard() {
     };
     void load();
     void fetchConfig();
-  }, [bodegaFiltro, canViewDashboardAll, cargarWhatsapp, fetchConfig, userBodegaId, userId, vendedorFiltro]);
+  }, [bodegaFiltro, canViewDashboardAll, cargarWhatsapp, fetchConfig, rango, userBodegaId, userId, vendedorFiltro]);
 
   const marcarWhatsappLeidos = async (vendedorId?: number) => {
     if (!whatsappFeatureEnabled) return;
@@ -924,6 +955,26 @@ export default function Dashboard() {
 
       {loading && <LinearProgress sx={{ mb: 2 }} />}
       {loadError && <Alert severity="warning" sx={{ mb: 2 }}>{loadError}</Alert>}
+      {backendResumen && (
+        <Paper variant="outlined" sx={{ p: 1.5, mb: 2, borderRadius: 1, bgcolor: "background.paper" }}>
+          <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} alignItems={{ xs: "stretch", md: "center" }} justifyContent="space-between">
+            <Stack spacing={0.25}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                Resumen calculado por servidor
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Menos carga en el navegador y consultas agregadas en MySQL para el rango seleccionado.
+              </Typography>
+            </Stack>
+            <Stack direction="row" spacing={1} flexWrap="wrap" justifyContent={{ xs: "flex-start", md: "flex-end" }}>
+              <Chip size="small" label={`Ventas ${formatCurrency(backendResumen.ventas?.totalRango || 0)}`} />
+              <Chip size="small" label={`Pedidos abiertos ${backendResumen.pedidos?.abiertos || 0}`} />
+              <Chip size="small" label={`Saldo ${formatCurrency(backendResumen.pedidos?.saldoPendiente || 0)}`} />
+              <Chip size="small" label={`Stock bajo ${backendResumen.inventario?.bajoMinimo || 0}`} />
+            </Stack>
+          </Stack>
+        </Paper>
+      )}
 
       <Paper
         variant="outlined"

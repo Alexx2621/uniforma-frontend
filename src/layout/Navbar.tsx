@@ -76,6 +76,31 @@ interface ServerStatus {
   message?: string;
 }
 
+interface ServerDetails {
+  checkedAt?: string;
+  api?: {
+    uptimeSeconds?: number;
+    environment?: string;
+    memory?: { rss?: number; heapUsed?: number; heapTotal?: number };
+  };
+  mysql?: {
+    status?: Record<string, string>;
+    variables?: Record<string, string>;
+    databaseBytes?: number;
+    processlist?: Array<{
+      id: number;
+      user?: string;
+      host?: string;
+      database?: string;
+      command?: string;
+      timeSeconds?: number;
+      state?: string;
+      info?: string;
+    }>;
+    migrations?: Array<{ name?: string; finishedAt?: string }>;
+  };
+}
+
 const initialServerStatus: ServerStatus = {
   status: "checking",
   message: "Revisando estado del servidor",
@@ -105,6 +130,24 @@ const formatUptime = (seconds?: number) => {
   if (hours > 0) return `${hours}h ${minutes}m`;
   return `${minutes}m`;
 };
+
+const formatBytes = (bytes?: number) => {
+  const value = Number(bytes || 0);
+  if (!Number.isFinite(value) || value <= 0) return "N/D";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let size = value;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+  return `${size.toLocaleString("es-GT", { maximumFractionDigits: unitIndex === 0 ? 0 : 2 })} ${units[unitIndex]}`;
+};
+
+const metricValue = (value?: string) => (value == null || value === "" ? "N/D" : value);
+
+const readMetric = (values: Record<string, string> | undefined, key: string) =>
+  values?.[key] ?? values?.[key.toLowerCase()] ?? values?.[key.toUpperCase()];
 
 export default function Navbar() {
   const { isDarkMode, toggleMode } = useThemeMode();
@@ -136,6 +179,8 @@ export default function Navbar() {
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
   const [serverStatus, setServerStatus] = useState<ServerStatus>(initialServerStatus);
+  const [serverDetails, setServerDetails] = useState<ServerDetails | null>(null);
+  const [serverDetailsLoading, setServerDetailsLoading] = useState(false);
   const [serverStatusAnchorEl, setServerStatusAnchorEl] = useState<null | HTMLElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastUnreadCountRef = useRef<number | null>(null);
@@ -216,6 +261,18 @@ export default function Navbar() {
       });
     } finally {
       window.clearTimeout(timeoutId);
+    }
+  }, []);
+
+  const cargarServerDetails = useCallback(async () => {
+    setServerDetailsLoading(true);
+    try {
+      const { data } = await api.get("/status/details");
+      setServerDetails(data || null);
+    } catch {
+      setServerDetails(null);
+    } finally {
+      setServerDetailsLoading(false);
     }
   }, []);
 
@@ -409,6 +466,7 @@ export default function Navbar() {
   const abrirServerStatus = (event: React.MouseEvent<HTMLElement>) => {
     if (!isAdmin) return;
     setServerStatusAnchorEl(event.currentTarget);
+    void cargarServerDetails();
   };
 
   const cerrarServerStatus = () => {
@@ -550,7 +608,7 @@ export default function Navbar() {
             onClose={cerrarServerStatus}
             anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
             transformOrigin={{ vertical: "top", horizontal: "right" }}
-            PaperProps={{ sx: { width: 360, maxWidth: "calc(100vw - 32px)" } }}
+            PaperProps={{ sx: { width: 430, maxWidth: "calc(100vw - 32px)" } }}
           >
             <Box sx={{ px: 2, py: 1.5 }}>
               <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
@@ -568,7 +626,13 @@ export default function Navbar() {
                     {serverStatusLabel}
                   </Typography>
                 </Stack>
-                <Button size="small" onClick={() => void cargarServerStatus()}>
+                <Button
+                  size="small"
+                  onClick={() => {
+                    void cargarServerStatus();
+                    void cargarServerDetails();
+                  }}
+                >
                   Revisar
                 </Button>
               </Stack>
@@ -627,6 +691,73 @@ export default function Navbar() {
                   <Typography variant="caption" color="text.secondary">
                     {serverStatus.message || serverStatus.database?.message || serverStatus.railway?.message}
                   </Typography>
+                </Box>
+              )}
+            </Box>
+            <Divider />
+            <Box sx={{ px: 2, py: 1.5 }}>
+              <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                  Detalle MySQL
+                </Typography>
+                {serverDetailsLoading && <CircularProgress size={16} />}
+              </Stack>
+              <Stack spacing={1}>
+                <Stack direction="row" justifyContent="space-between" spacing={2}>
+                  <Typography variant="body2" color="text.secondary">
+                    Conexiones
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                    {metricValue(readMetric(serverDetails?.mysql?.status, "Threads_connected"))}
+                    {" / "}
+                    {metricValue(readMetric(serverDetails?.mysql?.variables, "max_connections"))}
+                  </Typography>
+                </Stack>
+                <Stack direction="row" justifyContent="space-between" spacing={2}>
+                  <Typography variant="body2" color="text.secondary">
+                    Max. usado
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                    {metricValue(readMetric(serverDetails?.mysql?.status, "Max_used_connections"))}
+                  </Typography>
+                </Stack>
+                <Stack direction="row" justifyContent="space-between" spacing={2}>
+                  <Typography variant="body2" color="text.secondary">
+                    Buffer pool
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                    {formatBytes(Number(readMetric(serverDetails?.mysql?.variables, "innodb_buffer_pool_size") || 0))}
+                  </Typography>
+                </Stack>
+                <Stack direction="row" justifyContent="space-between" spacing={2}>
+                  <Typography variant="body2" color="text.secondary">
+                    Base de datos
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                    {formatBytes(serverDetails?.mysql?.databaseBytes)}
+                  </Typography>
+                </Stack>
+                <Stack direction="row" justifyContent="space-between" spacing={2}>
+                  <Typography variant="body2" color="text.secondary">
+                    Temporales en disco
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                    {metricValue(readMetric(serverDetails?.mysql?.status, "Created_tmp_disk_tables"))}
+                  </Typography>
+                </Stack>
+              </Stack>
+              {!!serverDetails?.mysql?.processlist?.length && (
+                <Box sx={{ mt: 1.5, p: 1.25, borderRadius: 1, backgroundColor: "action.hover" }}>
+                  <Typography variant="caption" sx={{ display: "block", fontWeight: 800, mb: 0.75 }}>
+                    Procesos recientes
+                  </Typography>
+                  <Stack spacing={0.5}>
+                    {serverDetails.mysql.processlist.slice(0, 4).map((process) => (
+                      <Typography key={process.id} variant="caption" color="text.secondary" noWrap>
+                        #{process.id} {process.command || "N/D"} · {process.timeSeconds || 0}s · {process.user || "N/D"}
+                      </Typography>
+                    ))}
+                  </Stack>
                 </Box>
               )}
             </Box>
