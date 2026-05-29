@@ -60,6 +60,7 @@ const usuarioOperacionDefaults = [
   { operacion: "cotizacion", nombreOperacion: "Cotizacion", formato: "CO-USUARIO-0001", prefijo: "CO" },
   { operacion: "reporteDiario", nombreOperacion: "Reporte diario", formato: "RD-USUARIO-0001", prefijo: "RD" },
   { operacion: "reporteQuincenal", nombreOperacion: "Reporte quincenal", formato: "RQ-USUARIO-0001", prefijo: "RQ" },
+  { operacion: "reporteMensual", nombreOperacion: "Reporte mensual", formato: "RM-USUARIO-0001", prefijo: "RM" },
   { operacion: "ingresoInventario", nombreOperacion: "Ingreso inventario", formato: "IN-USUARIO-0001", prefijo: "IN" },
   { operacion: "traslado", nombreOperacion: "Traslado", formato: "TR-USUARIO-0001", prefijo: "TR" },
   { operacion: "cambio", nombreOperacion: "Cambio", formato: "CAM-USUARIO-0001", prefijo: "CAM" },

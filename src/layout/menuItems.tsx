@@ -30,6 +30,7 @@ import ManageSearchOutlined from "@mui/icons-material/ManageSearchOutlined";
 import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
 import LocalShippingOutlined from "@mui/icons-material/LocalShippingOutlined";
 import BusinessOutlined from "@mui/icons-material/BusinessOutlined";
+import NotificationsActiveOutlined from "@mui/icons-material/NotificationsActiveOutlined";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import { whatsappFeatureEnabled } from "../config/features";
 
@@ -133,6 +134,7 @@ export const menuSections: MenuSection[] = [
       ...(whatsappFeatureEnabled ? [{ label: "WhatsApp Business", icon: <WhatsAppIcon />, path: "/whatsapp/config" }] : []),
       { label: "Auditoria", icon: <ManageSearchOutlined />, path: "/auditoria" },
       { label: "Correcciones", icon: <FactCheckOutlined />, path: "/correcciones" },
+      { label: "Alertas", icon: <NotificationsActiveOutlined />, path: "/alertas" },
       { label: "Metas mensuales", icon: <TrendingUpOutlined />, path: "/metas-mensuales" },
     ],
   },
@@ -145,6 +147,7 @@ export const menuSections: MenuSection[] = [
         children: [
           { label: "Reporte diario", path: "/reportes/reporte-diario", icon: <SummarizeOutlined /> },
           { label: "Reporte quincenal", path: "/reportes/reporte-quincenal", icon: <SummarizeOutlined /> },
+          { label: "Reporte mensual", path: "/reportes/reporte-mensual", icon: <SummarizeOutlined /> },
           { label: "Ventas diarias", path: "/reportes/ventas-diarias", icon: <TimelineOutlined /> },
           { label: "Ventas por producto", path: "/reportes/ventas-producto", icon: <TrendingUpOutlined /> },
           { label: "Top clientes", path: "/reportes/top-clientes", icon: <PeopleAltOutlined /> },

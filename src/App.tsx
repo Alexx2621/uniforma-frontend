@@ -30,6 +30,7 @@ import Usuarios from "./pages/Usuarios";
 import Admin from "./pages/Admin";
 import Auditoria from "./pages/Auditoria";
 import Correcciones from "./pages/Correcciones";
+import Alertas from "./pages/Alertas";
 import Correlativos from "./pages/Correlativos";
 import WhatsappConfig from "./pages/WhatsappConfig";
 import Roles from "./pages/Roles";
@@ -46,6 +47,7 @@ import { Cambios, Devoluciones } from "./pages/PostVenta";
 import VentasDiarias from "./pages/reportes/VentasDiarias";
 import ReporteDiario from "./pages/reportes/ReporteDiario";
 import ReporteQuincenal from "./pages/reportes/ReporteQuincenal";
+import ReporteMensual from "./pages/reportes/ReporteMensual";
 import VentasProducto from "./pages/reportes/VentasProducto";
 import TopClientes from "./pages/reportes/TopClientes";
 import IngresosInventarioReporte from "./pages/reportes/IngresosInventarioReporte";
@@ -99,6 +101,7 @@ export default function App() {
           <Route path="/admin" element={<Admin />} />
           <Route path="/auditoria" element={<Auditoria />} />
           <Route path="/correcciones" element={<Correcciones />} />
+          <Route path="/alertas" element={<Alertas />} />
           <Route path="/metas-mensuales" element={<MetasMensuales />} />
           {whatsappFeatureEnabled && <Route path="/whatsapp/config" element={<WhatsappConfig />} />}
           <Route path="/correlativos" element={<Correlativos />} />
@@ -114,6 +117,7 @@ export default function App() {
           <Route path="/pagos/recibidos" element={<PagosRecibidos />} />
           <Route path="/reportes/reporte-diario" element={<ReporteDiario />} />
           <Route path="/reportes/reporte-quincenal" element={<ReporteQuincenal />} />
+          <Route path="/reportes/reporte-mensual" element={<ReporteMensual />} />
           <Route path="/reportes/ventas-diarias" element={<VentasDiarias />} />
           <Route path="/reportes/ventas-producto" element={<VentasProducto />} />
           <Route path="/reportes/top-clientes" element={<TopClientes />} />

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import {
   Box,
@@ -28,6 +28,7 @@ import CleaningServicesOutlined from "@mui/icons-material/CleaningServicesOutlin
 import AddOutlined from "@mui/icons-material/AddOutlined";
 import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import PlaylistAddCheckOutlined from "@mui/icons-material/PlaylistAddCheckOutlined";
+import AssessmentOutlined from "@mui/icons-material/AssessmentOutlined";
 import Swal from "sweetalert2";
 import { api } from "../../api/axios";
 import { useAuthStore } from "../../auth/useAuthStore";
@@ -36,7 +37,7 @@ import LOGO_URL from "../../assets/3-logos.png";
 import { PDF_FONT_BOLD_FAMILY, PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../../utils/fontFamily";
 import { canUseVendedorDropdown, filterUsuariosByBodega } from "../../utils/vendedorDropdownAccess";
 
-interface QuincenaRow {
+interface MesRow {
   day: number;
   weekday: string;
   ventaDiaria: number;
@@ -99,12 +100,10 @@ const getApiErrorMessage = async (error: any, fallback: string) => {
   return Array.isArray(message) ? message.join(", ") : message || fallback;
 };
 
-const getRows = (year: number, month: number, quincena: "1" | "2"): QuincenaRow[] => {
+const getRows = (year: number, month: number): MesRow[] => {
   const lastDay = new Date(year, month, 0).getDate();
-  const start = quincena === "1" ? 1 : 16;
-  const end = quincena === "1" ? 15 : lastDay;
 
-  return Array.from({ length: end - start + 1 }, (_, index) => start + index)
+  return Array.from({ length: lastDay }, (_, index) => index + 1)
     .map((day) => {
       const date = new Date(year, month - 1, day);
       return {
@@ -168,11 +167,11 @@ const getReporteDiarioTotal = (data: any) => {
   return capital + departamento + tienda;
 };
 
-const getReporteQuincenalDocumentoTotal = (doc: DocumentoGenerado) =>
+const getReporteMensualDocumentoTotal = (doc: DocumentoGenerado) =>
   Object.values(doc.data?.ventasPorDia || {}).reduce((sum: number, value: any) => sum + Number(value || 0), 0);
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-const buildReporteQuincenalHtml = ({
+const buildReporteMensualHtml = ({
   tienda,
   month,
   year,
@@ -180,7 +179,6 @@ const buildReporteQuincenalHtml = ({
   metaMes,
   promedioDiario,
   reporteNo,
-  quincena,
   rows,
 }: {
   tienda: string;
@@ -190,18 +188,16 @@ const buildReporteQuincenalHtml = ({
   metaMes: number;
   promedioDiario: number;
   reporteNo: string;
-  quincena: "1" | "2";
-  rows: QuincenaRow[];
+  rows: MesRow[];
 }) => {
   const totalVenta = rows.reduce((sum, row) => sum + Number(row.ventaDiaria || 0), 0);
   const totalPorcentaje = metaMes > 0 ? (totalVenta / metaMes) * 100 : 0;
-  const quincenaLabel = quincena === "1" ? "1RA QUINCENA" : "2DA QUINCENA";
 
   return `<!doctype html>
   <html>
     <head>
       <meta charset="utf-8" />
-      <title>Reporte quincenal ${monthNames[month - 1]} ${year}</title>
+      <title>Reporte mensual ${monthNames[month - 1]} ${year}</title>
       <style>
         @page { size: portrait; margin: 10mm; }
         html, body, .page, table, th, td {
@@ -358,7 +354,7 @@ const buildReporteQuincenalHtml = ({
               .join("")}
             <tr>
               <td></td>
-              <td class="total-label">${quincenaLabel}</td>
+              <td class="total-label">TOTAL MES</td>
               <td class="total-value">${money(totalVenta)}</td>
               <td class="total-value">${percent(totalPorcentaje)}</td>
             </tr>
@@ -374,14 +370,14 @@ const buildReporteQuincenalHtml = ({
   </html>`;
 };
 
-export default function ReporteQuincenal() {
+export default function ReporteMensual() {
   const currentDate = useMemo(() => new Date(), []);
   const today = toDateKey(currentDate.getFullYear(), currentDate.getMonth() + 1, currentDate.getDate());
-  const currentQuincena = currentDate.getDate() <= 15 ? "1" : "2";
   const { bodegaId, bodegaNombre, usuario, nombre, primerNombre, primerApellido, rol, rolId, permisos, id: userId } = useAuthStore();
   const { vendedorDropdownRoleIds, vendedorDropdownBodegaIds, loaded: configLoaded, fetchConfig } = useSystemConfigStore();
   const { state: routeState } = useLocation();
   const sidebarClickAt = (routeState as any)?.sidebarClickAt;
+  const lastSidebarClickAtRef = useRef(sidebarClickAt);
   const [documentos, setDocumentos] = useState<DocumentoGenerado[]>([]);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [filtroUsuarioId, setFiltroUsuarioId] = useState<number | null | "">("");
@@ -398,11 +394,11 @@ export default function ReporteQuincenal() {
   const [promedioDiario, setPromedioDiario] = useState(0);
   const [metaSource, setMetaSource] = useState<"vendedor" | "tienda" | "global" | "none">("none");
   const [metaLoading, setMetaLoading] = useState(false);
-  const [quincena, setQuincena] = useState<"1" | "2">(currentQuincena);
   const [reporteNo, setReporteNo] = useState("Pendiente");
   const [ventasPorDia, setVentasPorDia] = useState<Record<number, number>>({});
   const [rellenando, setRellenando] = useState(false);
   const [generandoPdf, setGenerandoPdf] = useState(false);
+  const [selectedReporteIds, setSelectedReporteIds] = useState<number[]>([]);
 
   const isAdmin = rol === "ADMIN";
   const canUseDropdown = canUseVendedorDropdown(rol, rolId, vendedorDropdownRoleIds, permisos);
@@ -428,7 +424,7 @@ export default function ReporteQuincenal() {
 
   const cargarSiguienteReporte = async () => {
     try {
-      const resp = await api.get("/correlativos/usuario-operaciones/actual/reporteQuincenal");
+      const resp = await api.get("/correlativos/usuario-operaciones/actual/reporteMensual");
       setReporteNo(resp.data?.correlativo || "Pendiente");
     } catch {
       setReporteNo("Pendiente");
@@ -466,7 +462,7 @@ export default function ReporteQuincenal() {
   const cargarDocumentos = useCallback(async () => {
     try {
       if (!configLoaded) return;
-      const params: any = { tipo: "reporteQuincenal", _ts: Date.now() };
+      const params: any = { tipo: "reporteMensual", _ts: Date.now() };
       if (!canUseDropdown && !userId) {
         setDocumentos([]);
         return;
@@ -477,7 +473,7 @@ export default function ReporteQuincenal() {
       const resp = await api.get("/documentos", { params });
       setDocumentos(resp.data || []);
     } catch {
-      Swal.fire("Error", "No se pudieron cargar los reportes quincenales generados", "error");
+      Swal.fire("Error", "No se pudieron cargar los reportes mensuales generados", "error");
     }
   }, [filtroUsuarioSeleccionadoId, canUseDropdown, userId, configLoaded]);
 
@@ -501,7 +497,8 @@ export default function ReporteQuincenal() {
   }, [cargarMetaMensual]);
 
   useEffect(() => {
-    if (sidebarClickAt) {
+    if (sidebarClickAt && sidebarClickAt !== lastSidebarClickAtRef.current) {
+      lastSidebarClickAtRef.current = sidebarClickAt;
       setShowForm(false);
       void cargarDocumentos();
     }
@@ -526,8 +523,8 @@ export default function ReporteQuincenal() {
     () =>
       documentosFiltrados.map((doc) => ({
         ...doc,
-        periodo: doc.titulo || `${doc.data?.quincena || ""} quincena ${doc.data?.month || ""}/${doc.data?.year || ""}`,
-        totalReporte: getReporteQuincenalDocumentoTotal(doc),
+        periodo: doc.titulo || `${monthNames[Number(doc.data?.month || 1) - 1] || ""} ${doc.data?.year || ""}`,
+        totalReporte: getReporteMensualDocumentoTotal(doc),
         usuarioNombre: doc.usuario?.nombre || doc.usuario?.usuario || "N/D",
       })),
     [documentosFiltrados]
@@ -538,6 +535,11 @@ export default function ReporteQuincenal() {
     [documentosGridRows]
   );
 
+  useEffect(() => {
+    const visibleIds = new Set(documentosGridRows.map((doc) => Number(doc.id)));
+    setSelectedReporteIds((prev) => prev.filter((id) => visibleIds.has(Number(id))));
+  }, [documentosGridRows]);
+
   const nuevoReporte = async () => {
     setDocumentoId(null);
     await cargarSiguienteReporte();
@@ -546,7 +548,6 @@ export default function ReporteQuincenal() {
     setMetaMes(0);
     setPromedioDiario(0);
     setMetaSource("none");
-    setQuincena(currentQuincena);
     setVentasPorDia({});
     setShowForm(true);
   };
@@ -560,21 +561,23 @@ export default function ReporteQuincenal() {
     year,
     metaMes,
     promedioDiario,
-    quincena,
     ventasPorDia,
   });
 
   const guardarDocumento = async () => {
-    const quincenaLabel = quincena === "1" ? "1RA" : "2DA";
     const payload = {
-      titulo: `${quincenaLabel} QUINCENA ${monthNames[month - 1]} ${year}`,
+      titulo: `REPORTE MENSUAL ${monthNames[month - 1]} ${year}`,
       data: getPayload(),
     };
     if (documentoId) {
       const resp = await api.patch(`/documentos/${documentoId}`, payload);
       return resp.data as DocumentoGenerado;
     }
-    const resp = await api.post("/documentos", { tipo: "reporteQuincenal", ...payload });
+    const resp = await api.post("/documentos", {
+      tipo: "reporteMensual",
+      usuarioId: filtroUsuarioSeleccionadoId || undefined,
+      ...payload,
+    });
     const doc = resp.data as DocumentoGenerado;
     setDocumentoId(doc.id);
     setReporteNo(doc.correlativo);
@@ -588,7 +591,7 @@ export default function ReporteQuincenal() {
     const url = window.URL.createObjectURL(new Blob([resp.data], { type: "application/pdf" }));
     const link = document.createElement("a");
     link.href = url;
-    link.download = `Reporte quincenal ${doc.correlativo}.pdf`;
+    link.download = `Reporte mensual ${doc.correlativo}.pdf`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -597,11 +600,11 @@ export default function ReporteQuincenal() {
 
   const rows = useMemo(
     () =>
-      getRows(year, month, quincena).map((row) => ({
+      getRows(year, month).map((row) => ({
         ...row,
         ventaDiaria: Number(ventasPorDia[row.day] || 0),
       })),
-    [year, month, quincena, ventasPorDia]
+    [year, month, ventasPorDia]
   );
 
   const totalVenta = useMemo(() => rows.reduce((sum, row) => sum + Number(row.ventaDiaria || 0), 0), [rows]);
@@ -615,8 +618,8 @@ export default function ReporteQuincenal() {
     if (rellenando) return;
     try {
       setRellenando(true);
-      const quincenaRows = getRows(year, month, quincena);
-      const fechasQuincena = new Set(quincenaRows.map((row) => toDateKey(year, month, row.day)));
+      const mesRows = getRows(year, month);
+      const fechasMes = new Set(mesRows.map((row) => toDateKey(year, month, row.day)));
       const params: any = { tipo: "reporteDiario", _ts: Date.now() };
       if (!canUseDropdown) {
         if (userId) params.usuarioId = userId;
@@ -631,14 +634,14 @@ export default function ReporteQuincenal() {
 
       for (const doc of reportesDiarios) {
         const fechaReporte = `${doc?.data?.fecha || ""}`.slice(0, 10);
-        if (!fechasQuincena.has(fechaReporte)) continue;
+        if (!fechasMes.has(fechaReporte)) continue;
         const day = Number(fechaReporte.slice(8, 10));
         if (!Number.isInteger(day)) continue;
         ventasEncontradas[day] = Number(ventasEncontradas[day] || 0) + getReporteDiarioTotal(doc.data || {});
       }
 
       if (!Object.keys(ventasEncontradas).length) {
-        Swal.fire("Sin datos", "No se encontraron reportes diarios para esta quincena.", "info");
+        Swal.fire("Sin datos", "No se encontraron reportes diarios para este mes.", "info");
         return;
       }
 
@@ -662,7 +665,35 @@ export default function ReporteQuincenal() {
       setGenerandoPdf(true);
       await descargarDocumentoPdf(doc);
     } catch (error: any) {
-      const msg = await getApiErrorMessage(error, "No se pudo descargar el PDF del reporte quincenal");
+      const msg = await getApiErrorMessage(error, "No se pudo descargar el PDF del Reporte mensual");
+      Swal.fire("Error", msg, "error");
+    } finally {
+      setGenerandoPdf(false);
+    }
+  };
+
+  const generarConsolidado = async () => {
+    if (!selectedReporteIds.length) {
+      Swal.fire("Selecciona reportes", "Marca al menos un reporte mensual para generar el consolidado.", "info");
+      return;
+    }
+    try {
+      setGenerandoPdf(true);
+      const resp = await api.post(
+        "/documentos/reporte-mensual/consolidado/pdf",
+        { ids: selectedReporteIds },
+        { responseType: "blob" },
+      );
+      const url = window.URL.createObjectURL(new Blob([resp.data], { type: "application/pdf" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `Reporte mensual consolidado ${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error: any) {
+      const msg = await getApiErrorMessage(error, "No se pudo generar el reporte mensual consolidado");
       Swal.fire("Error", msg, "error");
     } finally {
       setGenerandoPdf(false);
@@ -678,14 +709,14 @@ export default function ReporteQuincenal() {
       setReporteNo(docGenerado.correlativo || reporteNo);
       await descargarDocumentoPdf(docGenerado);
     } catch (error: any) {
-      const msg = await getApiErrorMessage(error, "No se pudo generar o descargar el reporte quincenal");
+      const msg = await getApiErrorMessage(error, "No se pudo generar o descargar el Reporte mensual");
       Swal.fire("Error", msg, "error");
       return;
     } finally {
       setGenerandoPdf(false);
     }
 
-    await Swal.fire("Listo", "El PDF del reporte quincenal se descargo automaticamente.", "success");
+    await Swal.fire("Listo", "El PDF del Reporte mensual se descargo automaticamente.", "success");
     setShowForm(false);
     void cargarDocumentos();
   };
@@ -728,10 +759,20 @@ export default function ReporteQuincenal() {
     return (
       <Paper sx={{ p: 3 }}>
         <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
-          <Typography variant="h4">Reporte quincenal</Typography>
-          <Button startIcon={<AddOutlined />} variant="contained" onClick={nuevoReporte}>
-            Nuevo reporte
-          </Button>
+          <Typography variant="h4">Reporte mensual</Typography>
+          <Stack direction="row" spacing={1}>
+            <Button
+              startIcon={<AssessmentOutlined />}
+              variant="outlined"
+              disabled={generandoPdf || selectedReporteIds.length === 0}
+              onClick={generarConsolidado}
+            >
+              Consolidado PDF ({selectedReporteIds.length})
+            </Button>
+            <Button startIcon={<AddOutlined />} variant="contained" onClick={nuevoReporte}>
+              Nuevo reporte
+            </Button>
+          </Stack>
         </Stack>
         <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 2 }}>
           <TextField label="Desde" type="date" size="small" value={filtroDesde} onChange={(e) => setFiltroDesde(e.target.value)} InputLabelProps={{ shrink: true }} />
@@ -759,10 +800,13 @@ export default function ReporteQuincenal() {
             rows={documentosGridRows}
             columns={documentosColumns}
             getRowId={(row) => row.id}
+            checkboxSelection
+            rowSelectionModel={selectedReporteIds}
+            onRowSelectionModelChange={(model) => setSelectedReporteIds(Array.from(model as any).map(Number))}
             pageSizeOptions={[5, 10, 25, 50]}
             initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
             disableRowSelectionOnClick
-            localeText={{ noRowsLabel: "No hay reportes quincenales generados." }}
+            localeText={{ noRowsLabel: "No hay reportes mensuales generados." }}
           />
         </Box>
         <Stack
@@ -783,7 +827,7 @@ export default function ReporteQuincenal() {
   return (
     <Paper sx={{ p: 3 }}>
       <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={2} sx={{ mb: 2 }}>
-        <Typography variant="h4">Reporte quincenal</Typography>
+        <Typography variant="h4">Reporte mensual</Typography>
         <Stack direction="row" spacing={1}>
           <Button startIcon={<ArrowBackOutlined />} variant="outlined" size="small" disabled={generandoPdf} onClick={() => { setShowForm(false); void cargarDocumentos(); }}>
             Volver
@@ -828,12 +872,6 @@ export default function ReporteQuincenal() {
         </Grid>
         <Grid size={{ xs: 12, sm: 2 }}>
           <TextField label="Año" type="number" fullWidth size="small" value={year} onChange={(e) => setYear(Number(e.target.value) || currentDate.getFullYear())} />
-        </Grid>
-        <Grid size={{ xs: 12, sm: 2 }}>
-          <TextField select label="Quincena" fullWidth size="small" value={quincena} onChange={(e) => setQuincena(e.target.value as "1" | "2")}>
-            <MenuItem value="1">1RA QUINCENA</MenuItem>
-            <MenuItem value="2">2DA QUINCENA</MenuItem>
-          </TextField>
         </Grid>
         <Grid size={{ xs: 12, sm: 2 }}>
           {canUseDropdown ? (
@@ -890,7 +928,7 @@ export default function ReporteQuincenal() {
       </Grid>
 
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        Las ventas de la quincena se cargan unicamente con el boton Rellenar desde los reportes diarios.
+        Rellena las ventas del mes desde los reportes diarios y luego imprímelo o guárdalo como PDF.
       </Typography>
 
       {metaSource === "none" && (
@@ -941,7 +979,7 @@ export default function ReporteQuincenal() {
             <TableRow>
               <TableCell />
               <TableCell align="right" sx={{ fontWeight: 600 }}>
-                {quincena === "1" ? "1RA QUINCENA" : "2DA QUINCENA"}
+                TOTAL MES
               </TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>
                 {money(totalVenta)}

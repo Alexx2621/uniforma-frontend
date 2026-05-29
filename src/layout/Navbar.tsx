@@ -43,6 +43,9 @@ interface AlertaInterna {
   creadaEn: string;
   payload?: {
     pedidoId?: number;
+    prioridad?: "baja" | "normal" | "alta" | "urgente";
+    programadaPara?: string | null;
+    enviadoPor?: string | null;
   } | null;
 }
 
@@ -149,6 +152,14 @@ const metricValue = (value?: string) => (value == null || value === "" ? "N/D" :
 const readMetric = (values: Record<string, string> | undefined, key: string) =>
   values?.[key] ?? values?.[key.toLowerCase()] ?? values?.[key.toUpperCase()];
 
+const getAlertPriorityStyles = (prioridad?: string, leida?: boolean) => {
+  if (leida) return {};
+  if (prioridad === "urgente") return { backgroundColor: "#fee2e2", borderLeft: "5px solid #dc2626" };
+  if (prioridad === "alta") return { backgroundColor: "#fff7ed", borderLeft: "5px solid #f97316" };
+  if (prioridad === "baja") return { backgroundColor: "#eff6ff", borderLeft: "5px solid #2563eb" };
+  return { backgroundColor: "action.selected", borderLeft: "5px solid transparent" };
+};
+
 export default function Navbar() {
   const { isDarkMode, toggleMode } = useThemeMode();
   const {
@@ -185,6 +196,7 @@ export default function Navbar() {
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastUnreadCountRef = useRef<number | null>(null);
   const alertasSocketRef = useRef<Socket | null>(null);
+  const seenAlertIdsRef = useRef<Set<number>>(new Set());
 
   const reproducirTonoNotificacion = async () => {
     if (typeof window === "undefined") return;
@@ -325,14 +337,55 @@ export default function Navbar() {
     };
   }, [usuario, syncSession]);
 
-  const cargarAlertas = async () => {
+  const mostrarAlertaEmergente = useCallback(async (alerta: AlertaInterna) => {
+    const prioridad = alerta.payload?.prioridad || "normal";
+    const icon = prioridad === "urgente" || prioridad === "alta" ? "warning" : "info";
+    const confirmButtonColor =
+      prioridad === "urgente" ? "#dc2626" : prioridad === "alta" ? "#f97316" : prioridad === "baja" ? "#2563eb" : "#1f3f87";
+
+    const result = await Swal.fire({
+      title: alerta.titulo,
+      text: alerta.mensaje,
+      icon,
+      confirmButtonText: "Marcar leida",
+      cancelButtonText: "Cerrar",
+      showCancelButton: true,
+      confirmButtonColor,
+      background: prioridad === "urgente" ? "#fff1f2" : prioridad === "alta" ? "#fff7ed" : prioridad === "baja" ? "#eff6ff" : undefined,
+    });
+
+    if (result.isConfirmed) {
+      try {
+        await api.post(`/alertas/${alerta.id}/leida`);
+        setAlertas((prev) => prev.map((item) => (item.id === alerta.id ? { ...item, leida: true } : item)));
+      } catch {
+        // La alerta queda disponible en la campana si no se pudo marcar.
+      }
+    }
+  }, []);
+
+  const cargarAlertas = useCallback(async (options?: { emergente?: boolean }) => {
     try {
       const { data } = await api.get("/alertas");
-      setAlertas(Array.isArray(data) ? data : []);
+      const nextAlertas = Array.isArray(data) ? data : [];
+      const nuevas = nextAlertas.filter((alerta) => !alerta.leida && !seenAlertIdsRef.current.has(Number(alerta.id)));
+      nextAlertas.forEach((alerta) => seenAlertIdsRef.current.add(Number(alerta.id)));
+      setAlertas(nextAlertas);
+
+      if (options?.emergente && nuevas.length) {
+        const prioridadOrden: Record<string, number> = { urgente: 4, alta: 3, normal: 2, baja: 1 };
+        const alertaPrincipal = [...nuevas].sort(
+          (a, b) =>
+            (prioridadOrden[b.payload?.prioridad || "normal"] || 2) -
+              (prioridadOrden[a.payload?.prioridad || "normal"] || 2) ||
+            new Date(b.creadaEn).getTime() - new Date(a.creadaEn).getTime(),
+        )[0];
+        void mostrarAlertaEmergente(alertaPrincipal);
+      }
     } catch {
       setAlertas([]);
     }
-  };
+  }, [mostrarAlertaEmergente]);
 
   const cargarLogs = async () => {
     try {
@@ -356,7 +409,7 @@ export default function Navbar() {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, []);
+  }, [cargarAlertas]);
 
   useEffect(() => {
     const socket = io(api.defaults.baseURL || window.location.origin, {
@@ -369,6 +422,9 @@ export default function Navbar() {
 
     const refrescarAlertas = () => {
       void cargarAlertas();
+    };
+    const refrescarAlertasEmergente = () => {
+      void cargarAlertas({ emergente: true });
     };
     const manejarActualizacionSistema = (payload: { titulo?: string; mensaje?: string }) => {
       void Swal.fire({
@@ -385,17 +441,17 @@ export default function Navbar() {
     };
 
     socket.on("connect", refrescarAlertas);
-    socket.on("alertas:actualizadas", refrescarAlertas);
+    socket.on("alertas:actualizadas", refrescarAlertasEmergente);
     socket.on("sistema:actualizacion", manejarActualizacionSistema);
 
     return () => {
       socket.off("connect", refrescarAlertas);
-      socket.off("alertas:actualizadas", refrescarAlertas);
+      socket.off("alertas:actualizadas", refrescarAlertasEmergente);
       socket.off("sistema:actualizacion", manejarActualizacionSistema);
       socket.disconnect();
       alertasSocketRef.current = null;
     };
-  }, [logout]);
+  }, [cargarAlertas, logout]);
 
   useEffect(() => {
     const unreadCount = alertas.filter((alerta) => !alerta.leida).length;
@@ -901,10 +957,22 @@ export default function Navbar() {
                       sx={{
                         alignItems: "flex-start",
                         backgroundColor: alerta.leida ? "background.paper" : "action.selected",
+                        ...getAlertPriorityStyles(alerta.payload?.prioridad, alerta.leida),
                       }}
                     >
                       <ListItemText
-                        primary={alerta.titulo}
+                        primary={
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            <Typography component="span" variant="body2" sx={{ fontWeight: alerta.leida ? 500 : 800 }}>
+                              {alerta.titulo}
+                            </Typography>
+                            {alerta.payload?.prioridad && alerta.payload.prioridad !== "normal" && (
+                              <Typography component="span" variant="caption" sx={{ textTransform: "uppercase", fontWeight: 800 }}>
+                                {alerta.payload.prioridad}
+                              </Typography>
+                            )}
+                          </Stack>
+                        }
                         secondary={
                           <>
                             <Typography
