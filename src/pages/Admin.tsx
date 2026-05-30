@@ -146,6 +146,7 @@ interface ProductBulkCreateDraft {
   telas: string;
   tallas: string;
   colores: string;
+  codigoEspecial: string;
   precio: number;
   stockMax: number;
   mermaPorcentaje: number;
@@ -208,6 +209,7 @@ const createEmptyBulkCreateDraft = (): ProductBulkCreateDraft => ({
   telas: "",
   tallas: "",
   colores: "",
+  codigoEspecial: "",
   precio: 275,
   stockMax: 10,
   mermaPorcentaje: 0,
@@ -875,6 +877,7 @@ export default function Admin() {
       telas: parseCsv(productBulkCreateDraft.telas),
       tallas: parseCsv(productBulkCreateDraft.tallas),
       colores: parseCsv(productBulkCreateDraft.colores),
+      codigoEspecial: productBulkCreateDraft.codigoEspecial.trim(),
     },
     valores: {
       precio: Number(productBulkCreateDraft.precio) || 0,
@@ -891,6 +894,7 @@ export default function Admin() {
           <strong>Total combinaciones:</strong> ${data?.totalCombinaciones ?? 0}<br />
           <strong>Se crearian:</strong> ${data?.seCrearian ?? data?.creados ?? 0}<br />
           <strong>Ya existen:</strong> ${data?.existentes ?? 0}
+          ${data?.filtros?.codigoEspecial ? `<br /><strong>Codigo especial:</strong> ${data.filtros.codigoEspecial}` : ""}
         </p>
         <table style="width:100%;border-collapse:collapse;font-size:13px;">
           <thead>
@@ -1710,6 +1714,17 @@ export default function Admin() {
                   value={productBulkCreateDraft.colores}
                   onChange={(e) => setProductBulkCreateDraft((prev) => ({ ...prev, colores: e.target.value }))}
                   helperText="Vacio = todos"
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 3 }}>
+                <TextField
+                  label="Codigo especial"
+                  fullWidth
+                  value={productBulkCreateDraft.codigoEspecial}
+                  onChange={(e) =>
+                    setProductBulkCreateDraft((prev) => ({ ...prev, codigoEspecial: e.target.value }))
+                  }
+                  helperText="Opcional. Ej. OLD crea FDR2XSAM-OLD"
                 />
               </Grid>
               <Grid size={{ xs: 12, md: 3 }}>

@@ -213,8 +213,19 @@ const pedidoPerteneceAUsuario = (pedido: PedidoReporte, usuario: Usuario | null)
 };
 
 const metodoCuentaComoTarjeta = (metodo?: string | null) => {
-  const normalized = `${metodo || ""}`.trim().toLowerCase();
+  const normalized = normalizarMetodoPago(metodo);
   return normalized === "tarjeta" || normalized === "visalink";
+};
+
+const normalizarMetodoPago = (metodo?: string | null) => {
+  const normalized = normalizeText(metodo);
+  if (!normalized) return "";
+  if (normalized.includes("transfer")) return "transferencia";
+  if (normalized.includes("deposit")) return "deposito_bancario";
+  if (normalized.includes("visa link") || normalized.includes("visalink")) return "visalink";
+  if (normalized.includes("tarjeta")) return "tarjeta";
+  if (normalized.includes("efectivo")) return "efectivo";
+  return normalized.replace(/\s+/g, "_");
 };
 
 const normalizeUbicacionVenta = (venta: Venta) => {
@@ -234,7 +245,7 @@ const normalizeUbicacionPedido = (pedido: PedidoReporte) => {
   return "TIENDA";
 };
 
-const getVentaMetodo = (venta: Venta) => `${venta.metodoPago || ""}`.trim().toLowerCase();
+const getVentaMetodo = (venta: Venta) => normalizarMetodoPago(venta.metodoPago);
 
 const getVentaReferencia = (venta: Venta) => `${venta.pagos?.[0]?.referencia || ""}`.trim();
 
@@ -242,7 +253,7 @@ const getVentaBanco = (venta: Venta) => `${venta.pagos?.[0]?.banco || ""}`.trim(
 
 const getVentaRecibo = (venta: Venta) => venta.folio || `V-${venta.id}`;
 
-const getPedidoMetodo = (pedido: PedidoReporte) => `${pedido.metodoPago || ""}`.trim().toLowerCase();
+const getPedidoMetodo = (pedido: PedidoReporte) => normalizarMetodoPago(pedido.metodoPago);
 
 const getPedidoReferencia = (pedido: PedidoReporte) => `${pedido.pagos?.[0]?.referencia || ""}`.trim();
 

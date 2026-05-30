@@ -467,7 +467,9 @@ export default function ReporteMensual() {
         setDocumentos([]);
         return;
       }
-      if (filtroUsuarioSeleccionadoId) {
+      if (!canUseDropdown) {
+        params.usuarioId = userId;
+      } else if (filtroUsuarioSeleccionadoId) {
         params.usuarioId = filtroUsuarioSeleccionadoId;
       }
       const resp = await api.get("/documentos", { params });
