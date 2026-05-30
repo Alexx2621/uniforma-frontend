@@ -29,8 +29,6 @@ import { io, Socket } from "socket.io-client";
 import Swal from "sweetalert2";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useNavigate } from "react-router-dom";
-import uniformaLogo from "../assets/uniforma-logo.png";
-import uniformaLogoBlanco from "../assets/uniforma-logo-blanco-new.png";
 import { api } from "../api/axios";
 import { useThemeMode } from "../themeMode";
 import { ActivityLog, getActivityLogActionLabel } from "../utils/activityLog";
@@ -160,7 +158,11 @@ const getAlertPriorityStyles = (prioridad?: string, leida?: boolean) => {
   return { backgroundColor: "action.selected", borderLeft: "5px solid transparent" };
 };
 
-export default function Navbar() {
+interface NavbarProps {
+  sidebarWidth?: number;
+}
+
+export default function Navbar({ sidebarWidth = 0 }: NavbarProps) {
   const { isDarkMode, toggleMode } = useThemeMode();
   const {
     usuario,
@@ -571,7 +573,9 @@ export default function Navbar() {
       position="fixed"
       elevation={0}
       sx={{
-        zIndex: (theme) => theme.zIndex.drawer + 1,
+        zIndex: (theme) => theme.zIndex.drawer,
+        ml: `${sidebarWidth}px`,
+        width: `calc(100% - ${sidebarWidth}px)`,
         background: isDarkMode ? "#111827" : "#ffffff",
         color: isDarkMode ? "#f9fafb" : "#1f2937",
         borderBottom: "1px solid",
@@ -579,20 +583,7 @@ export default function Navbar() {
       }}
     >
       <Toolbar sx={{ minHeight: 64, px: 3 }}>
-        <Stack direction="row" alignItems="center" spacing={1} sx={{ flexGrow: 1, minWidth: 0 }}>
-          <Box
-            component="img"
-            src={isDarkMode ? uniformaLogoBlanco : uniformaLogo}
-            alt="Uniforma"
-            sx={{
-              height: 64,
-              width: "auto",
-              display: "block",
-              maxWidth: { xs: 250, md: 360 },
-              objectFit: "contain",
-            }}
-          />
-        </Stack>
+        <Box sx={{ flexGrow: 1, minWidth: 0 }} />
 
         <Stack direction="row" spacing={{ xs: 1, sm: 2 }} alignItems="center">
           <Tooltip title={serverStatusTooltip}>

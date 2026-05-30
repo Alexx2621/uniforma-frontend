@@ -260,9 +260,10 @@ export default function Ventas() {
     const metodo = row.metodoPago || "";
     const referenciaPago = row.referenciaPago || row.pagos?.[0]?.referencia || "";
     const recargo = Number(row.recargo || 0);
+    const envio = Number(row.envio || 0);
     const detalle = Array.isArray(row.detalle) ? row.detalle : [];
     const subtotal = detalle.reduce((sum: number, d: any) => sum + Number(d.subtotal || 0), 0);
-    const total = row.total != null ? Number(row.total) : subtotal + recargo;
+    const total = row.total != null ? Number(row.total) : subtotal + recargo + envio;
     win.document.write(
       buildVentaPdfHtml({
         folio,
@@ -275,6 +276,7 @@ export default function Ventas() {
         vendedor,
         subtotal,
         recargo,
+        envio,
         total,
         recargoEtiqueta: recargo ? "Recargo" : undefined,
         logoUrl: LOGO_URL,
@@ -291,6 +293,18 @@ export default function Ventas() {
             bordadoPosicion: item.bordadoPosicion || null,
             bordadoObservaciones: item.bordadoObservaciones || null,
             bordadoFechaEntrega: item.bordadoFechaEntrega ? new Date(item.bordadoFechaEntrega).toLocaleDateString("es-GT") : null,
+            bordados: Array.isArray(item.bordados)
+              ? item.bordados.map((bordado: any) => ({
+                  monto: Number(bordado.monto || 0),
+                  color: bordado.color || null,
+                  tamano: bordado.tamano || null,
+                  posicion: bordado.posicion || null,
+                  observaciones: bordado.observaciones || null,
+                  fechaEntrega: bordado.fechaEntrega ? new Date(bordado.fechaEntrega).toLocaleDateString("es-GT") : null,
+                }))
+              : [],
+            estiloEspecial: Boolean(item.estiloEspecial),
+            estiloEspecialMonto: Number(item.estiloEspecialMonto || 0),
             descuento: Number(item.descuento || 0),
             subtotal: Number(item.subtotal || 0),
           };

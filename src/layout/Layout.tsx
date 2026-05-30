@@ -10,11 +10,11 @@ import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const drawerWidth = sidebarOpen ? 240 : 72;
+  const drawerWidth = sidebarOpen ? 268 : 78;
 
   return (
     <Box sx={{ display: "flex", minHeight: "100vh", backgroundColor: "background.default" }}>
-      <Navbar />
+      <Navbar sidebarWidth={drawerWidth} />
 
       <Sidebar open={sidebarOpen} onToggle={() => setSidebarOpen((o) => !o)} width={drawerWidth} />
 
@@ -24,14 +24,14 @@ export default function Layout() {
           size="small"
           sx={{
             position: "fixed",
-            top: 92,
-            left: drawerWidth + 10,
+            top: 82,
+            left: drawerWidth - 1,
             zIndex: 1300,
-            width: 24,
-            height: 42,
-            borderRadius: "0 10px 10px 0",
+            width: 22,
+            height: 34,
+            borderRadius: "0 999px 999px 0",
             backgroundColor: "background.paper",
-            boxShadow: "0 10px 24px rgba(15, 23, 42, 0.12)",
+            boxShadow: "none",
             border: "1px solid",
             borderColor: "divider",
             display: "flex",
@@ -50,7 +50,6 @@ export default function Layout() {
           flexGrow: 1,
           p: 3,
           mt: 8,
-          ml: { xs: 0, sm: 2 },
           backgroundColor: "background.default",
         }}
       >

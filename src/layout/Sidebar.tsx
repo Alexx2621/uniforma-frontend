@@ -11,6 +11,7 @@ import {
   Collapse,
   TextField,
   Tooltip,
+  Typography,
 } from "@mui/material";
 import { useNavigate, useLocation } from "react-router-dom";
 import ExpandLess from "@mui/icons-material/ExpandLess";
@@ -21,6 +22,7 @@ import { menuSections, MenuItem } from "./menuItems";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import { useAuthStore } from "../auth/useAuthStore";
 import { canAccessPath, getRequiredPermission, hasPermission } from "../auth/permissions";
+import uniformaLogo from "../assets/uniforma-logo.png";
 
 interface Props {
   open: boolean;
@@ -149,24 +151,26 @@ export default function Sidebar({ open, width, onToggle }: Props) {
         disabled={disabled}
         onClick={() => (hasChildren ? toggle(item.label) : item.path && goToModule(item.path))}
         sx={{
-          minHeight: 42,
-          borderRadius: 1.5,
-          mx: 1.25,
-          my: 0.35,
+          minHeight: 38,
+          borderRadius: 1.25,
+          mx: collapsed ? 0.9 : 1.5,
+          my: 0.25,
           color: itemActive ? "primary.contrastText" : "text.primary",
           bgcolor: itemActive ? "primary.main" : "transparent",
           justifyContent: collapsed ? "center" : "flex-start",
-          px: collapsed ? 1 : 1.5,
+          px: collapsed ? 1 : 1.35,
           opacity: disabled ? 0.55 : 1,
           boxShadow: "none",
+          transition: "background-color 160ms ease, color 160ms ease",
           "&:hover": {
-            bgcolor: itemActive ? "primary.dark" : "action.hover",
+            bgcolor: itemActive ? "primary.dark" : "rgba(15, 23, 42, 0.045)",
           },
           ".MuiListItemIcon-root": {
-            color: itemActive ? "primary.contrastText" : "text.secondary",
+            color: itemActive ? "primary.contrastText" : "rgba(15, 23, 42, 0.58)",
           },
           ".MuiSvgIcon-root": {
             color: itemActive ? "primary.contrastText" : undefined,
+            fontSize: 19,
           },
         }}
       >
@@ -180,7 +184,7 @@ export default function Sidebar({ open, width, onToggle }: Props) {
           {item.icon}
         </ListItemIcon>
         <ListItemText
-          primaryTypographyProps={{ fontSize: 13, fontWeight: itemActive ? 600 : 500 }}
+          primaryTypographyProps={{ fontSize: 14, fontWeight: itemActive ? 700 : 500 }}
           primary={item.label}
           sx={{ display: collapsed ? "none" : "block", ml: collapsed ? 0 : 0.25 }}
         />
@@ -213,21 +217,23 @@ export default function Sidebar({ open, width, onToggle }: Props) {
                   disabled={childDisabled}
                   onClick={() => child.path && goToModule(child.path)}
                   sx={{
-                    pl: 6,
-                    borderRadius: 2,
-                    mx: 1,
+                    pl: 5.6,
+                    borderRadius: 1.25,
+                    mx: 1.5,
                     my: 0.25,
-                    backgroundColor: active ? "action.selected" : "transparent",
+                    backgroundColor: active ? "rgba(37, 99, 235, 0.1)" : "transparent",
+                    color: active ? "primary.main" : "text.primary",
                     justifyContent: "flex-start",
                     opacity: childDisabled ? 0.55 : 1,
-                    "&:hover": { backgroundColor: "action.hover" },
+                    minHeight: 34,
+                    "&:hover": { backgroundColor: "rgba(15, 23, 42, 0.045)" },
                   }}
                   >
-                    <ListItemIcon sx={{ color: "text.secondary", minWidth: 36 }}>
+                    <ListItemIcon sx={{ color: active ? "primary.main" : "rgba(15, 23, 42, 0.55)", minWidth: 32 }}>
                       {child.icon}
                     </ListItemIcon>
                   <ListItemText
-                    primaryTypographyProps={{ fontSize: 13, fontWeight: 600 }}
+                    primaryTypographyProps={{ fontSize: 13.25, fontWeight: active ? 700 : 500 }}
                     primary={child.label}
                   />
                 </ListItemButton>
@@ -248,18 +254,22 @@ export default function Sidebar({ open, width, onToggle }: Props) {
         [`& .MuiDrawer-paper`]: {
           width,
           boxSizing: "border-box",
-          mt: 8.5,
-          ml: 1.25,
-          mb: 1.25,
-          border: "1px solid",
-          borderColor: "divider",
-          borderRadius: 2,
+          top: 0,
+          left: 0,
+          mt: 0,
+          ml: 0,
+          mb: 0,
+          border: "none",
+          borderRight: "1px solid",
+          borderRightColor: "divider",
+          borderRadius: 0,
           backgroundColor: "background.paper",
           boxShadow: "none",
           paddingTop: 1.25,
           display: "flex",
           flexDirection: "column",
-          height: "calc(100vh - 78px)",
+          height: "100vh",
+          zIndex: (theme) => theme.zIndex.drawer + 2,
           overflowY: "auto",
           overflowX: "hidden",
           "&::-webkit-scrollbar": { width: 6 },
@@ -267,7 +277,29 @@ export default function Sidebar({ open, width, onToggle }: Props) {
         },
       }}
     >
-      <Box sx={{ px: collapsed ? 1 : 1.5, pb: collapsed ? 0.5 : 1.25 }}>
+      <Box sx={{ px: collapsed ? 1 : 2, pb: collapsed ? 0.75 : 1.25 }}>
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: collapsed ? "center" : "flex-start",
+            gap: 1,
+            minHeight: 68,
+            mb: collapsed ? 0.75 : 1.4,
+          }}
+        >
+          <Box
+            component="img"
+            src={uniformaLogo}
+            alt="Uniforma"
+            sx={{
+              width: collapsed ? 40 : 166,
+              height: collapsed ? 40 : 58,
+              objectFit: "contain",
+              objectPosition: collapsed ? "center" : "left center",
+            }}
+          />
+        </Box>
         {!collapsed && (
           <TextField
             value={search}
@@ -280,10 +312,13 @@ export default function Sidebar({ open, width, onToggle }: Props) {
             sx={{
               "& .MuiOutlinedInput-root": {
                 borderRadius: 1.5,
-                bgcolor: "action.hover",
-                fontSize: 13,
+                bgcolor: "#f5f7fb",
+                fontSize: 13.5,
+                height: 42,
               },
               "& fieldset": { borderColor: "transparent" },
+              "& .MuiOutlinedInput-root:hover fieldset": { borderColor: "transparent" },
+              "& .MuiOutlinedInput-root.Mui-focused fieldset": { borderColor: "primary.main" },
             }}
             InputProps={{
               startAdornment: (
@@ -305,20 +340,22 @@ export default function Sidebar({ open, width, onToggle }: Props) {
                 disableSticky
                 sx={{
                   mx: 1.25,
-                  mt: 1.25,
-                  mb: 0.35,
-                  px: 1,
+                  mt: 1.45,
+                  mb: 0.45,
+                  px: 1.25,
                   borderRadius: 1,
                   bgcolor: "transparent",
-                  fontSize: 10.5,
+                  fontSize: 9.5,
                   letterSpacing: 0,
-                  fontWeight: 700,
-                  color: "text.secondary",
+                  fontWeight: 800,
+                  color: "rgba(15, 23, 42, 0.48)",
                   lineHeight: "24px",
-                  textTransform: "uppercase",
+                  textTransform: "none",
                 }}
               >
-                {section.title}
+                <Typography component="span" variant="caption" sx={{ fontSize: 9.5, fontWeight: 800 }}>
+                  {section.title.charAt(0).toUpperCase() + section.title.slice(1).toLowerCase()}
+                </Typography>
               </ListSubheader>
             )}
             {section.title && collapsed && (
