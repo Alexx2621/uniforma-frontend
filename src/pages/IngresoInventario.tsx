@@ -687,7 +687,10 @@ export default function IngresoInventario() {
           <input id="import-file" type="file" accept=".xlsx,.xls" class="swal2-file" style="width:100%;margin:0" />
           <label>O pega codigos y cantidades</label>
           <textarea id="import-data" class="swal2-textarea" style="width:100%;height:180px;margin:0" placeholder="CODIGO,CANTIDAD&#10;FDSSVMU,5&#10;PDSXVMU,2"></textarea>
-          <small>El Excel debe tener codigo en la columna A y cantidad en la columna B. Tambien puedes pegar datos desde Excel separados por tabulacion.</small>
+          <small>
+            Formatos aceptados: 1) codigo en columna A y cantidad en columna B. 2) matriz con TELA, GENERO y TIPO arriba,
+            colores en columnas, tallas en filas y cantidades en las celdas.
+          </small>
         </div>
       `,
       showCancelButton: true,
@@ -714,11 +717,16 @@ export default function IngresoInventario() {
         .map((row: any) => {
           const errores = row.errores?.length ? row.errores.join(", ") : row.advertencias?.join(", ") || "OK";
           const color = row.errores?.length ? "#b91c1c" : row.advertencias?.length ? "#92400e" : "#166534";
+          const colorDetalle =
+            row.colorInternoDetectado && row.colorInternoDetectado !== row.colorDetectado
+              ? `${row.colorDetectado} -> ${row.colorInternoDetectado}`
+              : row.colorDetectado;
           return `<tr>
             <td>${row.linea}</td>
             <td>${row.codigo}</td>
             <td>${row.cantidad}</td>
-            <td>${row.producto?.nombre || "-"}</td>
+            <td>${row.producto?.nombre || row.tipoDetectado || "-"}</td>
+            <td>${[row.telaDetectada, row.tallaDetectada, colorDetalle].filter(Boolean).join(" / ") || "-"}</td>
             <td style="color:${color};font-weight:600">${errores}</td>
           </tr>`;
         })
@@ -735,7 +743,7 @@ export default function IngresoInventario() {
           </div>
           <div style="max-height:390px;overflow:auto">
             <table style="width:100%;border-collapse:collapse;text-align:left;font-size:12px">
-              <thead><tr><th>Linea</th><th>Codigo</th><th>Cantidad</th><th>Producto</th><th>Estado</th></tr></thead>
+              <thead><tr><th>Linea</th><th>Codigo</th><th>Cantidad</th><th>Producto</th><th>Detalle</th><th>Estado</th></tr></thead>
               <tbody>${tableRows}</tbody>
             </table>
           </div>
