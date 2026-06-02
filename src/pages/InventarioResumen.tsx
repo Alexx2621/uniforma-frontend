@@ -47,8 +47,17 @@ interface ReporteRow {
 
 const sortOptions = (values: string[]) => values.sort((a, b) => a.localeCompare(b));
 
+const normalizeSearch = (value: unknown) =>
+  `${value || ""}`
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ");
+
 export default function InventarioResumen() {
-  const { rol, permisos } = useAuthStore();
+  const { rol, permisos, bodegaId: userBodegaId } = useAuthStore();
+  const assignedBodegaId = Number(userBodegaId || 0);
   const canViewKardex = hasPermission(rol, permisos, "inventario.kardex.view");
   const canViewMinimos = hasPermission(rol, permisos, "inventario.minimos.view") || hasPermission(rol, permisos, "inventario.minimos.manage");
   const canManageMinimos = hasPermission(rol, permisos, "inventario.minimos.manage");
@@ -56,6 +65,7 @@ export default function InventarioResumen() {
   const [rows, setRows] = useState<ReporteRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [busqueda, setBusqueda] = useState("");
+  const [busquedaDescripcion, setBusquedaDescripcion] = useState("");
   const [filtroTipo, setFiltroTipo] = useState("");
   const [filtroGenero, setFiltroGenero] = useState("");
   const [filtroTela, setFiltroTela] = useState("");
@@ -108,20 +118,35 @@ export default function InventarioResumen() {
     );
 
   const filteredRows = useMemo(() => {
-    const term = busqueda.trim().toLowerCase();
+    const term = normalizeSearch(busqueda);
+    const palabrasDescripcion = normalizeSearch(busquedaDescripcion).split(" ").filter(Boolean);
     return rows.filter((r) => {
-      const matchesCodigo = !term || r.codigo.toLowerCase().includes(term);
+      const matchesCodigo = !term || normalizeSearch(r.codigo).includes(term);
+      const searchableText = normalizeSearch(
+        [
+          r.codigo,
+          r.producto,
+          r.tipo,
+          r.genero,
+          r.tela,
+          r.talla,
+          r.color,
+        ].filter(Boolean).join(" "),
+      );
+      const matchesDescripcion =
+        !palabrasDescripcion.length || palabrasDescripcion.every((word) => searchableText.includes(word));
       const matchesTipo = !filtroTipo || r.tipo === filtroTipo;
       const matchesGenero = !filtroGenero || r.genero === filtroGenero;
       const matchesTela = !filtroTela || r.tela === filtroTela;
       const matchesTalla = !filtroTalla || r.talla === filtroTalla;
       const matchesColor = !filtroColor || r.color === filtroColor;
-      return matchesCodigo && matchesTipo && matchesGenero && matchesTela && matchesTalla && matchesColor;
+      return matchesCodigo && matchesDescripcion && matchesTipo && matchesGenero && matchesTela && matchesTalla && matchesColor;
     });
-  }, [rows, busqueda, filtroTipo, filtroGenero, filtroTela, filtroTalla, filtroColor]);
+  }, [rows, busqueda, busquedaDescripcion, filtroTipo, filtroGenero, filtroTela, filtroTalla, filtroColor]);
 
   const limpiarFiltros = () => {
     setBusqueda("");
+    setBusquedaDescripcion("");
     setFiltroTipo("");
     setFiltroGenero("");
     setFiltroTela("");
@@ -271,19 +296,30 @@ export default function InventarioResumen() {
       }] : []),
     ];
 
-    const dynamic = bodegas.map((b) => ({
-      field: `bodega_${b.id}`,
-      headerName: b.nombre,
-      renderHeader: () => (
-        <Typography
-          variant="caption"
-          sx={{ whiteSpace: "normal", textAlign: "center", lineHeight: 1.1 }}
-        >
-          {b.nombre}
-        </Typography>
-      ),
-      width: 110,
-    }));
+    const dynamic = bodegas.map((b) => {
+      const isAssigned = assignedBodegaId > 0 && Number(b.id) === assignedBodegaId;
+      return {
+        field: `bodega_${b.id}`,
+        headerName: b.nombre,
+        headerClassName: isAssigned ? "assigned-bodega-header" : undefined,
+        cellClassName: isAssigned ? "assigned-bodega-cell" : undefined,
+        renderHeader: () => (
+          <Typography
+            variant="caption"
+            sx={{
+              whiteSpace: "normal",
+              textAlign: "center",
+              lineHeight: 1.1,
+              fontWeight: isAssigned ? 700 : 500,
+              color: isAssigned ? "primary.main" : "text.primary",
+            }}
+          >
+            {b.nombre}
+          </Typography>
+        ),
+        width: 110,
+      };
+    });
 
     return [...base, ...dynamic];
   })();
@@ -328,6 +364,27 @@ export default function InventarioResumen() {
           }}
           sx={{ minWidth: 220, flex: "1 1 220px" }}
         />
+        <TextField
+          size="small"
+          placeholder="Buscar por descripcion: FILIPINA DAMA L REPEL"
+          value={busquedaDescripcion}
+          onChange={(e) => setBusquedaDescripcion(e.target.value)}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon fontSize="small" />
+              </InputAdornment>
+            ),
+            endAdornment: busquedaDescripcion ? (
+              <InputAdornment position="end">
+                <IconButton size="small" onClick={() => setBusquedaDescripcion("")}>
+                  <ClearIcon fontSize="small" />
+                </IconButton>
+              </InputAdornment>
+            ) : undefined,
+          }}
+          sx={{ minWidth: 320, flex: "2 1 320px" }}
+        />
         {renderFilterSelect("Tipo", filtroTipo, setFiltroTipo, uniqueOptions("tipo"))}
         {renderFilterSelect("Genero", filtroGenero, setFiltroGenero, uniqueOptions("genero"))}
         {renderFilterSelect("Tela", filtroTela, setFiltroTela, uniqueOptions("tela"))}
@@ -353,6 +410,19 @@ export default function InventarioResumen() {
           getRowId={(row) => row.id}
           pageSizeOptions={[10, 25, 50]}
           initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
+          sx={{
+            "& .assigned-bodega-header": {
+              backgroundColor: "rgba(25, 118, 210, 0.10)",
+              borderLeft: "1px solid rgba(25, 118, 210, 0.35)",
+              borderRight: "1px solid rgba(25, 118, 210, 0.35)",
+            },
+            "& .assigned-bodega-cell": {
+              backgroundColor: "rgba(25, 118, 210, 0.07)",
+              borderLeft: "1px solid rgba(25, 118, 210, 0.24)",
+              borderRight: "1px solid rgba(25, 118, 210, 0.24)",
+              fontWeight: 700,
+            },
+          }}
         />
       </div>
     </Paper>

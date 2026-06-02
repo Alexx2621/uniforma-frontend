@@ -898,6 +898,19 @@ export default function ReporteDiario() {
       Swal.fire("Vendedor requerido", "Selecciona el vendedor al que pertenece este cierre diario.", "info");
       return;
     }
+    if (Number(totalResumen || 0) <= 0) {
+      Swal.fire("Sin datos", "No hay datos con monto para generar el PDF del cierre diario. Usa Rellenar o ingresa datos antes de imprimir.", "info");
+      return;
+    }
+    const confirmar = await Swal.fire({
+      icon: "question",
+      title: "Generar reporte diario",
+      text: `Se generara el PDF del cierre diario ${fecha} por ${money(totalResumen)}. ¿Deseas continuar?`,
+      showCancelButton: true,
+      confirmButtonText: "Si, generar PDF",
+      cancelButtonText: "Cancelar",
+    });
+    if (!confirmar.isConfirmed) return;
     setGenerandoPdf(true);
     let docGenerado: DocumentoGenerado;
     try {

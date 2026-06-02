@@ -704,6 +704,20 @@ export default function ReporteMensual() {
 
   const imprimir = async () => {
     if (generandoPdf) return;
+    const diasConVentas = rows.filter((row) => Number(row.ventaDiaria || 0) > 0).length;
+    if (Number(totalVenta || 0) <= 0 || diasConVentas === 0) {
+      Swal.fire("Sin datos", "No hay ventas cargadas para generar el PDF del Reporte mensual. Usa Rellenar antes de imprimir.", "info");
+      return;
+    }
+    const confirmar = await Swal.fire({
+      icon: "question",
+      title: "Generar reporte mensual",
+      text: `Se generara el PDF con ${diasConVentas} dia(s) con ventas y total ${money(totalVenta)}. ¿Deseas continuar?`,
+      showCancelButton: true,
+      confirmButtonText: "Si, generar PDF",
+      cancelButtonText: "Cancelar",
+    });
+    if (!confirmar.isConfirmed) return;
     setGenerandoPdf(true);
     let docGenerado: DocumentoGenerado;
     try {

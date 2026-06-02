@@ -35,7 +35,6 @@ import Autocomplete from "@mui/material/Autocomplete";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { useNavigate } from "react-router-dom";
-import { hasPermission } from "../auth/permissions";
 import { useAuthStore } from "../auth/useAuthStore";
 import LOGO_URL from "../assets/3-logos.png";
 import { buildVentaPdfHtml } from "../utils/ventaPdf";
@@ -362,8 +361,10 @@ export default function VentaNueva() {
   const [bordadoPreviewOpen, setBordadoPreviewOpen] = useState(false);
 
   const navigate = useNavigate();
-  const { usuario, rol, permisos, bodegaId: userBodegaId, bodegaNombre: authBodegaNombre, id: userId } = useAuthStore();
-  const canAccessAllBodegas = hasPermission(rol, permisos, "sistema.multi-tienda");
+  const { usuario, rol, bodegaId: userBodegaId, bodegaNombre: authBodegaNombre, id: userId } = useAuthStore();
+  const isAdmin = `${rol || ""}`.trim().toUpperCase() === "ADMIN";
+  const parsedUserBodegaId = Number(userBodegaId || 0);
+  const documentBodegaLocked = !isAdmin && Number.isFinite(parsedUserBodegaId) && parsedUserBodegaId > 0;
   const metodoUsaRecargo = metodoPago === "tarjeta" || metodoPago === "visalink";
   const metodoRequiereReferencia = metodoPago !== "efectivo";
   const metodoRequiereBanco = metodoPago === "deposito_bancario";
@@ -463,20 +464,25 @@ export default function VentaNueva() {
   };
 
   useEffect(() => {
-    if (userBodegaId && !canAccessAllBodegas && !bodegaId) {
-      const parsed = Number(userBodegaId);
-      const exists = bodegas.some((b) => b.id === parsed);
-      setBodegaId(exists ? parsed : "");
-      if (exists) {
-        setArticuloActual((prev) => ({ ...prev, bodegaId: prev.bodegaId || parsed }));
-      }
-      if (exists) {
-        const selected = bodegas.find((b) => b.id === parsed);
-        const ubic = normalizarUbicacion(selected?.ubicacion);
-        setUbicacion(ubic || "TIENDA");
-      }
+    if (!documentBodegaLocked) return;
+    const parsed = parsedUserBodegaId;
+    const exists = bodegas.some((b) => Number(b.id) === parsed);
+    if (!exists) {
+      setBodegaId("");
+      return;
     }
-  }, [userBodegaId, canAccessAllBodegas, bodegas, bodegaId]);
+    setBodegaId(parsed);
+    setArticuloActual((prev) => ({ ...prev, bodegaId: prev.bodegaId || parsed }));
+    setDetalle((prev) =>
+      prev.map((row) => ({
+        ...row,
+        requiereTraslado: Number(row.bodegaId) !== parsed,
+      })),
+    );
+    const selected = bodegas.find((b) => Number(b.id) === parsed);
+    const ubic = normalizarUbicacion(selected?.ubicacion);
+    setUbicacion(ubic || "TIENDA");
+  }, [documentBodegaLocked, parsedUserBodegaId, bodegas]);
 
   const fetchStock = async (bodega: number, producto: number) => {
     try {
@@ -1120,6 +1126,11 @@ export default function VentaNueva() {
       Swal.fire("Validacion", "Selecciona una bodega", "warning");
       return;
     }
+    if (documentBodegaLocked && Number(bodegaId) !== parsedUserBodegaId) {
+      Swal.fire("Validacion", "La bodega de la venta debe ser tu bodega asignada", "warning");
+      setBodegaId(parsedUserBodegaId);
+      return;
+    }
     if (!metodoPago) {
       Swal.fire("Validacion", "Selecciona metodo de pago", "warning");
       return;
@@ -1212,7 +1223,7 @@ export default function VentaNueva() {
               label="Bodega"
               value={bodegaId === "" ? "" : bodegaId}
               onChange={(e) => void onBodegaChange(Number(e.target.value))}
-              disabled={bodegas.length <= 1}
+              disabled={documentBodegaLocked || bodegas.length <= 1}
             >
               {bodegas.map((b) => (
                 <MenuItem key={b.id} value={b.id}>
@@ -1221,6 +1232,11 @@ export default function VentaNueva() {
               ))}
             </Select>
           </FormControl>
+          {documentBodegaLocked && (
+            <Typography variant="caption" color="text.secondary">
+              La venta se registra con tu bodega asignada. Para surtir productos de otra bodega usa "Bodega origen" en el articulo.
+            </Typography>
+          )}
         </Grid>
         <Grid size={{ xs: 12, sm: 4 }}>
           <Autocomplete<Cliente, false, false, true>
