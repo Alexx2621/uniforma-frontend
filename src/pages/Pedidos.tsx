@@ -22,6 +22,7 @@ import BlockOutlined from "@mui/icons-material/BlockOutlined";
 import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
 import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
+import PictureAsPdfOutlined from "@mui/icons-material/PictureAsPdfOutlined";
 import { useLocation, useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
 import { io, Socket } from "socket.io-client";
@@ -30,7 +31,7 @@ import { hasPermission } from "../auth/permissions";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import TransactionRelationMap, { RelationEdge, RelationNode } from "../components/TransactionRelationMap";
-import { descargarProduccionUnificadoPdf } from "../utils/produccionUnificadoPdf";
+import { descargarProduccionDetallePedidosPdf, descargarProduccionUnificadoPdf, ProduccionDetallePedidoPdf } from "../utils/produccionUnificadoPdf";
 import { formatCurrency } from "../utils/currency";
 import { formatReportScheduleForDay, getActionSchedule, isReportScheduleOpen } from "../utils/reportSchedule";
 
@@ -357,6 +358,7 @@ export default function Pedidos() {
     return Number.isFinite(value) && value > 0 ? value : null;
   });
   const [generandoUnificado, setGenerandoUnificado] = useState(false);
+  const [generandoDetallePedidos, setGenerandoDetallePedidos] = useState(false);
   const [loadingPedidos, setLoadingPedidos] = useState(false);
   const cargandoPedidosRef = useRef(false);
   const pedidosSocketRef = useRef<Socket | null>(null);
@@ -488,6 +490,14 @@ export default function Pedidos() {
     row?.bodega?.nombre ||
     row?.bodega_name ||
     (typeof row?.bodega === "string" ? row?.bodega : undefined) ||
+    "N/D";
+
+  const obtenerUsuarioPedido = (row: any) =>
+    row?.solicitadoPor ||
+    row?.usuario?.nombre ||
+    row?.usuario?.usuario ||
+    row?.creadoPor ||
+    row?.vendedor ||
     "N/D";
 
   const normalizarTexto = (value?: string | null) => {
@@ -951,6 +961,82 @@ export default function Pedidos() {
     }
   };
 
+  const generarDetallePedidosPdf = async () => {
+    if (generandoDetallePedidos) return;
+    if (!filtered.length) {
+      Swal.fire("Sin datos", "No hay pedidos visibles para generar el detalle.", "info");
+      return;
+    }
+
+    const articulos: ProduccionDetallePedidoPdf[] = [...filtered]
+      .sort((a, b) => {
+        const porFecha = toDateOnly(a.fecha).localeCompare(toDateOnly(b.fecha));
+        if (porFecha !== 0) return porFecha;
+        return Number(a.id || 0) - Number(b.id || 0);
+      })
+      .flatMap((pedido) =>
+        (pedido.detalle || []).map((detalle) => {
+          const producto = detalle.producto || productosMap.get(Number(detalle.productoId));
+          return {
+            orden: pedido.displayFolio || pedido.folio || `P-${pedido.id}`,
+            usuario: normalizarTexto(obtenerUsuarioPedido(pedido)),
+            codigo: normalizarTexto(producto?.codigo),
+            nombre: normalizarTexto(producto?.nombre),
+            tipo: normalizarTexto(producto?.tipo),
+            genero: normalizarTexto(producto?.genero),
+            tela: buscarNombreCatalogo(producto, "tela"),
+            talla: buscarNombreCatalogo(producto, "talla"),
+            color: buscarNombreCatalogo(producto, "color"),
+            descripcion: normalizarTexto(detalle.descripcion),
+            cantidad: Number(detalle.cantidad) || 0,
+          };
+        }),
+      )
+      .filter((articulo) => Number(articulo.cantidad || 0) > 0);
+
+    if (!articulos.length) {
+      Swal.fire("Sin detalle", "Los pedidos visibles no tienen lineas de detalle para imprimir.", "info");
+      return;
+    }
+
+    const filtroTienda =
+      filterBodega === "all"
+        ? "Todas las tiendas"
+        : bodegas.find((b) => b.id === Number(filterBodega))?.nombre || "Tienda filtrada";
+    const rango =
+      filterFechaInicio && filterFechaFin
+        ? `${filterFechaInicio} a ${filterFechaFin}`
+        : filterFechaInicio || filterFechaFin || "rango actual";
+
+    const confirmacion = await Swal.fire({
+      title: "Generar detalle de pedidos",
+      text: `Se generara un PDF con ${filtered.length} pedido(s) y ${articulos.length} linea(s) del ${rango}.`,
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "Si, generar PDF",
+      cancelButtonText: "Cancelar",
+    });
+    if (!confirmacion.isConfirmed) return;
+
+    try {
+      setGenerandoDetallePedidos(true);
+      const fechaArchivo = formatDateForFilename(new Date());
+      const desde = filterFechaInicio || "inicio";
+      const hasta = filterFechaFin || "fin";
+      await descargarProduccionDetallePedidosPdf({
+        articulos,
+        fileName: `Detalle_pedidos_${sanitizeFilename(desde)}_${sanitizeFilename(hasta)}_${fechaArchivo}.pdf`,
+        filtroTienda,
+        totalPedidos: filtered.length,
+        fechasPedidos: filtered.map((pedido) => pedido.fecha),
+      });
+    } catch (error: any) {
+      Swal.fire("Error", error?.message || "No se pudo generar el detalle de pedidos", "error");
+    } finally {
+      setGenerandoDetallePedidos(false);
+    }
+  };
+
   const columns: GridColDef[] = [
     {
       field: "folio",
@@ -1085,6 +1171,14 @@ export default function Pedidos() {
           <Typography variant="h4">Pedidos de produccion</Typography>
         </Stack>
         <Stack direction="row" spacing={1}>
+          <Button
+            startIcon={<PictureAsPdfOutlined />}
+            variant="outlined"
+            onClick={generarDetallePedidosPdf}
+            disabled={generandoDetallePedidos || filtered.length === 0}
+          >
+            {generandoDetallePedidos ? "Generando..." : "Detalle PDF"}
+          </Button>
           {canUnifyPedidos && (
             <Button
               startIcon={<MergeTypeOutlined />}

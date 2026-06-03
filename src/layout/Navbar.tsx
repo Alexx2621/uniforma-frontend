@@ -41,9 +41,31 @@ interface AlertaInterna {
   creadaEn: string;
   payload?: {
     pedidoId?: number;
+    autorizacionPedidoId?: number;
+    estado?: string;
     prioridad?: "baja" | "normal" | "alta" | "urgente";
     programadaPara?: string | null;
     enviadoPor?: string | null;
+    cliente?: string | null;
+    total?: number;
+    detalleResumen?: string | null;
+    comentario?: string | null;
+    detalleItems?: Array<{
+      linea?: number;
+      codigo?: string | null;
+      nombre?: string | null;
+      tipo?: string | null;
+      genero?: string | null;
+      tela?: string | null;
+      talla?: string | null;
+      color?: string | null;
+      cantidad?: number;
+      precioUnit?: number;
+      bordado?: number;
+      descuento?: number;
+      subtotal?: number;
+      observaciones?: string | null;
+    }>;
   } | null;
 }
 
@@ -150,6 +172,17 @@ const metricValue = (value?: string) => (value == null || value === "" ? "N/D" :
 const readMetric = (values: Record<string, string> | undefined, key: string) =>
   values?.[key] ?? values?.[key.toLowerCase()] ?? values?.[key.toUpperCase()];
 
+const escapeHtml = (value?: string | number | null) =>
+  `${value ?? ""}`
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+const formatMoney = (value?: number | null) =>
+  `Q ${Number(value || 0).toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
 const getAlertPriorityStyles = (prioridad?: string, leida?: boolean) => {
   if (leida) return {};
   if (prioridad === "urgente") return { backgroundColor: "#fee2e2", borderLeft: "5px solid #dc2626" };
@@ -173,6 +206,7 @@ export default function Navbar({ sidebarWidth = 0 }: NavbarProps) {
     fotoUrl,
     bodegaNombre,
     rol,
+    permisos,
     logout,
     syncSession,
   } = useAuthStore();
@@ -199,6 +233,8 @@ export default function Navbar({ sidebarWidth = 0 }: NavbarProps) {
   const lastUnreadCountRef = useRef<number | null>(null);
   const alertasSocketRef = useRef<Socket | null>(null);
   const seenAlertIdsRef = useRef<Set<number>>(new Set());
+  const canAuthorizePedidos =
+    `${rol || ""}`.toUpperCase() === "ADMIN" || (Array.isArray(permisos) && permisos.includes("produccion.autorizar-pedidos"));
 
   const reproducirTonoNotificacion = async () => {
     if (typeof window === "undefined") return;
@@ -339,7 +375,132 @@ export default function Navbar({ sidebarWidth = 0 }: NavbarProps) {
     };
   }, [usuario, syncSession]);
 
+  const gestionarAutorizacionPedido = useCallback(
+    async (alerta: AlertaInterna) => {
+      const autorizacionId = Number(alerta.payload?.autorizacionPedidoId || 0);
+      if (!Number.isFinite(autorizacionId) || autorizacionId <= 0) return;
+
+      if (!canAuthorizePedidos) {
+        await Swal.fire("Solicitud de autorizacion", alerta.mensaje, "info");
+        return;
+      }
+
+      const payload = alerta.payload || {};
+      const detalleItems = Array.isArray(payload.detalleItems) ? payload.detalleItems : [];
+      const detalleRows = detalleItems.length
+        ? detalleItems
+            .map(
+              (item) => `
+                <tr>
+                  <td>${escapeHtml(item.linea || "")}</td>
+                  <td>${escapeHtml(item.codigo || "N/D")}</td>
+                  <td>${escapeHtml(item.nombre || "Producto")}</td>
+                  <td>${escapeHtml([item.tipo, item.tela, item.color, item.talla, item.genero].filter(Boolean).join(" / "))}</td>
+                  <td style="text-align:right;">${escapeHtml(item.cantidad || 0)}</td>
+                  <td style="text-align:right;">${escapeHtml(formatMoney(item.precioUnit || 0))}</td>
+                  <td style="text-align:right;">${escapeHtml(formatMoney(item.bordado || 0))}</td>
+                  <td style="text-align:right;">${escapeHtml(`${Number(item.descuento || 0).toFixed(2)}%`)}</td>
+                  <td style="text-align:right;">${escapeHtml(formatMoney(item.subtotal || 0))}</td>
+                </tr>
+              `,
+            )
+            .join("")
+        : `<tr><td colspan="9" style="text-align:center;color:#6b7280;">No hay detalle disponible</td></tr>`;
+      const comentario = `${payload.comentario || ""}`.trim();
+
+      const result = await Swal.fire({
+        title: alerta.titulo || "Autorizar pedido",
+        html: `
+          <div style="text-align:left;font-size:13px;line-height:1.45;">
+            <p style="margin:0 0 10px 0;">${escapeHtml(alerta.mensaje)}</p>
+            <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0 0 12px 0;">
+              <div style="border:1px solid #e5e7eb;border-radius:6px;padding:8px;">
+                <div style="font-size:11px;color:#6b7280;">Cliente</div>
+                <div style="font-weight:700;">${escapeHtml(payload.cliente || "N/D")}</div>
+              </div>
+              <div style="border:1px solid #e5e7eb;border-radius:6px;padding:8px;">
+                <div style="font-size:11px;color:#6b7280;">Total estimado</div>
+                <div style="font-weight:700;">${escapeHtml(formatMoney(payload.total || 0))}</div>
+              </div>
+              <div style="border:1px solid #e5e7eb;border-radius:6px;padding:8px;">
+                <div style="font-size:11px;color:#6b7280;">Detalle</div>
+                <div style="font-weight:700;">${escapeHtml(payload.detalleResumen || "N/D")}</div>
+              </div>
+            </div>
+            ${
+              comentario
+                ? `<div style="border-left:4px solid #1f3f87;background:#f8fafc;padding:8px 10px;margin-bottom:12px;"><strong>Comentario:</strong> ${escapeHtml(comentario)}</div>`
+                : ""
+            }
+            <div style="max-height:260px;overflow:auto;border:1px solid #e5e7eb;border-radius:6px;margin-bottom:12px;">
+              <table style="width:100%;border-collapse:collapse;font-size:12px;">
+                <thead>
+                  <tr style="background:#1f3f87;color:#fff;">
+                    <th style="padding:7px;text-align:left;">#</th>
+                    <th style="padding:7px;text-align:left;">Codigo</th>
+                    <th style="padding:7px;text-align:left;">Producto</th>
+                    <th style="padding:7px;text-align:left;">Detalle</th>
+                    <th style="padding:7px;text-align:right;">Cant.</th>
+                    <th style="padding:7px;text-align:right;">Precio</th>
+                    <th style="padding:7px;text-align:right;">Bordado</th>
+                    <th style="padding:7px;text-align:right;">Desc.</th>
+                    <th style="padding:7px;text-align:right;">Subtotal</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${detalleRows}
+                </tbody>
+              </table>
+            </div>
+            <label for="pedido-autorizacion-comentario" style="display:block;margin-bottom:6px;font-weight:600;">Comentario opcional</label>
+            <textarea id="pedido-autorizacion-comentario" class="swal2-textarea" placeholder="Motivo, observacion o instruccion..." style="height:90px;margin:0;width:100%;"></textarea>
+          </div>
+        `,
+        icon: "question",
+        showDenyButton: true,
+        showCancelButton: true,
+        confirmButtonText: "Autorizar",
+        denyButtonText: "Rechazar",
+        cancelButtonText: "Cerrar",
+        confirmButtonColor: "#1f3f87",
+        denyButtonColor: "#dc2626",
+        width: 920,
+        preConfirm: () =>
+          (document.getElementById("pedido-autorizacion-comentario") as HTMLTextAreaElement | null)?.value || "",
+        preDeny: () =>
+          (document.getElementById("pedido-autorizacion-comentario") as HTMLTextAreaElement | null)?.value || "",
+      });
+
+      if (!result.isConfirmed && !result.isDenied) return;
+
+      try {
+        const endpoint = result.isConfirmed ? "aprobar" : "rechazar";
+        const { data } = await api.post(`/produccion/autorizaciones/${autorizacionId}/${endpoint}`, {
+          comentario: result.value || "",
+        });
+        await marcarLeida(alerta.id);
+
+        if (result.isConfirmed) {
+          const pedidoId = Number(data?.pedido?.id || data?.pedidoId || 0);
+          await Swal.fire("Autorizado", "El pedido fue generado correctamente.", "success");
+          if (pedidoId > 0) navigate(`/produccion/${pedidoId}`);
+        } else {
+          await Swal.fire("Rechazado", "La solicitud fue rechazada.", "success");
+        }
+      } catch (error: any) {
+        const message = error?.response?.data?.message || "No se pudo resolver la solicitud";
+        Swal.fire("Error", Array.isArray(message) ? message.join(", ") : message, "error");
+      }
+    },
+    [canAuthorizePedidos, navigate],
+  );
+
   const mostrarAlertaEmergente = useCallback(async (alerta: AlertaInterna) => {
+    if (alerta.payload?.autorizacionPedidoId && alerta.payload?.estado !== "aprobado" && alerta.payload?.estado !== "rechazado") {
+      await gestionarAutorizacionPedido(alerta);
+      return;
+    }
+
     const prioridad = alerta.payload?.prioridad || "normal";
     const icon = prioridad === "urgente" || prioridad === "alta" ? "warning" : "info";
     const confirmButtonColor =
@@ -364,7 +525,7 @@ export default function Navbar({ sidebarWidth = 0 }: NavbarProps) {
         // La alerta queda disponible en la campana si no se pudo marcar.
       }
     }
-  }, []);
+  }, [gestionarAutorizacionPedido]);
 
   const cargarAlertas = useCallback(async (options?: { emergente?: boolean }) => {
     try {
@@ -559,6 +720,12 @@ export default function Navbar({ sidebarWidth = 0 }: NavbarProps) {
   };
 
   const abrirDetalleAlerta = async (alerta: AlertaInterna) => {
+    if (alerta.payload?.autorizacionPedidoId && alerta.payload?.estado !== "aprobado" && alerta.payload?.estado !== "rechazado") {
+      cerrarAlertas();
+      await gestionarAutorizacionPedido(alerta);
+      return;
+    }
+
     await marcarLeida(alerta.id);
     cerrarAlertas();
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
   Paper,
@@ -36,6 +36,7 @@ import EditOutlined from "@mui/icons-material/EditOutlined";
 import DeleteOutline from "@mui/icons-material/DeleteOutline";
 import KeyboardArrowDownOutlined from "@mui/icons-material/KeyboardArrowDownOutlined";
 import Swal from "sweetalert2";
+import { io, Socket } from "socket.io-client";
 import { api } from "../api/axios";
 import { useLocation, useNavigate } from "react-router-dom";
 import { hasPermission } from "../auth/permissions";
@@ -561,6 +562,12 @@ export default function PedidoNuevo() {
   const [cantidadAdvertida, setCantidadAdvertida] = useState<number | null>(null);
   const [bordadoPreviewOpen, setBordadoPreviewOpen] = useState(false);
   const [bordadosModalOpen, setBordadosModalOpen] = useState(false);
+  const autorizacionSocketRef = useRef<Socket | null>(null);
+  const autorizacionPendienteRef = useRef<{
+    id: number;
+    clienteParaPedido: ClientePedido;
+    pedidoParaStock: boolean;
+  } | null>(null);
 
   const {
     usuario,
@@ -584,6 +591,9 @@ export default function PedidoNuevo() {
   const location = useLocation();
   const returnState = location.state as { returnTo?: string; returnLabel?: string; pedidosState?: any } | null;
   const canAccessAllBodegas = hasPermission(rol, permisos, "sistema.multi-tienda");
+  const canCrearPedidoSinAutorizacion =
+    hasPermission(rol, permisos, "produccion.autorizar-pedidos") ||
+    hasPermission(rol, permisos, "produccion.crear-sin-autorizacion");
   const metodoUsaRecargo = metodoPago === "tarjeta" || metodoPago === "visalink";
   const metodoRequiereReferencia = metodoPago !== "efectivo";
   const metodoRequiereBanco = metodoPago === "deposito_bancario";
@@ -1514,12 +1524,11 @@ export default function PedidoNuevo() {
       })),
     };
 
-    try {
-      const resp = await api.post("/produccion", payload);
+    const manejarPedidoCreado = (pedidoData: any) => {
       Swal.fire("Guardado", "Pedido creado", "success");
-      const folioPedido = resp.data?.folio || (resp.data?.id ? `P-${resp.data.id}` : "PEND");
-      const fechaPedido = resp.data?.fecha ? new Date(resp.data.fecha) : new Date();
-      const nuevoPedidoId = Number(resp.data?.id) || null;
+      const folioPedido = pedidoData?.folio || (pedidoData?.id ? `P-${pedidoData.id}` : "PEND");
+      const fechaPedido = pedidoData?.fecha ? new Date(pedidoData.fecha) : new Date();
+      const nuevoPedidoId = Number(pedidoData?.id) || null;
       generarPdfPedidoProduccion(folioPedido, clienteParaPedido, fechaPedido);
       if (pedidoParaStock) {
         setTimeout(() => {
@@ -1535,6 +1544,73 @@ export default function PedidoNuevo() {
           volverAlListado(nuevoPedidoId);
         }, 300);
       }, 300);
+    };
+
+    try {
+      if (canCrearPedidoSinAutorizacion) {
+        const resp = await api.post("/produccion", payload);
+        manejarPedidoCreado(resp.data);
+        return;
+      }
+
+      const detalleHtml = detalle
+        .map((item, index) => {
+          const producto = productos.find((p) => p.id === item.productoId);
+          return `<li>${index + 1}. ${escapeHtml(producto?.codigo || item.productoId)} - ${escapeHtml(producto?.nombre || "Producto")} (${escapeHtml(item.cantidad)})</li>`;
+        })
+        .join("");
+      const result = await Swal.fire({
+        title: "Este pedido necesita autorizacion",
+        html: `
+          <div style="text-align:left;font-size:14px;line-height:1.45;">
+            <p>Antes de generar el pedido, se enviara una solicitud a los usuarios autorizados.</p>
+            <p><strong>Cliente:</strong> ${escapeHtml(clienteParaPedido.nombre)}<br/>
+            <strong>Total estimado:</strong> ${escapeHtml(formatCurrency(totalsPedido.total))}<br/>
+            <strong>Detalle:</strong></p>
+            <ul style="max-height:140px;overflow:auto;margin:0 0 12px 18px;padding:0;">${detalleHtml}</ul>
+            <label for="pedido-autorizacion-comentario" style="display:block;margin-bottom:6px;font-weight:600;">Comentario para autorizacion</label>
+            <textarea id="pedido-autorizacion-comentario" class="swal2-textarea" placeholder="Explica brevemente por que debe autorizarse..." style="height:90px;margin:0;width:100%;"></textarea>
+          </div>
+        `,
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: "Solicitar autorizacion",
+        cancelButtonText: "Cancelar",
+        confirmButtonColor: "#1f3f87",
+        width: 680,
+        preConfirm: () =>
+          (document.getElementById("pedido-autorizacion-comentario") as HTMLTextAreaElement | null)?.value || "",
+      });
+      if (!result.isConfirmed) return;
+
+      const resp = await api.post("/produccion/autorizaciones", {
+        pedido: payload,
+        comentario: result.value || "",
+      });
+      const solicitudId = Number(resp.data?.id || 0);
+      autorizacionPendienteRef.current = {
+        id: solicitudId,
+        clienteParaPedido,
+        pedidoParaStock,
+      };
+
+      const espera = await Swal.fire({
+        title: "Esperando autorizacion",
+        text: "La solicitud fue enviada. Puedes esperar aqui hasta que se autorice o regresar al modulo de pedidos generados.",
+        icon: "info",
+        showCancelButton: true,
+        showConfirmButton: false,
+        cancelButtonText: "Ir a pedidos",
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        didOpen: () => {
+          Swal.showLoading();
+        },
+      });
+      if (espera.dismiss === Swal.DismissReason.cancel && autorizacionPendienteRef.current?.id === solicitudId) {
+        autorizacionPendienteRef.current = null;
+        volverAlListado();
+      }
     } catch (error: any) {
       Swal.fire("Error", getApiErrorMessage(error, "No se pudo guardar"), "error");
     }
@@ -1794,6 +1870,57 @@ export default function PedidoNuevo() {
     win.document.write(html);
     win.document.close();
   };
+
+  useEffect(() => {
+    const socket = io(api.defaults.baseURL || window.location.origin, {
+      withCredentials: true,
+      transports: ["websocket", "polling"],
+      reconnection: true,
+    });
+    autorizacionSocketRef.current = socket;
+
+    const manejarAutorizacionResuelta = (payload: any) => {
+      const pendiente = autorizacionPendienteRef.current;
+      if (!pendiente || Number(payload?.solicitudId || 0) !== pendiente.id) return;
+      if (payload?.solicitanteId && Number(payload.solicitanteId) !== Number(userId || 0)) return;
+
+      autorizacionPendienteRef.current = null;
+      Swal.close();
+
+      if (payload?.estado === "aprobado") {
+        const pedido = payload?.pedido || {};
+        const folioPedido = pedido?.folio || (pedido?.id ? `P-${pedido.id}` : "PEND");
+        const fechaPedido = pedido?.fecha ? new Date(pedido.fecha) : new Date();
+        const nuevoPedidoId = Number(pedido?.id) || null;
+        Swal.fire("Autorizado", "El pedido fue autorizado y generado correctamente.", "success");
+        generarPdfPedidoProduccion(folioPedido, pendiente.clienteParaPedido, fechaPedido);
+        if (pendiente.pedidoParaStock) {
+          setTimeout(() => volverAlListado(nuevoPedidoId), 300);
+          return;
+        }
+        setTimeout(() => {
+          generarPdfReciboPedido(folioPedido, pendiente.clienteParaPedido, fechaPedido);
+          setTimeout(() => volverAlListado(nuevoPedidoId), 300);
+        }, 300);
+        return;
+      }
+
+      Swal.fire(
+        "Solicitud rechazada",
+        payload?.comentario ? `Motivo: ${payload.comentario}` : "El pedido no fue autorizado.",
+        "warning",
+      );
+    };
+
+    socket.on("produccion:autorizacion-resuelta", manejarAutorizacionResuelta);
+
+    return () => {
+      socket.off("produccion:autorizacion-resuelta", manejarAutorizacionResuelta);
+      socket.disconnect();
+      autorizacionSocketRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
 
   return (
     <Paper sx={{ p: 3 }}>

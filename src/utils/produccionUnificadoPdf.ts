@@ -12,6 +12,13 @@ export interface ProduccionArticuloUnificadoPdf {
   cantidad: number;
 }
 
+export interface ProduccionDetallePedidoPdf extends ProduccionArticuloUnificadoPdf {
+  orden: string;
+  usuario: string;
+  codigo?: string;
+  nombre?: string;
+}
+
 const normalizeDateKey = (value: unknown) => {
   const raw = `${value || ""}`.trim();
   const dateOnly = raw.match(/^(\d{4})-(\d{2})-(\d{2})/)?.[0];
@@ -198,6 +205,143 @@ export const descargarProduccionUnificadoPdf = async ({
   doc.setTextColor(75, 85, 99);
   doc.text(
     `Generado con ${totalPedidos} pedidos visibles y filtro de tienda: ${filtroTienda}.`,
+    4,
+    Math.min(finalY + 8, 205)
+  );
+
+  doc.save(fileName);
+};
+
+export const descargarProduccionDetallePedidosPdf = async ({
+  articulos,
+  fileName,
+  titulo = "DETALLE DE PEDIDOS",
+  filtroTienda,
+  totalPedidos,
+  fechasPedidos = [],
+}: {
+  articulos: ProduccionDetallePedidoPdf[];
+  fileName: string;
+  titulo?: string;
+  filtroTienda: string;
+  totalPedidos: number;
+  fechasPedidos?: unknown[];
+}) => {
+  const doc = new jsPDF({
+    orientation: "landscape",
+    unit: "mm",
+    format: "letter",
+  });
+  const pageWidth = doc.internal.pageSize.getWidth();
+
+  const fechaGeneracion = new Date();
+  const fechaImpresion = fechaGeneracion.toLocaleDateString("es-GT");
+  const fechaPedidos = formatPedidoDateRange(fechasPedidos);
+  const logoDataUrl = await loadImageAsDataUrl(uniformaLogo);
+
+  doc.addImage(logoDataUrl, "PNG", 4, 4, 24, 24);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(21);
+  doc.setTextColor(20, 55, 125);
+  doc.text(titulo, pageWidth / 2, 14, { align: "center" });
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10.5);
+  doc.setTextColor(0, 0, 0);
+  doc.text(`Fecha pedidos: ${fechaPedidos}`, pageWidth - 6, 10, { align: "right" });
+  doc.text(`Fecha impresion: ${fechaImpresion}`, pageWidth - 6, 16, { align: "right" });
+
+  doc.setFontSize(17);
+  doc.setTextColor(214, 0, 0);
+  doc.text("PRODUCCION", pageWidth / 2, 33, { align: "center" });
+
+  const sellerBoxY = 37;
+  const sellerBoxHeight = 15;
+  const sellerLeftWidth = 66;
+  const sellerRightWidth = 49;
+  const sellerLeftX = (pageWidth - (sellerLeftWidth + sellerRightWidth)) / 2;
+  doc.setFillColor(18, 48, 114);
+  doc.rect(sellerLeftX, sellerBoxY, sellerLeftWidth, sellerBoxHeight, "F");
+  doc.setFillColor(255, 32, 10);
+  doc.rect(sellerLeftX + sellerLeftWidth, sellerBoxY, sellerRightWidth, sellerBoxHeight, "F");
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10.8);
+  doc.setTextColor(255, 255, 255);
+  doc.text(filtroTienda.toUpperCase(), sellerLeftX + sellerLeftWidth / 2, sellerBoxY + 9.5, { align: "center" });
+  doc.text(`${totalPedidos} PEDIDO(S)`, sellerLeftX + sellerLeftWidth + sellerRightWidth / 2, sellerBoxY + 9.5, {
+    align: "center",
+  });
+
+  autoTable(doc, {
+    startY: 61,
+    theme: "grid",
+    head: [["CANT", "ORDEN", "USUARIO", "PRENDA", "TELA", "COLOR", "TALLA", "SEXO", "OBSERVACIONES"]],
+    body: articulos.length
+      ? articulos.map((item) => [
+          item.cantidad,
+          item.orden,
+          item.usuario,
+          item.tipo,
+          item.tela,
+          item.color,
+          item.talla,
+          item.genero,
+          item.descripcion === "N/D" ? "" : item.descripcion,
+        ])
+      : [["-", "No hay articulos detallados en los pedidos seleccionados", "", "", "", "", "", "", ""]],
+    styles: {
+      fontSize: 7.8,
+      cellPadding: { top: 2.2, right: 1.8, bottom: 2.2, left: 1.8 },
+      minCellHeight: 10.5,
+      halign: "center",
+      valign: "middle",
+      lineColor: [0, 0, 0],
+      lineWidth: 0.08,
+      textColor: [0, 0, 0],
+      overflow: "linebreak",
+      fillColor: [255, 255, 255],
+      fontStyle: "normal",
+    },
+    headStyles: {
+      fillColor: [26, 62, 132],
+      textColor: [255, 255, 255],
+      fontStyle: "bold",
+      fontSize: 9.2,
+      lineColor: [0, 0, 0],
+      lineWidth: 0,
+    },
+    bodyStyles: {
+      fillColor: [255, 255, 255],
+      textColor: [0, 0, 0],
+      lineColor: [0, 0, 0],
+      lineWidth: 0.08,
+    },
+    alternateRowStyles: {
+      fillColor: [255, 255, 255],
+      textColor: [0, 0, 0],
+    },
+    columnStyles: {
+      0: { cellWidth: 13 },
+      1: { cellWidth: 27 },
+      2: { cellWidth: 34, overflow: "linebreak" },
+      3: { cellWidth: 25, overflow: "linebreak" },
+      4: { cellWidth: 23 },
+      5: { cellWidth: 30, overflow: "linebreak" },
+      6: { cellWidth: 22, overflow: "linebreak" },
+      7: { cellWidth: 22, overflow: "linebreak" },
+      8: { cellWidth: "auto", halign: "left", overflow: "linebreak" },
+    },
+    margin: { left: 4, right: 4 },
+  });
+
+  const finalY = (doc as any).lastAutoTable?.finalY || 61;
+  doc.setFontSize(8.5);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(75, 85, 99);
+  doc.text(
+    `Generado con ${totalPedidos} pedidos visibles, ${articulos.length} linea(s) de detalle y filtro de tienda: ${filtroTienda}.`,
     4,
     Math.min(finalY + 8, 205)
   );
