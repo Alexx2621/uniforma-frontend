@@ -970,6 +970,8 @@ export default function Pedidos() {
 
     const articulos: ProduccionDetallePedidoPdf[] = [...filtered]
       .sort((a, b) => {
+        const porUsuario = compareText(obtenerUsuarioPedido(a), obtenerUsuarioPedido(b));
+        if (porUsuario !== 0) return porUsuario;
         const porFecha = toDateOnly(a.fecha).localeCompare(toDateOnly(b.fecha));
         if (porFecha !== 0) return porFecha;
         return Number(a.id || 0) - Number(b.id || 0);

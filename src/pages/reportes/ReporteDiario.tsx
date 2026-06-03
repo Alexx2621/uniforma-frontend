@@ -46,6 +46,9 @@ import { formatReportScheduleForDay, getReportSchedule, isReportScheduleOpen } f
 interface PagoVenta {
   referencia?: string | null;
   banco?: string | null;
+  fecha?: string | null;
+  monto?: number | null;
+  recargo?: number | null;
 }
 
 interface DocumentoGenerado {
@@ -261,8 +264,19 @@ const getPedidoBanco = (pedido: PedidoReporte) => `${pedido.pagos?.[0]?.banco ||
 
 const getPedidoRecibo = (pedido: PedidoReporte) => pedido.folio || `PE-${pedido.id}`;
 
-const getPedidoMontoReporte = (pedido: PedidoReporte) =>
-  Number(pedido.anticipo || 0) + Number(pedido.envio || 0);
+const getPagoMontoAplicado = (pago?: PagoVenta | null) =>
+  Number(pago?.monto || 0) + Number(pago?.recargo || 0);
+
+const getPedidoMontoReporte = (pedido: PedidoReporte) => {
+  const pedidoFecha = toDateOnly(pedido.fecha);
+  const pagosMismoDia = Array.isArray(pedido.pagos)
+    ? pedido.pagos.filter((pago) => !pago.fecha || toDateOnly(pago.fecha) === pedidoFecha)
+    : [];
+  const totalPagos = pagosMismoDia.reduce((sum, pago) => sum + getPagoMontoAplicado(pago), 0);
+  return totalPagos > 0 ? totalPagos : Number(pedido.anticipo || 0);
+};
+
+const pedidoTieneMontoReporte = (pedido: PedidoReporte) => getPedidoMontoReporte(pedido) > 0;
 
 const createCapitalRowFromVenta = (venta: Venta, fecha: string): CapitalRow => {
   const metodo = getVentaMetodo(venta);
@@ -673,6 +687,7 @@ export default function ReporteDiario() {
     () =>
       pedidos.filter((pedido) => {
         if (toDateOnly(pedido.fecha) !== fecha) return false;
+        if (!pedidoTieneMontoReporte(pedido)) return false;
         if (canGenerateForOtherUser && reporteUsuarioId) return pedidoPerteneceAUsuario(pedido, reporteUsuario);
         return true;
       }),
