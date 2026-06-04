@@ -206,6 +206,7 @@ const escapeHtml = (value?: string | number | null) =>
     .replace(/'/g, "&#39;");
 
 const BORDADO_OBSERVACION_RE = /^(BORDADO\b.*?\.)\s*(.*)$/i;
+const PEDIDO_AUTORIZACION_MONTO_MINIMO = 3000;
 
 const buildBordadoObservacionPrefix = (bordados: Array<Pick<BordadoArticulo, "posicion">>) => {
   const posiciones = Array.from(
@@ -1547,7 +1548,8 @@ export default function PedidoNuevo() {
     };
 
     try {
-      if (canCrearPedidoSinAutorizacion) {
+      const requiereAutorizacion = pedidoParaStock || Number(totalsPedido.total || 0) > PEDIDO_AUTORIZACION_MONTO_MINIMO;
+      if (canCrearPedidoSinAutorizacion || !requiereAutorizacion) {
         const resp = await api.post("/produccion", payload);
         manejarPedidoCreado(resp.data);
         return;
@@ -1563,7 +1565,7 @@ export default function PedidoNuevo() {
         title: "Este pedido necesita autorizacion",
         html: `
           <div style="text-align:left;font-size:14px;line-height:1.45;">
-            <p>Antes de generar el pedido, se enviara una solicitud a los usuarios autorizados.</p>
+            <p>Antes de generar el pedido, se enviara una solicitud a los usuarios autorizados porque ${pedidoParaStock ? "es un pedido para stock" : `supera ${escapeHtml(formatCurrency(PEDIDO_AUTORIZACION_MONTO_MINIMO))}`}.</p>
             <p><strong>Cliente:</strong> ${escapeHtml(clienteParaPedido.nombre)}<br/>
             <strong>Total estimado:</strong> ${escapeHtml(formatCurrency(totalsPedido.total))}<br/>
             <strong>Detalle:</strong></p>

@@ -44,8 +44,11 @@ import { canUseVendedorDropdown, filterUsuariosByBodega } from "../../utils/vend
 import { formatReportScheduleForDay, getReportSchedule, isReportScheduleOpen } from "../../utils/reportSchedule";
 
 interface PagoVenta {
+  id?: number | string | null;
+  metodo?: string | null;
   referencia?: string | null;
   banco?: string | null;
+  ubicacion?: string | null;
   fecha?: string | null;
   monto?: number | null;
   recargo?: number | null;
@@ -238,8 +241,8 @@ const normalizeUbicacionVenta = (venta: Venta) => {
   return "TIENDA";
 };
 
-const normalizeUbicacionPedido = (pedido: PedidoReporte) => {
-  const raw = `${pedido.ubicacion || ""}`.trim();
+const normalizeUbicacionPedido = (pedido: PedidoReporte, pago?: PagoVenta | null) => {
+  const raw = `${pago?.ubicacion || pedido.ubicacion || ""}`.trim();
   const fallbackFromBodega = `${pedido.bodega?.ubicacion || pedido.bodega?.nombre || ""}`.trim();
   const normalized = (raw || fallbackFromBodega || "TIENDA").toUpperCase();
   if (normalized.includes("CAPITAL")) return "CAPITAL";
@@ -256,27 +259,51 @@ const getVentaBanco = (venta: Venta) => `${venta.pagos?.[0]?.banco || ""}`.trim(
 
 const getVentaRecibo = (venta: Venta) => venta.folio || `V-${venta.id}`;
 
-const getPedidoMetodo = (pedido: PedidoReporte) => normalizarMetodoPago(pedido.metodoPago);
+const getPedidoMetodo = (pedido: PedidoReporte, pago?: PagoVenta | null) => normalizarMetodoPago(pago?.metodo || pedido.metodoPago);
 
-const getPedidoReferencia = (pedido: PedidoReporte) => `${pedido.pagos?.[0]?.referencia || ""}`.trim();
+const getPedidoReferencia = (pedido: PedidoReporte, pago?: PagoVenta | null) => `${pago?.referencia || pedido.pagos?.[0]?.referencia || ""}`.trim();
 
-const getPedidoBanco = (pedido: PedidoReporte) => `${pedido.pagos?.[0]?.banco || ""}`.trim();
+const getPedidoBanco = (pedido: PedidoReporte, pago?: PagoVenta | null) => `${pago?.banco || pedido.pagos?.[0]?.banco || ""}`.trim();
 
 const getPedidoRecibo = (pedido: PedidoReporte) => pedido.folio || `PE-${pedido.id}`;
 
 const getPagoMontoAplicado = (pago?: PagoVenta | null) =>
   Number(pago?.monto || 0) + Number(pago?.recargo || 0);
 
-const getPedidoMontoReporte = (pedido: PedidoReporte) => {
-  const pedidoFecha = toDateOnly(pedido.fecha);
+const getPedidoMontoReporte = (pedido: PedidoReporte, fechaReporte?: string, pago?: PagoVenta | null) => {
+  if (pago) return getPagoMontoAplicado(pago);
+  const targetFecha = fechaReporte || toDateOnly(pedido.fecha);
   const pagosMismoDia = Array.isArray(pedido.pagos)
-    ? pedido.pagos.filter((pago) => !pago.fecha || toDateOnly(pago.fecha) === pedidoFecha)
+    ? pedido.pagos.filter((item) => !item.fecha || toDateOnly(item.fecha) === targetFecha)
     : [];
   const totalPagos = pagosMismoDia.reduce((sum, pago) => sum + getPagoMontoAplicado(pago), 0);
   return totalPagos > 0 ? totalPagos : Number(pedido.anticipo || 0);
 };
 
-const pedidoTieneMontoReporte = (pedido: PedidoReporte) => getPedidoMontoReporte(pedido) > 0;
+const getPedidoPagosReporte = (pedido: PedidoReporte, fecha: string): PagoVenta[] => {
+  const pagos = Array.isArray(pedido.pagos)
+    ? pedido.pagos.filter((pago) => pago.fecha && toDateOnly(pago.fecha) === fecha && getPagoMontoAplicado(pago) > 0)
+    : [];
+  if (pagos.length) return pagos;
+  if (toDateOnly(pedido.fecha) !== fecha || Number(pedido.anticipo || 0) <= 0) return [];
+  return [
+    {
+      id: `anticipo-${pedido.id}`,
+      metodo: pedido.metodoPago,
+      referencia: pedido.pagos?.[0]?.referencia || null,
+      banco: pedido.pagos?.[0]?.banco || null,
+      ubicacion: pedido.pagos?.[0]?.ubicacion || pedido.ubicacion || null,
+      fecha: pedido.fecha,
+      monto: Number(pedido.anticipo || 0),
+      recargo: 0,
+    },
+  ];
+};
+
+const getPedidoPagoRowId = (pedido: PedidoReporte, pago?: PagoVenta | null) => {
+  const pagoId = `${pago?.id || ""}`.replace(/\D/g, "");
+  return -(Number(pedido.id || 0) * 100000 + Number(pagoId || 0));
+};
 
 const createCapitalRowFromVenta = (venta: Venta, fecha: string): CapitalRow => {
   const metodo = getVentaMetodo(venta);
@@ -315,13 +342,13 @@ const createDepartamentoRowFromVenta = (venta: Venta, fecha: string): Departamen
   };
 };
 
-const createCapitalRowFromPedido = (pedido: PedidoReporte, fecha: string): CapitalRow => {
-  const metodo = getPedidoMetodo(pedido);
-  const referencia = getPedidoReferencia(pedido);
-  const banco = getPedidoBanco(pedido);
-  const total = getPedidoMontoReporte(pedido);
+const createCapitalRowFromPedido = (pedido: PedidoReporte, fecha: string, pago?: PagoVenta | null): CapitalRow => {
+  const metodo = getPedidoMetodo(pedido, pago);
+  const referencia = getPedidoReferencia(pedido, pago);
+  const banco = getPedidoBanco(pedido, pago);
+  const total = getPedidoMontoReporte(pedido, fecha, pago);
   return {
-    id: -pedido.id,
+    id: getPedidoPagoRowId(pedido, pago),
     fecha,
     envio: "",
     transferencia: metodo === "transferencia" ? total : 0,
@@ -334,13 +361,13 @@ const createCapitalRowFromPedido = (pedido: PedidoReporte, fecha: string): Capit
   };
 };
 
-const createDepartamentoRowFromPedido = (pedido: PedidoReporte, fecha: string): DepartamentoRow => {
-  const metodo = getPedidoMetodo(pedido);
-  const referencia = getPedidoReferencia(pedido);
-  const banco = getPedidoBanco(pedido);
-  const total = getPedidoMontoReporte(pedido);
+const createDepartamentoRowFromPedido = (pedido: PedidoReporte, fecha: string, pago?: PagoVenta | null): DepartamentoRow => {
+  const metodo = getPedidoMetodo(pedido, pago);
+  const referencia = getPedidoReferencia(pedido, pago);
+  const banco = getPedidoBanco(pedido, pago);
+  const total = getPedidoMontoReporte(pedido, fecha, pago);
   return {
-    id: -pedido.id,
+    id: getPedidoPagoRowId(pedido, pago),
     fecha,
     envio: "",
     transferencia: metodo === "transferencia" ? total : 0,
@@ -352,13 +379,13 @@ const createDepartamentoRowFromPedido = (pedido: PedidoReporte, fecha: string): 
   };
 };
 
-const createTiendaRowFromPedido = (pedido: PedidoReporte, fecha: string): TiendaRow => {
-  const metodo = getPedidoMetodo(pedido);
-  const referencia = getPedidoReferencia(pedido);
-  const banco = getPedidoBanco(pedido);
-  const total = getPedidoMontoReporte(pedido);
+const createTiendaRowFromPedido = (pedido: PedidoReporte, fecha: string, pago?: PagoVenta | null): TiendaRow => {
+  const metodo = getPedidoMetodo(pedido, pago);
+  const referencia = getPedidoReferencia(pedido, pago);
+  const banco = getPedidoBanco(pedido, pago);
+  const total = getPedidoMontoReporte(pedido, fecha, pago);
   return {
-    id: -pedido.id,
+    id: getPedidoPagoRowId(pedido, pago),
     fecha,
     recibo: getPedidoRecibo(pedido),
     transferencia: metodo === "transferencia" ? total : 0,
@@ -432,8 +459,14 @@ const getReporteDiarioDocumentoTotal = (doc: DocumentoGenerado) =>
     .filter((venta: Venta) => normalizeUbicacionVenta(venta) === "TIENDA")
     .reduce((sum: number, venta: any) => sum + Number(venta.total || 0), 0) +
   (doc.data?.pedidosSnapshot || [])
-    .filter((pedido: PedidoReporte) => normalizeUbicacionPedido(pedido) === "TIENDA")
-    .reduce((sum: number, pedido: PedidoReporte) => sum + getPedidoMontoReporte(pedido), 0) +
+    .reduce(
+      (sum: number, pedido: PedidoReporte) =>
+        sum +
+        getPedidoPagosReporte(pedido, doc.data?.fecha || toDateOnly(pedido.fecha))
+          .filter((pago) => normalizeUbicacionPedido(pedido, pago) === "TIENDA")
+          .reduce((pagoSum, pago) => pagoSum + getPagoMontoAplicado(pago), 0),
+      0
+    ) +
   (doc.data?.tiendaManualRows || []).reduce((sum: number, row: any) => sum + getTiendaRowTotal(row), 0);
 
 const hasTiendaRowData = (row: TiendaRow) =>
@@ -683,16 +716,20 @@ export default function ReporteDiario() {
     [ventas, fecha, canGenerateForOtherUser, reporteUsuarioId, reporteUsuario]
   );
 
-  const pedidosDelDia = useMemo(
+  const pedidosPagosDelDia = useMemo(
     () =>
-      pedidos.filter((pedido) => {
-        if (toDateOnly(pedido.fecha) !== fecha) return false;
-        if (!pedidoTieneMontoReporte(pedido)) return false;
-        if (canGenerateForOtherUser && reporteUsuarioId) return pedidoPerteneceAUsuario(pedido, reporteUsuario);
-        return true;
+      pedidos.flatMap((pedido) => {
+        if (canGenerateForOtherUser && reporteUsuarioId && !pedidoPerteneceAUsuario(pedido, reporteUsuario)) return [];
+        return getPedidoPagosReporte(pedido, fecha).map((pago) => ({ pedido, pago }));
       }),
     [pedidos, fecha, canGenerateForOtherUser, reporteUsuarioId, reporteUsuario]
   );
+
+  const pedidosDelDia = useMemo(() => {
+    const map = new Map<number, PedidoReporte>();
+    pedidosPagosDelDia.forEach(({ pedido }) => map.set(Number(pedido.id), pedido));
+    return Array.from(map.values());
+  }, [pedidosPagosDelDia]);
 
   const capitalAutoRows = useMemo<CapitalRow[]>(
     () =>
@@ -701,8 +738,11 @@ export default function ReporteDiario() {
           .filter((venta) => normalizeUbicacionVenta(venta) === "CAPITAL")
           .map((venta) => createCapitalRowFromVenta(venta, fecha)),
         ...pedidosDelDia
-          .filter((pedido) => normalizeUbicacionPedido(pedido) === "CAPITAL")
-          .map((pedido) => createCapitalRowFromPedido(pedido, fecha)),
+          .flatMap((pedido) =>
+            getPedidoPagosReporte(pedido, fecha)
+              .filter((pago) => normalizeUbicacionPedido(pedido, pago) === "CAPITAL")
+              .map((pago) => createCapitalRowFromPedido(pedido, fecha, pago))
+          ),
       ].map((row) => ({
         ...row,
         envio: capitalAutoEnvios[row.id] || "",
@@ -718,8 +758,11 @@ export default function ReporteDiario() {
           .filter((venta) => normalizeUbicacionVenta(venta) === "DEPARTAMENTO")
           .map((venta) => createDepartamentoRowFromVenta(venta, fecha)),
         ...pedidosDelDia
-          .filter((pedido) => normalizeUbicacionPedido(pedido) === "DEPARTAMENTO")
-          .map((pedido) => createDepartamentoRowFromPedido(pedido, fecha)),
+          .flatMap((pedido) =>
+            getPedidoPagosReporte(pedido, fecha)
+              .filter((pago) => normalizeUbicacionPedido(pedido, pago) === "DEPARTAMENTO")
+              .map((pago) => createDepartamentoRowFromPedido(pedido, fecha, pago))
+          ),
       ].map((row) => ({
         ...row,
         envio: departamentoAutoEnvios[row.id] || "",
@@ -750,8 +793,11 @@ export default function ReporteDiario() {
       };
     });
     const pedidoRows = pedidosDelDia
-      .filter((pedido) => normalizeUbicacionPedido(pedido) === "TIENDA")
-      .map((pedido) => createTiendaRowFromPedido(pedido, fecha));
+      .flatMap((pedido) =>
+        getPedidoPagosReporte(pedido, fecha)
+          .filter((pago) => normalizeUbicacionPedido(pedido, pago) === "TIENDA")
+          .map((pago) => createTiendaRowFromPedido(pedido, fecha, pago))
+      );
     return [...ventaRows, ...pedidoRows].map((row) => ({
       ...row,
       observaciones: tiendaAutoObservaciones[row.id] || "",

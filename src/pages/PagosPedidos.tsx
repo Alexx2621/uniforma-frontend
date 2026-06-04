@@ -33,6 +33,11 @@ import { canUseVendedorDropdown } from "../utils/vendedorDropdownAccess";
 interface Pago {
   monto: number;
   recargo?: number;
+  metodo?: string | null;
+  referencia?: string | null;
+  banco?: string | null;
+  ubicacion?: string | null;
+  fecha?: string | null;
 }
 
 interface PedidoPago {
@@ -42,9 +47,10 @@ interface PedidoPago {
   estado: string;
   totalEstimado: number;
   saldoPendiente: number;
+  ubicacion?: string | null;
   cliente?: { nombre?: string | null } | null;
   clienteNombre?: string | null;
-  bodega?: { nombre?: string | null } | null;
+  bodega?: { nombre?: string | null; ubicacion?: string | null } | null;
   bodegaId?: number | string | null;
   pagos?: Pago[];
   vendedor: string;
@@ -55,6 +61,8 @@ type PagoForm = {
   metodo: string;
   porcentajeRecargo: number;
   referencia: string;
+  banco: string;
+  ubicacion: string;
   numeroEnvio: string;
   numeroRecibo: string;
   referenciaDocumento: string;
@@ -66,6 +74,8 @@ const emptyPagoForm: PagoForm = {
   metodo: "efectivo",
   porcentajeRecargo: 0,
   referencia: "",
+  banco: "",
+  ubicacion: "TIENDA",
   numeroEnvio: "",
   numeroRecibo: "",
   referenciaDocumento: "",
@@ -77,6 +87,17 @@ const money = (value: number) =>
 
 const metodoUsaRecargo = (metodo: string) => metodo === "tarjeta" || metodo === "visalink";
 const metodoRequiereReferencia = (metodo: string) => metodo !== "efectivo";
+const metodoRequiereBanco = (metodo: string) => metodo === "deposito_bancario";
+
+const normalizarUbicacionPago = (value?: string | null) => {
+  const normalized = `${value || ""}`.trim().toUpperCase();
+  if (normalized.includes("CAPITAL")) return "CAPITAL";
+  if (normalized.includes("DEPART") || normalized.includes("ANTIGUA")) return "DEPARTAMENTO";
+  return "TIENDA";
+};
+
+const getPedidoUbicacionPago = (pedido: PedidoPago) =>
+  normalizarUbicacionPago(pedido.ubicacion || pedido.bodega?.ubicacion || pedido.bodega?.nombre);
 
 const getPagoAplicado = (pago: Pago) => Number(pago.monto || 0) + Number(pago.recargo || 0);
 
@@ -117,6 +138,7 @@ export default function PagosPedidos() {
             next[pedido.id] = {
               ...emptyPagoForm,
               monto: Number(pedido.saldoPendiente || 0),
+              ubicacion: getPedidoUbicacionPago(pedido),
             };
           }
         });
@@ -168,7 +190,8 @@ export default function PagosPedidos() {
     }));
   };
 
-  const getForm = (pedido: PedidoPago) => forms[pedido.id] || { ...emptyPagoForm, monto: Number(pedido.saldoPendiente || 0) };
+  const getForm = (pedido: PedidoPago) =>
+    forms[pedido.id] || { ...emptyPagoForm, monto: Number(pedido.saldoPendiente || 0), ubicacion: getPedidoUbicacionPago(pedido) };
 
   const hasExtraData = (form: PagoForm) =>
     Boolean(
@@ -215,7 +238,9 @@ export default function PagosPedidos() {
             <tr><td>Bodega</td><td>${pedido.bodega?.nombre || "N/D"}</td></tr>
             <tr><td>Monto</td><td>${money(monto)}</td></tr>
             <tr><td>Metodo</td><td>${metodo}</td></tr>
+            <tr><td>Ubicacion del pago</td><td>${extras?.ubicacion || "TIENDA"}</td></tr>
             ${referencia ? `<tr><td>Referencia</td><td>${referencia}</td></tr>` : ""}
+            ${extras?.banco ? `<tr><td>Banco</td><td>${extras.banco}</td></tr>` : ""}
             ${extras?.numeroEnvio ? `<tr><td>Numero de envio/guia</td><td>${extras.numeroEnvio}</td></tr>` : ""}
             ${extras?.numeroRecibo ? `<tr><td>Numero de recibo</td><td>${extras.numeroRecibo}</td></tr>` : ""}
             ${extras?.referenciaDocumento ? `<tr><td>Documento externo</td><td>${extras.referenciaDocumento}</td></tr>` : ""}
@@ -249,6 +274,14 @@ export default function PagosPedidos() {
       Swal.fire("Validacion", "Ingresa la referencia o numero de transaccion del pago", "warning");
       return;
     }
+    if (metodoRequiereBanco(form.metodo) && !form.banco.trim()) {
+      Swal.fire("Validacion", "Ingresa el banco del deposito", "warning");
+      return;
+    }
+    if (!form.ubicacion) {
+      Swal.fire("Validacion", "Selecciona la ubicacion donde se recibio el pago", "warning");
+      return;
+    }
 
     const confirm = await Swal.fire({
       title: "Confirmar pago",
@@ -259,7 +292,9 @@ export default function PagosPedidos() {
           ${recargo ? `<p><strong>Recargo:</strong> ${money(recargo)}</p>` : ""}
           <p><strong>Total a aplicar:</strong> ${money(aplicado)}</p>
           <p><strong>Metodo:</strong> ${form.metodo}</p>
+          <p><strong>Ubicacion:</strong> ${form.ubicacion}</p>
           ${form.referencia.trim() ? `<p><strong>Referencia:</strong> ${form.referencia.trim()}</p>` : ""}
+          ${form.banco.trim() ? `<p><strong>Banco:</strong> ${form.banco.trim()}</p>` : ""}
           ${hasExtraData(form) ? "<p><strong>Datos adicionales:</strong> registrados</p>" : ""}
         </div>
       `,
@@ -277,6 +312,8 @@ export default function PagosPedidos() {
         tipo: "saldo",
         porcentajeRecargo: porcRecargo,
         referenciaPago: metodoRequiereReferencia(form.metodo) ? form.referencia.trim() : null,
+        bancoPago: metodoRequiereBanco(form.metodo) ? form.banco.trim() : null,
+        ubicacion: form.ubicacion,
         numeroEnvio: form.numeroEnvio.trim() || null,
         numeroRecibo: form.numeroRecibo.trim() || null,
         referenciaDocumento: form.referenciaDocumento.trim() || null,
@@ -397,6 +434,7 @@ export default function PagosPedidos() {
                             updateForm(pedido.id, {
                               metodo,
                               referencia: metodo === "efectivo" ? "" : form.referencia,
+                              banco: metodoRequiereBanco(metodo) ? form.banco : "",
                               porcentajeRecargo: metodoUsaRecargo(metodo) ? form.porcentajeRecargo : 0,
                             });
                           }}
@@ -409,6 +447,18 @@ export default function PagosPedidos() {
                         </Select>
                       </FormControl>
                     </Stack>
+                    <FormControl size="small" fullWidth>
+                      <InputLabel>Ubicacion del pago</InputLabel>
+                      <Select
+                        label="Ubicacion del pago"
+                        value={form.ubicacion}
+                        onChange={(e) => updateForm(pedido.id, { ubicacion: e.target.value })}
+                      >
+                        <MenuItem value="TIENDA">Tienda</MenuItem>
+                        <MenuItem value="CAPITAL">Capital / Mensajero</MenuItem>
+                        <MenuItem value="DEPARTAMENTO">Departamento / Cargo expreso</MenuItem>
+                      </Select>
+                    </FormControl>
                     {usaRecargo && (
                       <TextField
                         label="Recargo %"
@@ -425,6 +475,15 @@ export default function PagosPedidos() {
                         value={form.referencia}
                         onChange={(e) => updateForm(pedido.id, { referencia: e.target.value })}
                         helperText="Numero de transaccion"
+                      />
+                    )}
+                    {metodoRequiereBanco(form.metodo) && (
+                      <TextField
+                        label="Banco"
+                        size="small"
+                        value={form.banco}
+                        onChange={(e) => updateForm(pedido.id, { banco: e.target.value })}
+                        helperText="Banco donde se realizo el deposito"
                       />
                     )}
                     <Button

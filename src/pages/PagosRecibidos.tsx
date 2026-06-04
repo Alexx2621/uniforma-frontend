@@ -44,6 +44,8 @@ interface PagoRecibido {
   tipo?: string | null;
   metodo?: string | null;
   referenciaPago?: string | null;
+  banco?: string | null;
+  ubicacion?: string | null;
   numeroEnvio?: string | null;
   numeroRecibo?: string | null;
   referenciaDocumento?: string | null;
@@ -101,6 +103,8 @@ export default function PagosRecibidos() {
               tipo: pago?.tipo || null,
               metodo: pago?.metodo || null,
               referenciaPago: pago?.referenciaPago || pago?.referencia || null,
+              banco: pago?.banco || null,
+              ubicacion: pago?.ubicacion || pedido?.ubicacion || null,
               numeroEnvio: pago?.numeroEnvio || null,
               numeroRecibo: pago?.numeroRecibo || null,
               referenciaDocumento: pago?.referenciaDocumento || null,
@@ -271,6 +275,8 @@ export default function PagosRecibidos() {
               <TableCell>Pedido</TableCell>
               <TableCell>Cliente</TableCell>
               <TableCell>Bodega</TableCell>
+              <TableCell>Ubicacion</TableCell>
+              <TableCell>Banco</TableCell>
               <TableCell>Vendedor</TableCell>
               <TableCell align="right">Total</TableCell>
               <TableCell>Estado</TableCell>
@@ -279,7 +285,7 @@ export default function PagosRecibidos() {
           </TableHead>
           <TableBody>
             {loading ? (
-              <UniformaTableLoadingRow colSpan={9} />
+              <UniformaTableLoadingRow colSpan={11} />
             ) : paginatedRows.map((pago) => (
               <TableRow key={`${pago.pedidoId}-${pago.id}`} hover onContextMenu={handleRowContextMenu(pago)}>
                 <TableCell>{pago.fecha ? new Date(pago.fecha).toLocaleString() : "-"}</TableCell>
@@ -287,6 +293,8 @@ export default function PagosRecibidos() {
                 <TableCell>{pago.pedidoFolio}</TableCell>
                 <TableCell>{pago.clienteNombre}</TableCell>
                 <TableCell>{pago.bodegaNombre}</TableCell>
+                <TableCell>{pago.ubicacion || "-"}</TableCell>
+                <TableCell>{pago.banco || "-"}</TableCell>
                 <TableCell>{pago.vendedor || "-"}</TableCell>
                 <TableCell align="right">{money(pago.monto + pago.recargo)}</TableCell>
                 <TableCell>{pago.estado || "-"}</TableCell>
@@ -374,6 +382,12 @@ export default function PagosRecibidos() {
               </Typography>
               <Typography>
                 <strong>Referencia:</strong> {selectedPago.referenciaPago || "N/D"}
+              </Typography>
+              <Typography>
+                <strong>Banco:</strong> {selectedPago.banco || "N/D"}
+              </Typography>
+              <Typography>
+                <strong>Ubicacion del pago:</strong> {selectedPago.ubicacion || "N/D"}
               </Typography>
               <Typography>
                 <strong>Numero de envio/guia:</strong> {selectedPago.numeroEnvio || "N/D"}
