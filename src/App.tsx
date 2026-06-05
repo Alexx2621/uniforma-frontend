@@ -20,6 +20,9 @@ import ConteosFisicos from "./pages/ConteosFisicos";
 import KardexInventario from "./pages/KardexInventario";
 import Traslados from "./pages/Traslados";
 import VentaNueva from "./pages/VentaNueva";
+import OrdenMixta from "./pages/OrdenMixta";
+import OrdenMixtaNueva from "./pages/OrdenMixtaNueva";
+import OrdenMixtaDetalle from "./pages/OrdenMixtaDetalle";
 import Bodegas from "./pages/Bodegas";
 import Clientes from "./pages/Clientes";
 import ClienteFicha from "./pages/ClienteFicha";
@@ -78,6 +81,9 @@ export default function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/ventas" element={<Ventas />} />
           <Route path="/ventas/nueva" element={<VentaNueva />} />
+          <Route path="/orden-mixta" element={<OrdenMixta />} />
+          <Route path="/orden-mixta/nueva" element={<OrdenMixtaNueva />} />
+          <Route path="/orden-mixta/:id" element={<OrdenMixtaDetalle />} />
           <Route path="/cambios" element={<Cambios />} />
           <Route path="/devoluciones" element={<Devoluciones />} />
           <Route path="/productos" element={<Productos />} />

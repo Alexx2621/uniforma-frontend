@@ -2,6 +2,8 @@ export const routePermissionMap: Record<string, string> = {
   "/": "dashboard.view",
   "/ventas": "ventas.view",
   "/ventas/nueva": "ventas.manage",
+  "/orden-mixta": "orden-mixta.view",
+  "/orden-mixta/nueva": "orden-mixta.manage",
   "/cambios": "postventa.view",
   "/devoluciones": "postventa.view",
   "/productos": "productos.view",
@@ -63,6 +65,7 @@ export function getAutoViewPermissionForPath(pathname: string) {
 const defaultRoutePriority = [
   "/",
   "/ventas",
+  "/orden-mixta",
   "/cambios",
   "/devoluciones",
   "/productos",

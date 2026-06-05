@@ -54,6 +54,8 @@ interface PedidoPago {
   bodegaId?: number | string | null;
   pagos?: Pago[];
   vendedor: string;
+  esOrdenMixta?: boolean;
+  ordenMixta?: { id: number; folio?: string | null; saldoTotal?: number; estado?: string | null } | null;
 }
 
 type PagoForm = {
@@ -171,6 +173,7 @@ export default function PagosPedidos() {
         const fecha = `${pedido.fecha || ""}`.slice(0, 10);
         const estadoCerrado = ["anulado", "recibido", "completado", "regresado_produccion"].includes(estado);
         if (estadoCerrado) return false;
+        if (pedido.esOrdenMixta || pedido.ordenMixta) return false;
         if (Number(pedido.saldoPendiente || 0) <= 0) return false;
         if (filtroDesde && fecha < filtroDesde) return false;
         if (filtroHasta && fecha > filtroHasta) return false;

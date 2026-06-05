@@ -13,6 +13,8 @@ import {
   Menu,
   MenuItem,
   ListItemIcon,
+  ToggleButton,
+  ToggleButtonGroup,
 } from "@mui/material";
 import { DataGrid, GridColDef, useGridApiRef } from "@mui/x-data-grid";
 import AddIcon from "@mui/icons-material/Add";
@@ -79,6 +81,7 @@ interface PedidoRow {
   bodegaDisplay?: string;
   folio?: string;
   displayFolio?: string;
+  metodoPago?: string | null;
   solicitadoPor?: string | null;
   unificado?: boolean;
   unificadoCorrelativo?: string | null;
@@ -116,6 +119,7 @@ interface PedidosNavigationState {
       fechaInicio?: string;
       fechaFin?: string;
       bodega?: number | "all";
+      tipoPedido?: "clientes" | "stock" | "ambos";
     };
     pagination?: {
       page?: number;
@@ -349,6 +353,9 @@ export default function Pedidos() {
   const [filterBodega, setFilterBodega] = useState<number | "all">(
     () => restoredPedidosState?.filters?.bodega ?? "all"
   );
+  const [filterTipoPedido, setFilterTipoPedido] = useState<"clientes" | "stock" | "ambos">(
+    () => restoredPedidosState?.filters?.tipoPedido || "clientes"
+  );
   const [paginationModel, setPaginationModel] = useState(() => ({
     page: Math.max(0, Number(restoredPedidosState?.pagination?.page || 0)),
     pageSize: Number(restoredPedidosState?.pagination?.pageSize || 10),
@@ -385,6 +392,7 @@ export default function Pedidos() {
         fechaInicio: filterFechaInicio,
         fechaFin: filterFechaFin,
         bodega: filterBodega,
+        tipoPedido: filterTipoPedido,
       },
       pagination: paginationModel,
       selectedId: pedidoId ?? selectedPedidoId,
@@ -700,7 +708,7 @@ export default function Pedidos() {
       return;
     }
     setPaginationModel((prev) => ({ ...prev, page: 0 }));
-  }, [filterCliente, filterFechaInicio, filterFechaFin, filterBodega]);
+  }, [filterCliente, filterFechaInicio, filterFechaFin, filterBodega, filterTipoPedido]);
 
   useEffect(() => {
     const nextState = (location.state as PedidosNavigationState | null)?.pedidosState;
@@ -710,6 +718,7 @@ export default function Pedidos() {
     setFilterFechaInicio(nextState.filters?.fechaInicio || getTodayDateInputValue());
     setFilterFechaFin(nextState.filters?.fechaFin || getTodayDateInputValue());
     setFilterBodega(nextState.filters?.bodega ?? "all");
+    setFilterTipoPedido(nextState.filters?.tipoPedido || "clientes");
     setPaginationModel({
       page: Math.max(0, Number(nextState.pagination?.page || 0)),
       pageSize: Number(nextState.pagination?.pageSize || 10),
@@ -732,16 +741,20 @@ export default function Pedidos() {
         filterBodega === "all" ? true : Number(r.bodegaId) === Number(filterBodega);
       const cumpleFechaInicio = !filterFechaInicio || (!!fechaPedido && fechaPedido >= filterFechaInicio);
       const cumpleFechaFin = !filterFechaFin || (!!fechaPedido && fechaPedido <= filterFechaFin);
+      const esStock = `${r.metodoPago || ""}`.trim().toLowerCase() === "sin_cobro_stock";
+      const cumpleTipoPedido =
+        filterTipoPedido === "ambos" ? true : filterTipoPedido === "stock" ? esStock : !esStock;
 
       return (
         cli.includes(filterCliente.toLowerCase()) &&
         bodegaUsuario &&
         bodegaSeleccionada &&
         cumpleFechaInicio &&
-        cumpleFechaFin
+        cumpleFechaFin &&
+        cumpleTipoPedido
       );
     });
-  }, [rows, filterCliente, filterBodega, filterFechaInicio, filterFechaFin, canAccessAllBodegas, userBodegaId]);
+  }, [rows, filterCliente, filterBodega, filterFechaInicio, filterFechaFin, filterTipoPedido, canAccessAllBodegas, userBodegaId]);
 
   useEffect(() => {
     if (!selectedPedidoId || !filtered.length) return;
@@ -777,7 +790,8 @@ export default function Pedidos() {
     if (!canUnifyPedidos) return [];
     return filtered.filter((pedido) => {
       const estado = `${pedido.estado || ""}`.trim().toLowerCase();
-      return estado !== "anulado" && !pedido.unificado;
+      const esStock = `${pedido.metodoPago || ""}`.trim().toLowerCase() === "sin_cobro_stock";
+      return estado !== "anulado" && !pedido.unificado && !esStock;
     });
   }, [filtered, canUnifyPedidos]);
 
@@ -1074,6 +1088,15 @@ export default function Pedidos() {
       renderCell: (p) => <span>{obtenerNombreCliente((p as any)?.row)}</span>,
     },
     {
+      field: "tipoPedido",
+      headerName: "Tipo",
+      width: 110,
+      renderCell: (p) => {
+        const esStock = `${p.row.metodoPago || ""}`.trim().toLowerCase() === "sin_cobro_stock";
+        return <Chip size="small" label={esStock ? "Stock" : "Cliente"} color={esStock ? "warning" : "primary"} variant="outlined" />;
+      },
+    },
+    {
       field: "bodega",
       headerName: "Bodega",
       flex: 1,
@@ -1195,6 +1218,24 @@ export default function Pedidos() {
             Nuevo pedido
           </Button>
         </Stack>
+      </Stack>
+
+      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }} spacing={2}>
+        <ToggleButtonGroup
+          exclusive
+          size="small"
+          value={filterTipoPedido}
+          onChange={(_, value) => {
+            if (value) setFilterTipoPedido(value);
+          }}
+        >
+          <ToggleButton value="clientes">Clientes</ToggleButton>
+          <ToggleButton value="stock">Stock</ToggleButton>
+          <ToggleButton value="ambos">Ambos</ToggleButton>
+        </ToggleButtonGroup>
+        <Typography variant="body2" color="text.secondary">
+          Los pedidos para stock no se incluyen en el unificado. Usa Detalle PDF para imprimirlos individualmente.
+        </Typography>
       </Stack>
 
       <Grid container spacing={2} sx={{ mb: 2 }}>

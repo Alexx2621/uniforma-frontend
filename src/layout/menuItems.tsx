@@ -1,6 +1,7 @@
 import { ReactNode } from "react";
 import DashboardOutlined from "@mui/icons-material/DashboardOutlined";
 import PointOfSaleOutlined from "@mui/icons-material/PointOfSaleOutlined";
+import CallSplitOutlined from "@mui/icons-material/CallSplitOutlined";
 import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
 import PeopleOutline from "@mui/icons-material/PeopleOutline";
 import AssessmentOutlined from "@mui/icons-material/AssessmentOutlined";
@@ -58,6 +59,7 @@ export const menuSections: MenuSection[] = [
     items: [
       { label: "Dashboard", icon: <DashboardOutlined />, path: "/" },
       { label: "Ventas", icon: <PointOfSaleOutlined />, path: "/ventas" },
+      { label: "Orden mixta", icon: <CallSplitOutlined />, path: "/orden-mixta" },
       { label: "Envios", icon: <LocalShippingOutlined />, path: "/envios" },
       { label: "Cambios", icon: <SwapHorizOutlined />, path: "/cambios" },
       { label: "Devoluciones", icon: <AssignmentReturnOutlined />, path: "/devoluciones" },

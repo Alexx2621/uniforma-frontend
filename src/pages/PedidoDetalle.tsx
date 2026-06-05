@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Alert,
   Paper,
   Typography,
   Stack,
@@ -18,6 +19,8 @@ import {
   Select,
   MenuItem,
   Box,
+  FormControlLabel,
+  Switch,
 } from "@mui/material";
 import PlaylistAddCheckOutlined from "@mui/icons-material/PlaylistAddCheckOutlined";
 import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
@@ -354,6 +357,7 @@ export default function PedidoDetalle() {
   const [tallas, setTallas] = useState<any[]>([]);
   const [colores, setColores] = useState<any[]>([]);
   const [historial, setHistorial] = useState<ActivityLog[]>([]);
+  const [ingresarInventarioStock, setIngresarInventarioStock] = useState(true);
   const canAccessAllBodegas = hasPermission(rol, permisos, "sistema.multi-tienda");
 
   const cargar = useCallback(async () => {
@@ -414,6 +418,7 @@ export default function PedidoDetalle() {
   const esPendientePago = `${pedido?.estado || ""}`.trim().toLowerCase() === "pendiente_pago";
   const esRegresadoProduccion = `${pedido?.estado || ""}`.trim().toLowerCase() === "regresado_produccion";
   const esRecibido = ["recibido", "completado", "pendiente_pago"].includes(`${pedido?.estado || ""}`.trim().toLowerCase());
+  const esPedidoParaStock = `${pedido?.metodoPago || ""}`.trim().toLowerCase() === "sin_cobro_stock";
 
   const volver = () => {
     navigate(returnState?.returnTo || "/produccion", {
@@ -441,9 +446,34 @@ export default function PedidoDetalle() {
   };
 
   const terminar = async () => {
+    if (esPedidoParaStock && ingresarInventarioStock && !Number(bodegaIngreso || 0)) {
+      Swal.fire("Bodega requerida", "Selecciona la bodega donde se ingresara el inventario.", "warning");
+      return;
+    }
+
+    const confirmacion = await Swal.fire({
+      title: esPedidoParaStock && ingresarInventarioStock ? "Recibir e ingresar inventario" : "Marcar pedido como recibido",
+      text:
+        esPedidoParaStock && ingresarInventarioStock
+          ? "Las cantidades del pedido para stock se sumaran al inventario de la bodega seleccionada."
+          : "El pedido cambiara de estado, pero no movera inventario.",
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "Continuar",
+      cancelButtonText: "Cancelar",
+    });
+    if (!confirmacion.isConfirmed) return;
+
     try {
-      await api.post(`/produccion/${id}/terminar`, {});
-      Swal.fire("Listo", saldoCalculado > 0 ? "Pedido recibido y pendiente de pago" : "Pedido marcado como recibido", "success");
+      const { data } = await api.post(`/produccion/${id}/terminar`, {
+        bodegaId: Number(bodegaIngreso || 0) || null,
+        ingresarInventario: esPedidoParaStock && ingresarInventarioStock,
+      });
+      Swal.fire(
+        "Listo",
+        data?.mensaje || (saldoCalculado > 0 ? "Pedido recibido y pendiente de pago" : "Pedido marcado como recibido"),
+        "success",
+      );
       volver();
     } catch (error: any) {
       const msg = error?.response?.data?.message || error?.message || "No se pudo terminar";
@@ -836,6 +866,11 @@ export default function PedidoDetalle() {
           >
             <Stack spacing={1.5}>
               <Typography variant="h6">Marcar pedido como recibido</Typography>
+              {esPedidoParaStock && (
+                <Alert severity="info">
+                  Este es un pedido para stock. Puedes ingresarlo al inventario de una vez al marcarlo como recibido.
+                </Alert>
+              )}
               <FormControl fullWidth size="small" disabled={esAnulado || esRecibido}>
                 <InputLabel>Bodega ingreso</InputLabel>
                 <Select
@@ -851,8 +886,22 @@ export default function PedidoDetalle() {
                   ))}
                 </Select>
               </FormControl>
+              {esPedidoParaStock && (
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={ingresarInventarioStock}
+                      onChange={(e) => setIngresarInventarioStock(e.target.checked)}
+                      disabled={esAnulado || esRecibido}
+                    />
+                  }
+                  label="Ingresar cantidades al inventario al recibir"
+                />
+              )}
               <Typography variant="body2" color="text.secondary">
-                Este boton cambiara el estado del pedido a pendiente de pago si aun tiene saldo. No se movera stock al inventario.
+                {esPedidoParaStock && ingresarInventarioStock
+                  ? "Este boton cambiara el estado del pedido y sumara las cantidades producidas al inventario de la bodega seleccionada."
+                  : "Este boton cambiara el estado del pedido a pendiente de pago si aun tiene saldo. No se movera stock al inventario."}
               </Typography>
               <Button
                 variant="contained"
@@ -861,7 +910,7 @@ export default function PedidoDetalle() {
                 onClick={terminar}
                 disabled={esAnulado || esRecibido || loading}
               >
-                Marcar como recibido
+                {esPedidoParaStock && ingresarInventarioStock ? "Recibir e ingresar inventario" : "Marcar como recibido"}
               </Button>
               {esPendientePago && (
                 <Typography variant="caption" color="warning.main">
