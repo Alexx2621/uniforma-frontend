@@ -500,13 +500,12 @@ export default function Pedidos() {
     (typeof row?.bodega === "string" ? row?.bodega : undefined) ||
     "N/D";
 
-  const obtenerUsuarioPedido = (row: any) =>
-    row?.solicitadoPor ||
-    row?.usuario?.nombre ||
-    row?.usuario?.usuario ||
-    row?.creadoPor ||
-    row?.vendedor ||
-    "N/D";
+  const obtenerUsuarioPedido = (row: any) => {
+    const solicitadoPor = `${row?.solicitadoPor || ""}`.trim();
+    const usuarioReal = row?.usuario?.nombre || row?.usuario?.usuario || row?.creadoPor || row?.vendedor || "";
+    if (solicitadoPor && solicitadoPor.toLowerCase() !== "stock bajo") return solicitadoPor;
+    return usuarioReal || solicitadoPor || "N/D";
+  };
 
   const normalizarTexto = (value?: string | null) => {
     const limpio = `${value || ""}`.trim();
@@ -1106,7 +1105,7 @@ export default function Pedidos() {
       field: "solicitadoPor",
       headerName: "Registrado por",
       width: 200,
-      renderCell: (p) => <span>{p.row.solicitadoPor || "N/D"}</span>,
+      renderCell: (p) => <span>{obtenerUsuarioPedido(p.row)}</span>,
     },
     {
       field: "estado",

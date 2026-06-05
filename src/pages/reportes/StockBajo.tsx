@@ -337,7 +337,7 @@ export default function StockBajo() {
           bodegaId,
           ubicacion: "TIENDA",
           observaciones: "",
-          solicitadoPor: "Stock bajo",
+          solicitadoPor: null,
           totalEstimado: 0,
           anticipo: 0,
           envio: 0,
