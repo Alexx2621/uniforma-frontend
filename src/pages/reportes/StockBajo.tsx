@@ -52,9 +52,34 @@ interface RowInv {
   faltan: number;
 }
 
+interface RowConsolidado {
+  productoId: number;
+  codigo: string;
+  producto: string;
+  tipo: string;
+  genero: string;
+  tela: string;
+  talla: string;
+  color: string;
+  stock: number;
+  stockMax: number;
+  faltan5: number;
+  faltan10: number;
+  faltan15: number;
+  faltan20: number;
+  bodegas: number;
+}
+
 type Prioridad = "critico" | "bajo" | "normal";
 
 const keyOf = (row: RowInv) => `${row.bodegaId}-${row.productoId}`;
+const escapeHtml = (value: unknown) =>
+  `${value ?? ""}`
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 const toStringArray = (value: unknown) =>
   (typeof value === "string" ? value.split(",") : Array.isArray(value) ? value : [])
     .map((item) => `${item}`.trim())
@@ -63,7 +88,7 @@ const toNumberArray = (value: unknown) =>
   toStringArray(value)
     .map((item) => Number(item))
     .filter((item) => Number.isFinite(item));
-const getObjetivoStock = (row: RowInv) => Math.max(Number(row.stockMax || 0), 20);
+const getObjetivoStock = (row: RowInv) => Math.max(0, Number(row.stockMax || 0));
 const getSugerido = (row: RowInv) => Math.max(0, getObjetivoStock(row) - Number(row.stock || 0));
 const getPrioridad = (row: RowInv): Prioridad => {
   const stock = Number(row.stock || 0);
@@ -71,6 +96,8 @@ const getPrioridad = (row: RowInv): Prioridad => {
   if (stock < 20) return "bajo";
   return "normal";
 };
+const faltanteA = (stock: number, objetivo: number) => Math.max(0, objetivo - Number(stock || 0));
+const csvValue = (value: unknown) => `"${`${value ?? ""}`.replace(/"/g, '""')}"`;
 
 const exportCsv = (rows: RowInv[]) => {
   const headers = ["Codigo", "Tipo", "Genero", "Tela", "Talla", "Color", "Bodega", "Stock", "Objetivo", "Sugerido", "Prioridad"];
@@ -127,6 +154,175 @@ const exportPdf = (rows: RowInv[]) => {
     <table>
       <thead>
         <tr><th>Codigo</th><th>Tipo</th><th>Genero</th><th>Tela</th><th>Talla</th><th>Color</th><th>Bodega</th><th>Stock</th><th>Objetivo</th><th>Sugerido</th><th>Prioridad</th></tr>
+      </thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+    <script>window.onload = function(){window.print();}</script>
+  </body></html>`);
+  win.document.close();
+};
+
+const exportConsolidadoExcel = (rows: RowConsolidado[]) => {
+  const headers = [
+    "Codigo",
+    "Tipo",
+    "Genero",
+    "Tela",
+    "Talla",
+    "Color",
+    "Stock maximo",
+    "Stock actual",
+    "Falta a 5",
+    "Falta a 10",
+    "Falta a 15",
+    "Falta a 20",
+    "Bodegas",
+  ];
+  const tableRows = rows
+    .map(
+      (row) => `<tr>
+        <td>${escapeHtml(row.codigo)}</td>
+        <td>${escapeHtml(row.tipo)}</td>
+        <td>${escapeHtml(row.genero)}</td>
+        <td>${escapeHtml(row.tela)}</td>
+        <td>${escapeHtml(row.talla)}</td>
+        <td>${escapeHtml(row.color)}</td>
+        <td>${row.stockMax}</td>
+        <td>${row.stock}</td>
+        <td>${row.faltan5}</td>
+        <td>${row.faltan10}</td>
+        <td>${row.faltan15}</td>
+        <td>${row.faltan20}</td>
+        <td>${row.bodegas}</td>
+      </tr>`,
+    )
+    .join("");
+  const html = `<!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <style>
+          table { border-collapse: collapse; }
+          th, td { border: 1px solid #1f2937; padding: 6px; font-size: 11px; }
+          th { background: #1f3f87; color: #ffffff; font-weight: 700; }
+          .num { text-align: right; }
+        </style>
+      </head>
+      <body>
+        <h3>Consolidado de faltantes de stock</h3>
+        <table>
+          <thead><tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      </body>
+    </html>`;
+  const blob = new Blob(["\ufeff", html], { type: "application/vnd.ms-excel;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `consolidado-stock-${new Date().toISOString().slice(0, 10)}.xls`;
+  link.click();
+  URL.revokeObjectURL(url);
+};
+
+const exportConsolidadoCsv = (rows: RowConsolidado[]) => {
+  const headers = ["Codigo", "Tipo", "Genero", "Tela", "Talla", "Color", "Stock maximo", "Stock actual", "Falta a 5", "Falta a 10", "Falta a 15", "Falta a 20", "Bodegas"];
+  const lines = rows.map((row) =>
+    [
+      row.codigo,
+      row.tipo,
+      row.genero,
+      row.tela,
+      row.talla,
+      row.color,
+      row.stockMax,
+      row.stock,
+      row.faltan5,
+      row.faltan10,
+      row.faltan15,
+      row.faltan20,
+      row.bodegas,
+    ]
+      .map(csvValue)
+      .join(","),
+  );
+  const csv = [headers.map(csvValue).join(","), ...lines].join("\n");
+  const blob = new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `consolidado-stock-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+};
+
+const exportConsolidadoPdf = (rows: RowConsolidado[]) => {
+  const win = window.open("", "_blank");
+  if (!win) {
+    Swal.fire("Aviso", "Habilita ventanas emergentes para exportar a PDF", "info");
+    return;
+  }
+  const rowsHtml = rows
+    .map(
+      (row) => `<tr>
+        <td>${escapeHtml(row.codigo)}</td>
+        <td>${escapeHtml(row.tipo)}</td>
+        <td>${escapeHtml(row.genero)}</td>
+        <td>${escapeHtml(row.tela)}</td>
+        <td>${escapeHtml(row.talla)}</td>
+        <td>${escapeHtml(row.color)}</td>
+        <td class="num">${row.stockMax}</td>
+        <td class="num">${row.stock}</td>
+        <td class="num">${row.faltan5}</td>
+        <td class="num">${row.faltan10}</td>
+        <td class="num">${row.faltan15}</td>
+        <td class="num ${row.faltan20 > 0 ? "need20" : ""}">${row.faltan20}</td>
+      </tr>`,
+    )
+    .join("");
+  const totalStock = rows.reduce((sum, row) => sum + row.stock, 0);
+  const total20 = rows.reduce((sum, row) => sum + row.faltan20, 0);
+  win.document.write(`<!doctype html>
+  <html><head>
+    <meta charset="utf-8" />
+    <title>Consolidado de faltantes de stock</title>
+    <style>
+      @page { size: A4 landscape; margin: 12mm; }
+      body { font-family: ${PDF_FONT_FAMILY}; margin: 0; color: #111827; }
+      h1 { margin: 0; font-size: 18px; color: #1f3f87; font-family: ${PDF_FONT_SEMIBOLD_FAMILY}; font-weight: 600; }
+      .meta { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 3px solid #d90000; padding-bottom: 8px; margin-bottom: 10px; }
+      .subtitle { font-size: 10px; color: #4b5563; margin-top: 3px; }
+      .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 8px 0 10px; }
+      .box { border: 1px solid #1f3f87; padding: 5px 7px; font-size: 10px; }
+      .box strong { display: block; font-size: 13px; margin-top: 2px; }
+      table { border-collapse: collapse; width: 100%; font-size: 8.5px; }
+      th, td { border: 1px solid #9ca3af; padding: 4px 5px; text-align: left; vertical-align: middle; }
+      th { background: #1f3f87; color: #fff; font-family: ${PDF_FONT_SEMIBOLD_FAMILY}; font-weight: 600; }
+      tbody tr:nth-child(even) { background: #f8fafc; }
+      .num { text-align: right; font-variant-numeric: tabular-nums; }
+      .need20 { color: #b91c1c; font-family: ${PDF_FONT_SEMIBOLD_FAMILY}; font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <div class="meta">
+      <div>
+        <h1>Consolidado de faltantes de stock</h1>
+        <div class="subtitle">Generado el ${new Date().toLocaleDateString("es-GT")} · ${rows.length} producto(s)</div>
+      </div>
+      <div class="subtitle">Uniforma</div>
+    </div>
+    <div class="summary">
+      <div class="box">Productos<strong>${rows.length}</strong></div>
+      <div class="box">Stock actual<strong>${totalStock.toLocaleString("en-US")}</strong></div>
+      <div class="box">Falta para llegar a 20<strong>${total20.toLocaleString("en-US")}</strong></div>
+      <div class="box">Sin stock<strong>${rows.filter((row) => row.stock <= 0).length}</strong></div>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Codigo</th><th>Tipo</th><th>Genero</th><th>Tela</th><th>Talla</th><th>Color</th>
+          <th>Stock max.</th><th>Stock</th><th>Falta 5</th><th>Falta 10</th><th>Falta 15</th><th>Falta 20</th>
+        </tr>
       </thead>
       <tbody>${rowsHtml}</tbody>
     </table>
@@ -207,7 +403,7 @@ export default function StockBajo() {
       .filter(Boolean);
 
     return inventario
-      .filter((r) => Number(r.stock || 0) < 20)
+      .filter((r) => getObjetivoStock(r) > 0 && Number(r.stock || 0) < getObjetivoStock(r))
       .filter((r) => {
         if (bodegaFiltro.length && !bodegaFiltro.includes(Number(r.bodegaId))) return false;
         if (tipoFiltro.length && !tipoFiltro.includes(`${r.tipo || ""}`)) return false;
@@ -228,6 +424,91 @@ export default function StockBajo() {
         return Number(a.stock || 0) - Number(b.stock || 0);
       });
   }, [inventario, bodegaFiltro, tipoFiltro, generoFiltro, telaFiltro, tallaFiltro, colorFiltro, prioridadFiltro, busqueda]);
+
+  const consolidado = useMemo<RowConsolidado[]>(() => {
+    const tokens = busqueda
+      .trim()
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(Boolean);
+    const agrupado = new Map<number, RowConsolidado & { bodegaIds: Set<number> }>();
+
+    inventario
+      .filter((r) => {
+        if (bodegaFiltro.length && !bodegaFiltro.includes(Number(r.bodegaId))) return false;
+        if (tipoFiltro.length && !tipoFiltro.includes(`${r.tipo || ""}`)) return false;
+        if (generoFiltro.length && !generoFiltro.includes(`${r.genero || ""}`)) return false;
+        if (telaFiltro.length && !telaFiltro.includes(`${r.tela || ""}`)) return false;
+        if (tallaFiltro.length && !tallaFiltro.includes(`${r.talla || ""}`)) return false;
+        if (colorFiltro.length && !colorFiltro.includes(`${r.color || ""}`)) return false;
+        if (!tokens.length) return true;
+        const haystack = [r.codigo, r.producto, r.tipo, r.genero, r.tela, r.talla, r.color, r.bodega].join(" ").toLowerCase();
+        return tokens.every((token) => haystack.includes(token));
+      })
+      .forEach((row) => {
+        const current = agrupado.get(row.productoId);
+        if (current) {
+          current.stock += Number(row.stock || 0);
+          current.stockMax = Math.max(current.stockMax, Number(row.stockMax || 0));
+          current.bodegaIds.add(Number(row.bodegaId));
+          current.bodegas = current.bodegaIds.size;
+          return;
+        }
+
+        agrupado.set(row.productoId, {
+          productoId: row.productoId,
+          codigo: row.codigo,
+          producto: row.producto,
+          tipo: row.tipo || "N/D",
+          genero: row.genero || "N/D",
+          tela: row.tela || "N/D",
+          talla: row.talla || "N/D",
+          color: row.color || "N/D",
+          stock: Number(row.stock || 0),
+          stockMax: Number(row.stockMax || 0),
+          faltan5: 0,
+          faltan10: 0,
+          faltan15: 0,
+          faltan20: 0,
+          bodegas: 1,
+          bodegaIds: new Set([Number(row.bodegaId)]),
+        });
+      });
+
+    return Array.from(agrupado.values())
+      .map(({ bodegaIds, ...row }) => ({
+        ...row,
+        faltan5: faltanteA(row.stock, 5),
+        faltan10: faltanteA(row.stock, 10),
+        faltan15: faltanteA(row.stock, 15),
+        faltan20: faltanteA(row.stock, 20),
+      }))
+      .filter((row) => {
+        if (!prioridadFiltro.length) return true;
+        const prioridad = row.stock < 10 ? "critico" : row.stock < 20 ? "bajo" : "normal";
+        return prioridadFiltro.includes(prioridad as Prioridad);
+      })
+      .sort((a, b) => {
+        const faltaDiff = b.faltan20 - a.faltan20;
+        if (faltaDiff) return faltaDiff;
+        const stockDiff = a.stock - b.stock;
+        if (stockDiff) return stockDiff;
+        return a.codigo.localeCompare(b.codigo);
+      });
+  }, [inventario, bodegaFiltro, tipoFiltro, generoFiltro, telaFiltro, tallaFiltro, colorFiltro, prioridadFiltro, busqueda]);
+
+  const consolidadoStats = useMemo(
+    () => ({
+      productos: consolidado.length,
+      stock: consolidado.reduce((sum, row) => sum + row.stock, 0),
+      faltan5: consolidado.reduce((sum, row) => sum + row.faltan5, 0),
+      faltan10: consolidado.reduce((sum, row) => sum + row.faltan10, 0),
+      faltan15: consolidado.reduce((sum, row) => sum + row.faltan15, 0),
+      faltan20: consolidado.reduce((sum, row) => sum + row.faltan20, 0),
+      sinStock: consolidado.filter((row) => row.stock <= 0).length,
+    }),
+    [consolidado],
+  );
 
   const stats = useMemo(() => {
     const criticos = filas.filter((row) => getPrioridad(row) === "critico").length;
@@ -385,7 +666,7 @@ export default function StockBajo() {
         <div>
           <Typography variant="h4">Stock bajo</Typography>
           <Typography variant="body2" color="text.secondary">
-            Prioriza reposicion: critico menor a 10 unidades, bajo menor a 20 unidades.
+            Prioriza reposicion segun el stock maximo configurado en cada producto.
           </Typography>
         </div>
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
@@ -617,8 +898,95 @@ export default function StockBajo() {
       </Paper>
 
       <Alert severity="info" icon={<WarningAmberOutlined />}>
-        La cantidad sugerida repone hasta el mayor valor entre el stock maximo del producto y 20 unidades. Puedes editar la cantidad antes de crear el pedido.
+        La cantidad sugerida repone hasta el stock maximo configurado en cada producto. Puedes editar la cantidad antes de crear el pedido.
       </Alert>
+
+      <Paper sx={{ p: 2 }}>
+        <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" alignItems={{ xs: "stretch", md: "center" }} spacing={1.5} sx={{ mb: 2 }}>
+          <Box>
+            <Typography variant="h6">Consolidado de faltantes</Typography>
+            <Typography variant="body2" color="text.secondary">
+              Suma el stock por producto segun los filtros actuales y calcula cuanto falta para llegar a 5, 10, 15 y 20 unidades.
+            </Typography>
+          </Box>
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            <Button startIcon={<FileDownloadOutlined />} variant="outlined" onClick={() => exportConsolidadoCsv(consolidado)} disabled={!consolidado.length}>
+              CSV
+            </Button>
+            <Button startIcon={<FileDownloadOutlined />} variant="outlined" onClick={() => exportConsolidadoExcel(consolidado)} disabled={!consolidado.length}>
+              Excel
+            </Button>
+            <Button startIcon={<PictureAsPdfOutlined />} variant="contained" onClick={() => exportConsolidadoPdf(consolidado)} disabled={!consolidado.length}>
+              PDF consolidado
+            </Button>
+          </Stack>
+        </Stack>
+
+        <Grid container spacing={1.5} sx={{ mb: 2 }}>
+          <MiniMetric title="Productos" value={consolidadoStats.productos} />
+          <MiniMetric title="Stock actual" value={consolidadoStats.stock} />
+          <MiniMetric title="Sin stock" value={consolidadoStats.sinStock} tone="danger" />
+          <MiniMetric title="Falta a 5" value={consolidadoStats.faltan5} />
+          <MiniMetric title="Falta a 10" value={consolidadoStats.faltan10} />
+          <MiniMetric title="Falta a 15" value={consolidadoStats.faltan15} />
+          <MiniMetric title="Falta a 20" value={consolidadoStats.faltan20} tone="warning" />
+        </Grid>
+
+        <TableContainer sx={{ maxHeight: 360, border: "1px solid", borderColor: "divider" }}>
+          <Table size="small" stickyHeader>
+            <TableHead>
+              <TableRow>
+                <TableCell>Codigo</TableCell>
+                <TableCell>Tipo</TableCell>
+                <TableCell>Genero</TableCell>
+                <TableCell>Tela</TableCell>
+                <TableCell>Talla</TableCell>
+                <TableCell>Color</TableCell>
+                <TableCell align="right">Stock max.</TableCell>
+                <TableCell align="right">Stock</TableCell>
+                <TableCell align="right">Falta 5</TableCell>
+                <TableCell align="right">Falta 10</TableCell>
+                <TableCell align="right">Falta 15</TableCell>
+                <TableCell align="right">Falta 20</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {consolidado.slice(0, 25).map((row) => (
+                <TableRow key={row.productoId} hover>
+                  <TableCell>{row.codigo}</TableCell>
+                  <TableCell>{row.tipo}</TableCell>
+                  <TableCell>{row.genero}</TableCell>
+                  <TableCell>{row.tela}</TableCell>
+                  <TableCell>{row.talla}</TableCell>
+                  <TableCell>{row.color}</TableCell>
+                  <TableCell align="right">{row.stockMax}</TableCell>
+                  <TableCell align="right">{row.stock}</TableCell>
+                  <TableCell align="right">{row.faltan5}</TableCell>
+                  <TableCell align="right">{row.faltan10}</TableCell>
+                  <TableCell align="right">{row.faltan15}</TableCell>
+                  <TableCell align="right">
+                    <Typography component="span" color={row.faltan20 > 0 ? "error.main" : "text.primary"} fontWeight={row.faltan20 > 0 ? 700 : 400}>
+                      {row.faltan20}
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {!consolidado.length && (
+                <TableRow>
+                  <TableCell colSpan={12} align="center">
+                    No hay productos para consolidar con los filtros actuales.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+        {consolidado.length > 25 && (
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
+            Vista previa de 25 lineas. El PDF y Excel incluyen las {consolidado.length.toLocaleString("en-US")} lineas filtradas.
+          </Typography>
+        )}
+      </Paper>
 
       <Paper sx={{ p: 2 }}>
         <TableContainer>
@@ -702,7 +1070,7 @@ export default function StockBajo() {
               {!loading && !paginatedRows.length && (
                 <TableRow>
                   <TableCell colSpan={12} align="center">
-                    No hay productos por debajo de 20 unidades con los filtros actuales.
+                    No hay productos por debajo de su stock maximo con los filtros actuales.
                   </TableCell>
                 </TableRow>
               )}
@@ -728,6 +1096,32 @@ function Metric({ title, value, helper, color }: { title: string; value: number;
           {helper}
         </Typography>
       </Paper>
+    </Grid>
+  );
+}
+
+function MiniMetric({ title, value, tone = "default" }: { title: string; value: number; tone?: "default" | "warning" | "danger" }) {
+  const color = tone === "danger" ? "#b91c1c" : tone === "warning" ? "#c2410c" : "#1f3f87";
+  return (
+    <Grid size={{ xs: 6, sm: 4, md: 3, lg: 12 / 7 }}>
+      <Box
+        sx={{
+          border: "1px solid",
+          borderColor: "divider",
+          borderLeft: `4px solid ${color}`,
+          px: 1.5,
+          py: 1,
+          minHeight: 62,
+          bgcolor: "background.paper",
+        }}
+      >
+        <Typography variant="caption" color="text.secondary">
+          {title}
+        </Typography>
+        <Typography variant="subtitle1" sx={{ color, fontWeight: 700, lineHeight: 1.2 }}>
+          {Number(value || 0).toLocaleString("en-US")}
+        </Typography>
+      </Box>
     </Grid>
   );
 }
