@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
+  Box,
   Button,
   Checkbox,
   Chip,
@@ -11,6 +12,7 @@ import {
   MenuItem,
   Paper,
   Select,
+  OutlinedInput,
   Stack,
   Table,
   TableBody,
@@ -53,6 +55,14 @@ interface RowInv {
 type Prioridad = "critico" | "bajo" | "normal";
 
 const keyOf = (row: RowInv) => `${row.bodegaId}-${row.productoId}`;
+const toStringArray = (value: unknown) =>
+  (typeof value === "string" ? value.split(",") : Array.isArray(value) ? value : [])
+    .map((item) => `${item}`.trim())
+    .filter(Boolean);
+const toNumberArray = (value: unknown) =>
+  toStringArray(value)
+    .map((item) => Number(item))
+    .filter((item) => Number.isFinite(item));
 const getObjetivoStock = (row: RowInv) => Math.max(Number(row.stockMax || 0), 20);
 const getSugerido = (row: RowInv) => Math.max(0, getObjetivoStock(row) - Number(row.stock || 0));
 const getPrioridad = (row: RowInv): Prioridad => {
@@ -127,14 +137,14 @@ const exportPdf = (rows: RowInv[]) => {
 
 export default function StockBajo() {
   const [inventario, setInventario] = useState<RowInv[]>([]);
-  const [bodega, setBodega] = useState<string | number>("");
-  const [prioridad, setPrioridad] = useState<"todos" | Prioridad>("todos");
+  const [bodegaFiltro, setBodegaFiltro] = useState<number[]>([]);
+  const [prioridadFiltro, setPrioridadFiltro] = useState<Prioridad[]>([]);
   const [busqueda, setBusqueda] = useState("");
-  const [tipoFiltro, setTipoFiltro] = useState("");
-  const [generoFiltro, setGeneroFiltro] = useState("");
-  const [telaFiltro, setTelaFiltro] = useState("");
-  const [tallaFiltro, setTallaFiltro] = useState("");
-  const [colorFiltro, setColorFiltro] = useState("");
+  const [tipoFiltro, setTipoFiltro] = useState<string[]>([]);
+  const [generoFiltro, setGeneroFiltro] = useState<string[]>([]);
+  const [telaFiltro, setTelaFiltro] = useState<string[]>([]);
+  const [tallaFiltro, setTallaFiltro] = useState<string[]>([]);
+  const [colorFiltro, setColorFiltro] = useState<string[]>([]);
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set());
   const [cantidades, setCantidades] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
@@ -199,14 +209,14 @@ export default function StockBajo() {
     return inventario
       .filter((r) => Number(r.stock || 0) < 20)
       .filter((r) => {
-        if (bodega && r.bodegaId !== Number(bodega)) return false;
-        if (tipoFiltro && `${r.tipo || ""}` !== tipoFiltro) return false;
-        if (generoFiltro && `${r.genero || ""}` !== generoFiltro) return false;
-        if (telaFiltro && `${r.tela || ""}` !== telaFiltro) return false;
-        if (tallaFiltro && `${r.talla || ""}` !== tallaFiltro) return false;
-        if (colorFiltro && `${r.color || ""}` !== colorFiltro) return false;
+        if (bodegaFiltro.length && !bodegaFiltro.includes(Number(r.bodegaId))) return false;
+        if (tipoFiltro.length && !tipoFiltro.includes(`${r.tipo || ""}`)) return false;
+        if (generoFiltro.length && !generoFiltro.includes(`${r.genero || ""}`)) return false;
+        if (telaFiltro.length && !telaFiltro.includes(`${r.tela || ""}`)) return false;
+        if (tallaFiltro.length && !tallaFiltro.includes(`${r.talla || ""}`)) return false;
+        if (colorFiltro.length && !colorFiltro.includes(`${r.color || ""}`)) return false;
         const rowPrioridad = getPrioridad(r);
-        if (prioridad !== "todos" && rowPrioridad !== prioridad) return false;
+        if (prioridadFiltro.length && !prioridadFiltro.includes(rowPrioridad)) return false;
         if (!tokens.length) return true;
         const haystack = [r.codigo, r.producto, r.tipo, r.genero, r.tela, r.talla, r.color, r.bodega].join(" ").toLowerCase();
         return tokens.every((token) => haystack.includes(token));
@@ -217,7 +227,7 @@ export default function StockBajo() {
         if (diff) return diff;
         return Number(a.stock || 0) - Number(b.stock || 0);
       });
-  }, [inventario, bodega, tipoFiltro, generoFiltro, telaFiltro, tallaFiltro, colorFiltro, prioridad, busqueda]);
+  }, [inventario, bodegaFiltro, tipoFiltro, generoFiltro, telaFiltro, tallaFiltro, colorFiltro, prioridadFiltro, busqueda]);
 
   const stats = useMemo(() => {
     const criticos = filas.filter((row) => getPrioridad(row) === "critico").length;
@@ -409,10 +419,23 @@ export default function StockBajo() {
           <Grid size={{ xs: 12, sm: 6, md: 3 }}>
             <FormControl fullWidth>
               <InputLabel>Bodega</InputLabel>
-              <Select label="Bodega" value={bodega === "" ? "" : bodega} onChange={(e) => setBodega(e.target.value === "" ? "" : Number(e.target.value))}>
-                <MenuItem value="">Todas</MenuItem>
+              <Select
+                multiple
+                label="Bodega"
+                value={bodegaFiltro}
+                input={<OutlinedInput label="Bodega" />}
+                onChange={(e) => setBodegaFiltro(toNumberArray(e.target.value))}
+                renderValue={(selected) => (
+                  <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                    {selected.map((value) => (
+                      <Chip key={value} label={bodegas.find((b) => b.id === Number(value))?.nombre || value} size="small" />
+                    ))}
+                  </Box>
+                )}
+              >
                 {bodegas.map((b) => (
                   <MenuItem key={b.id} value={b.id}>
+                    <Checkbox checked={bodegaFiltro.includes(b.id)} />
                     {b.nombre}
                   </MenuItem>
                 ))}
@@ -422,20 +445,53 @@ export default function StockBajo() {
           <Grid size={{ xs: 12, sm: 6, md: 2 }}>
             <FormControl fullWidth>
               <InputLabel>Prioridad</InputLabel>
-              <Select label="Prioridad" value={prioridad} onChange={(e) => setPrioridad(e.target.value as any)}>
-                <MenuItem value="todos">Todas</MenuItem>
-                <MenuItem value="critico">Critico (&lt; 10)</MenuItem>
-                <MenuItem value="bajo">Bajo (&lt; 20)</MenuItem>
+              <Select
+                multiple
+                label="Prioridad"
+                value={prioridadFiltro}
+                input={<OutlinedInput label="Prioridad" />}
+                onChange={(e) => setPrioridadFiltro(toStringArray(e.target.value) as Prioridad[])}
+                renderValue={(selected) => (
+                  <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                    {selected.map((value) => (
+                      <Chip key={value} label={value === "critico" ? "Critico" : value === "bajo" ? "Bajo" : "Normal"} size="small" />
+                    ))}
+                  </Box>
+                )}
+              >
+                <MenuItem value="critico">
+                  <Checkbox checked={prioridadFiltro.includes("critico")} />
+                  Critico (&lt; 10)
+                </MenuItem>
+                <MenuItem value="bajo">
+                  <Checkbox checked={prioridadFiltro.includes("bajo")} />
+                  Bajo (&lt; 20)
+                </MenuItem>
               </Select>
             </FormControl>
           </Grid>
           <Grid size={{ xs: 12, sm: 6, md: 2 }}>
             <FormControl fullWidth>
               <InputLabel>Tipo</InputLabel>
-              <Select label="Tipo" value={tipoFiltro} onChange={(e) => setTipoFiltro(String(e.target.value))}>
-                <MenuItem value="">Todos</MenuItem>
+              <Select
+                multiple
+                label="Tipo"
+                value={tipoFiltro}
+                input={<OutlinedInput label="Tipo" />}
+                onChange={(e) => setTipoFiltro(toStringArray(e.target.value))}
+                renderValue={(selected) => (
+                  <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                    {selected.map((value) => (
+                      <Chip key={value} label={value} size="small" />
+                    ))}
+                  </Box>
+                )}
+              >
                 {options.tipos.map((value) => (
-                  <MenuItem key={value} value={value}>{value}</MenuItem>
+                  <MenuItem key={value} value={value}>
+                    <Checkbox checked={tipoFiltro.includes(value)} />
+                    {value}
+                  </MenuItem>
                 ))}
               </Select>
             </FormControl>
@@ -443,10 +499,25 @@ export default function StockBajo() {
           <Grid size={{ xs: 12, sm: 6, md: 2 }}>
             <FormControl fullWidth>
               <InputLabel>Genero</InputLabel>
-              <Select label="Genero" value={generoFiltro} onChange={(e) => setGeneroFiltro(String(e.target.value))}>
-                <MenuItem value="">Todos</MenuItem>
+              <Select
+                multiple
+                label="Genero"
+                value={generoFiltro}
+                input={<OutlinedInput label="Genero" />}
+                onChange={(e) => setGeneroFiltro(toStringArray(e.target.value))}
+                renderValue={(selected) => (
+                  <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                    {selected.map((value) => (
+                      <Chip key={value} label={value} size="small" />
+                    ))}
+                  </Box>
+                )}
+              >
                 {options.generos.map((value) => (
-                  <MenuItem key={value} value={value}>{value}</MenuItem>
+                  <MenuItem key={value} value={value}>
+                    <Checkbox checked={generoFiltro.includes(value)} />
+                    {value}
+                  </MenuItem>
                 ))}
               </Select>
             </FormControl>
@@ -454,10 +525,25 @@ export default function StockBajo() {
           <Grid size={{ xs: 12, sm: 6, md: 2 }}>
             <FormControl fullWidth>
               <InputLabel>Tela</InputLabel>
-              <Select label="Tela" value={telaFiltro} onChange={(e) => setTelaFiltro(String(e.target.value))}>
-                <MenuItem value="">Todas</MenuItem>
+              <Select
+                multiple
+                label="Tela"
+                value={telaFiltro}
+                input={<OutlinedInput label="Tela" />}
+                onChange={(e) => setTelaFiltro(toStringArray(e.target.value))}
+                renderValue={(selected) => (
+                  <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                    {selected.map((value) => (
+                      <Chip key={value} label={value} size="small" />
+                    ))}
+                  </Box>
+                )}
+              >
                 {options.telas.map((value) => (
-                  <MenuItem key={value} value={value}>{value}</MenuItem>
+                  <MenuItem key={value} value={value}>
+                    <Checkbox checked={telaFiltro.includes(value)} />
+                    {value}
+                  </MenuItem>
                 ))}
               </Select>
             </FormControl>
@@ -465,10 +551,25 @@ export default function StockBajo() {
           <Grid size={{ xs: 12, sm: 6, md: 2 }}>
             <FormControl fullWidth>
               <InputLabel>Talla</InputLabel>
-              <Select label="Talla" value={tallaFiltro} onChange={(e) => setTallaFiltro(String(e.target.value))}>
-                <MenuItem value="">Todas</MenuItem>
+              <Select
+                multiple
+                label="Talla"
+                value={tallaFiltro}
+                input={<OutlinedInput label="Talla" />}
+                onChange={(e) => setTallaFiltro(toStringArray(e.target.value))}
+                renderValue={(selected) => (
+                  <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                    {selected.map((value) => (
+                      <Chip key={value} label={value} size="small" />
+                    ))}
+                  </Box>
+                )}
+              >
                 {options.tallas.map((value) => (
-                  <MenuItem key={value} value={value}>{value}</MenuItem>
+                  <MenuItem key={value} value={value}>
+                    <Checkbox checked={tallaFiltro.includes(value)} />
+                    {value}
+                  </MenuItem>
                 ))}
               </Select>
             </FormControl>
@@ -476,10 +577,25 @@ export default function StockBajo() {
           <Grid size={{ xs: 12, sm: 6, md: 2 }}>
             <FormControl fullWidth>
               <InputLabel>Color</InputLabel>
-              <Select label="Color" value={colorFiltro} onChange={(e) => setColorFiltro(String(e.target.value))}>
-                <MenuItem value="">Todos</MenuItem>
+              <Select
+                multiple
+                label="Color"
+                value={colorFiltro}
+                input={<OutlinedInput label="Color" />}
+                onChange={(e) => setColorFiltro(toStringArray(e.target.value))}
+                renderValue={(selected) => (
+                  <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                    {selected.map((value) => (
+                      <Chip key={value} label={value} size="small" />
+                    ))}
+                  </Box>
+                )}
+              >
                 {options.colores.map((value) => (
-                  <MenuItem key={value} value={value}>{value}</MenuItem>
+                  <MenuItem key={value} value={value}>
+                    <Checkbox checked={colorFiltro.includes(value)} />
+                    {value}
+                  </MenuItem>
                 ))}
               </Select>
             </FormControl>
