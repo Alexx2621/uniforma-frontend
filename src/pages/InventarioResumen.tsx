@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  Box,
   Button,
   Divider,
   FormControl,
@@ -252,7 +253,14 @@ export default function InventarioResumen() {
     onChange: (value: string) => void,
     options: string[],
   ) => (
-    <FormControl size="small" sx={{ minWidth: 160, flex: "1 1 160px" }}>
+    <FormControl
+      size="small"
+      sx={{
+        minWidth: { xs: 0, md: 160 },
+        width: { xs: "100%", md: "auto" },
+        flex: { xs: "0 0 auto", md: "1 1 160px" },
+      }}
+    >
       <InputLabel>{label}</InputLabel>
       <Select label={label} value={value} onChange={(e) => onChange(e.target.value)}>
         <MenuItem value="">Todos</MenuItem>
@@ -325,7 +333,7 @@ export default function InventarioResumen() {
   })();
 
   return (
-    <Paper sx={{ p: 3, height: "100%" }}>
+    <Paper sx={{ p: { xs: 2, md: 3 }, height: "100%", overflow: "hidden" }}>
       <Stack
         direction={{ xs: "column", sm: "row" }}
         alignItems={{ xs: "flex-start", sm: "center" }}
@@ -362,7 +370,11 @@ export default function InventarioResumen() {
               </InputAdornment>
             ) : undefined,
           }}
-          sx={{ minWidth: 220, flex: "1 1 220px" }}
+          sx={{
+            minWidth: { xs: 0, md: 220 },
+            width: { xs: "100%", md: "auto" },
+            flex: { xs: "0 0 auto", md: "1 1 220px" },
+          }}
         />
         <TextField
           size="small"
@@ -383,18 +395,22 @@ export default function InventarioResumen() {
               </InputAdornment>
             ) : undefined,
           }}
-          sx={{ minWidth: 320, flex: "2 1 320px" }}
+          sx={{
+            minWidth: { xs: 0, md: 320 },
+            width: { xs: "100%", md: "auto" },
+            flex: { xs: "0 0 auto", md: "2 1 320px" },
+          }}
         />
         {renderFilterSelect("Tipo", filtroTipo, setFiltroTipo, uniqueOptions("tipo"))}
         {renderFilterSelect("Genero", filtroGenero, setFiltroGenero, uniqueOptions("genero"))}
         {renderFilterSelect("Tela", filtroTela, setFiltroTela, uniqueOptions("tela"))}
         {renderFilterSelect("Talla", filtroTalla, setFiltroTalla, uniqueOptions("talla"))}
         {renderFilterSelect("Color", filtroColor, setFiltroColor, uniqueOptions("color"))}
-        <Button variant="outlined" onClick={limpiarFiltros} sx={{ flex: "0 0 auto" }}>
+        <Button variant="outlined" onClick={limpiarFiltros} sx={{ width: { xs: "100%", sm: "auto" }, flex: "0 0 auto" }}>
           Limpiar
         </Button>
         {canViewMinimos && (
-          <Button variant="contained" onClick={verAlertas} sx={{ flex: "0 0 auto" }}>
+          <Button variant="contained" onClick={verAlertas} sx={{ width: { xs: "100%", sm: "auto" }, flex: "0 0 auto" }}>
             Alertas
           </Button>
         )}
@@ -402,7 +418,7 @@ export default function InventarioResumen() {
 
       <Divider sx={{ mb: 2 }} />
 
-      <div style={{ height: 650, width: "100%" }}>
+      <Box sx={{ height: { xs: "calc(100dvh - 380px)", sm: 650 }, minHeight: 430, width: "100%", overflow: "hidden" }}>
         <DataGrid
           loading={loading}
           rows={filteredRows}
@@ -424,7 +440,7 @@ export default function InventarioResumen() {
             },
           }}
         />
-      </div>
+      </Box>
     </Paper>
   );
 }

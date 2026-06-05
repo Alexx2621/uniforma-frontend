@@ -25,6 +25,7 @@ import SettingsIcon from "@mui/icons-material/Settings";
 import NotificationsOutlinedIcon from "@mui/icons-material/NotificationsOutlined";
 import DarkModeRoundedIcon from "@mui/icons-material/DarkModeRounded";
 import WbSunnyRoundedIcon from "@mui/icons-material/WbSunnyRounded";
+import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
 import { io, Socket } from "socket.io-client";
 import Swal from "sweetalert2";
 import { useAuthStore } from "../auth/useAuthStore";
@@ -193,9 +194,11 @@ const getAlertPriorityStyles = (prioridad?: string, leida?: boolean) => {
 
 interface NavbarProps {
   sidebarWidth?: number;
+  showMenuButton?: boolean;
+  onMenuClick?: () => void;
 }
 
-export default function Navbar({ sidebarWidth = 0 }: NavbarProps) {
+export default function Navbar({ sidebarWidth = 0, showMenuButton = false, onMenuClick }: NavbarProps) {
   const { isDarkMode, toggleMode } = useThemeMode();
   const {
     usuario,
@@ -749,10 +752,15 @@ export default function Navbar({ sidebarWidth = 0 }: NavbarProps) {
         borderColor: isDarkMode ? "#374151" : "#e5e7eb",
       }}
     >
-      <Toolbar sx={{ minHeight: 64, px: 3 }}>
+      <Toolbar sx={{ minHeight: { xs: 56, md: 64 }, px: { xs: 1, sm: 2, md: 3 }, gap: { xs: 0.75, sm: 1.25 } }}>
+        {showMenuButton && (
+          <IconButton color="inherit" edge="start" onClick={onMenuClick} aria-label="Abrir menu" sx={{ flexShrink: 0 }}>
+            <MenuRoundedIcon />
+          </IconButton>
+        )}
         <Box sx={{ flexGrow: 1, minWidth: 0 }} />
 
-        <Stack direction="row" spacing={{ xs: 1, sm: 2 }} alignItems="center">
+        <Stack direction="row" spacing={{ xs: 0.5, sm: 1.25, md: 2 }} alignItems="center" sx={{ minWidth: 0 }}>
           <Tooltip title={serverStatusTooltip}>
             <Box
               component="button"
@@ -994,8 +1002,8 @@ export default function Navbar({ sidebarWidth = 0 }: NavbarProps) {
               aria-pressed={isDarkMode}
               onClick={toggleMode}
               sx={{
-                width: 76,
-                height: 38,
+                width: { xs: 48, sm: 76 },
+                height: { xs: 32, sm: 38 },
                 border: "1px solid",
                 borderColor: isDarkMode ? "#ffffff" : "#d6d6d6",
                 borderRadius: 999,
@@ -1018,14 +1026,14 @@ export default function Navbar({ sidebarWidth = 0 }: NavbarProps) {
             >
               <Box
                 sx={{
-                  width: 30,
-                  height: 30,
+                  width: { xs: 24, sm: 30 },
+                  height: { xs: 24, sm: 30 },
                   borderRadius: "50%",
                   display: "grid",
                   placeItems: "center",
                   backgroundColor: isDarkMode ? "#2d2d30" : "#ffffff",
                   color: isDarkMode ? "#ffffff" : "#f7d64a",
-                  transform: isDarkMode ? "translateX(36px)" : "translateX(0)",
+                  transform: isDarkMode ? { xs: "translateX(16px)", sm: "translateX(36px)" } : "translateX(0)",
                   transition: "transform 180ms ease, background-color 180ms ease, color 180ms ease",
                   position: "relative",
                   zIndex: 1,
@@ -1037,11 +1045,11 @@ export default function Navbar({ sidebarWidth = 0 }: NavbarProps) {
             </Box>
           </Tooltip>
 
-          <Box textAlign="right">
+          <Box textAlign="right" sx={{ display: { xs: "none", sm: "block" }, minWidth: 0, maxWidth: { sm: 180, md: 260 } }}>
             <Typography variant="body1" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
               {displayName}
             </Typography>
-            <Typography variant="body2" sx={{ color: isDarkMode ? "#d1d5db" : "#6b7280" }}>
+            <Typography variant="body2" noWrap sx={{ color: isDarkMode ? "#d1d5db" : "#6b7280" }}>
               {sourceBodegaNombre || "Sin bodega"}
             </Typography>
           </Box>
@@ -1051,8 +1059,8 @@ export default function Navbar({ sidebarWidth = 0 }: NavbarProps) {
             sx={{
               bgcolor: isDarkMode ? "#334155" : "#1B2852",
               color: "#fff",
-              width: 40,
-              height: 40,
+              width: { xs: 34, sm: 40 },
+              height: { xs: 34, sm: 40 },
               fontWeight: 700,
               fontSize: 14,
             }}

@@ -6,6 +6,7 @@ html,
 body,
 #root {
   font-family: var(--uniforma-font-family);
+  min-height: 100%;
 }
 
 body {
@@ -13,6 +14,7 @@ body {
   font-family: var(--uniforma-font-family);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
 }
 
 input,
@@ -29,4 +31,146 @@ code {
 
 .swal2-container {
   z-index: 20000 !important;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.MuiTableContainer-root {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.MuiTableContainer-root .MuiTable-root {
+  min-width: max-content;
+}
+
+.MuiDataGrid-root {
+  max-width: 100%;
+}
+
+.MuiDataGrid-virtualScroller {
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 900px) {
+  .MuiPaper-root {
+    background-image: none;
+  }
+
+  .MuiDialog-paper {
+    margin: 10px !important;
+    max-width: calc(100vw - 20px) !important;
+    max-height: calc(100dvh - 20px) !important;
+  }
+
+  .MuiDialogTitle-root {
+    padding: 14px 16px !important;
+  }
+
+  .MuiDialogContent-root {
+    padding: 14px 16px !important;
+  }
+
+  .MuiDialogActions-root {
+    padding: 10px 16px 14px !important;
+    flex-wrap: wrap;
+  }
+
+  .MuiDataGrid-root {
+    font-size: 12px;
+  }
+
+  .MuiDataGrid-root .MuiDataGrid-columnHeaderTitle {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .MuiDataGrid-columnHeader,
+  .MuiDataGrid-cell {
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
+
+  .MuiDataGrid-cell {
+    min-width: 0;
+  }
+
+  .MuiTableCell-root {
+    padding: 8px 10px !important;
+    font-size: 12px !important;
+    white-space: nowrap;
+  }
+
+  .MuiTablePagination-toolbar {
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+    gap: 4px;
+  }
+
+  .MuiTablePagination-selectLabel,
+  .MuiTablePagination-displayedRows {
+    font-size: 12px !important;
+  }
+
+  .MuiSelect-select,
+  .MuiInputBase-input {
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  .MuiPopover-paper,
+  .MuiMenu-paper {
+    max-width: calc(100vw - 24px) !important;
+  }
+
+  .MuiMenuItem-root {
+    white-space: normal !important;
+    word-break: break-word;
+  }
+}
+
+@media (max-width: 600px) {
+  .MuiTypography-h4 {
+    font-size: 1.45rem !important;
+    line-height: 1.2 !important;
+  }
+
+  .MuiTypography-h5 {
+    font-size: 1.25rem !important;
+    line-height: 1.25 !important;
+  }
+
+  .MuiTypography-h6 {
+    font-size: 1.05rem !important;
+  }
+
+  .MuiButton-root {
+    min-height: 36px;
+  }
+
+  .MuiButton-root .MuiButton-startIcon,
+  .MuiButton-root .MuiButton-endIcon {
+    margin-left: 0;
+  }
+
+  .MuiTextField-root,
+  .MuiFormControl-root {
+    min-width: 0 !important;
+  }
+
+  .MuiDataGrid-root .MuiDataGrid-toolbarContainer {
+    flex-wrap: wrap;
+  }
+
+  .MuiTablePagination-spacer {
+    display: none;
+  }
+
+  .MuiTablePagination-toolbar {
+    min-height: 44px !important;
+  }
 }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Paper,
+  Box,
   Typography,
   Grid,
   Button,
@@ -202,17 +203,18 @@ export default function Productos() {
 
   const columns: GridColDef[] = useMemo(
     () => [
-      { field: "codigo", headerName: "Código", flex: 1 },
-      { field: "nombre", headerName: "Nombre", flex: 1.5 },
-      { field: "tipo", headerName: "Tipo", flex: 1 },
-      { field: "genero", headerName: "Género", flex: 1 },
-      { field: "telaNombre", headerName: "Tela", flex: 1 },
-      { field: "tallaNombre", headerName: "Talla", flex: 1 },
-      { field: "colorNombre", headerName: "Color", flex: 1 },
+      { field: "codigo", headerName: "Código", minWidth: 120, flex: 0.9 },
+      { field: "nombre", headerName: "Nombre", minWidth: 160, flex: 1.2 },
+      { field: "tipo", headerName: "Tipo", minWidth: 130, flex: 1 },
+      { field: "genero", headerName: "Género", minWidth: 120, flex: 0.9 },
+      { field: "telaNombre", headerName: "Tela", minWidth: 120, flex: 0.9 },
+      { field: "tallaNombre", headerName: "Talla", minWidth: 90, flex: 0.7 },
+      { field: "colorNombre", headerName: "Color", minWidth: 140, flex: 1 },
       {
         field: "precio",
         headerName: "Precio",
-        flex: 1,
+        minWidth: 115,
+        flex: 0.8,
         valueFormatter: (value: number | string | null) =>
           formatCurrency(value as number),
       },
@@ -222,7 +224,8 @@ export default function Productos() {
               field: "acciones",
               headerName: "Acciones",
               sortable: false,
-              flex: 1,
+              minWidth: 120,
+              flex: 0.8,
               renderCell: (params: any) => (
                 <>
                   <IconButton color="info" onClick={() => editarProducto(params.row)}>
@@ -249,7 +252,7 @@ export default function Productos() {
   );
 
   return (
-    <Paper sx={{ p: 3, height: "100%" }}>
+    <Paper sx={{ p: { xs: 2, md: 3 }, height: "100%", overflow: "hidden" }}>
       <Typography variant="h4" gutterBottom>
         Productos
       </Typography>
@@ -257,8 +260,8 @@ export default function Productos() {
       <Divider sx={{ mb: 2 }} />
 
       {/* HEADER */}
-      <Grid container justifyContent="space-between" alignItems="center">
-        <Grid size={{ xs: 3 }}>
+      <Grid container justifyContent="space-between" alignItems="center" spacing={1.5}>
+        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
           <TextField
             label="Buscar código"
             size="small"
@@ -271,8 +274,15 @@ export default function Productos() {
           />
         </Grid>
 
-        <Grid size={{ xs: 3 }}>
-          <Button variant="contained" startIcon={<AddIcon />} onClick={nuevo} disabled={!canManageProducts}>
+        <Grid size={{ xs: 12, sm: 6, md: 3 }} sx={{ display: "flex", justifyContent: { xs: "stretch", sm: "flex-end" } }}>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={nuevo}
+            disabled={!canManageProducts}
+            fullWidth
+            sx={{ maxWidth: { sm: 220 } }}
+          >
             Nuevo Producto
           </Button>
         </Grid>
@@ -281,7 +291,7 @@ export default function Productos() {
       <Divider sx={{ my: 2 }} />
 
       {/* DATAGRID */}
-      <div style={{ height: 600, width: "100%" }}>
+      <Box sx={{ height: { xs: "calc(100dvh - 265px)", sm: 600 }, minHeight: 430, width: "100%", overflow: "hidden" }}>
         <DataGrid
           loading={loading}
           rows={filtrados}
@@ -292,7 +302,7 @@ export default function Productos() {
             pagination: { paginationModel: { pageSize: 10 } },
           }}
         />
-      </div>
+      </Box>
 
       {/* DIALOG FORMULARIO */}
       <Dialog
@@ -310,7 +320,7 @@ export default function Productos() {
 
         <DialogContent dividers>
           <Grid container spacing={2} sx={{ mt: 1 }}>
-            <Grid size={{ xs: 6 }}>
+            <Grid size={{ xs: 12, sm: 6 }}>
               <TextField
                 label="Código"
                 fullWidth
@@ -319,7 +329,7 @@ export default function Productos() {
               />
             </Grid>
 
-            <Grid size={{ xs: 6 }}>
+            <Grid size={{ xs: 12, sm: 6 }}>
               <TextField
                 label="Nombre"
                 fullWidth
@@ -328,7 +338,7 @@ export default function Productos() {
               />
             </Grid>
 
-            <Grid size={{ xs: 6 }}>
+            <Grid size={{ xs: 12, sm: 6 }}>
               <TextField
                 label="Tipo"
                 fullWidth
@@ -337,7 +347,7 @@ export default function Productos() {
               />
             </Grid>
 
-            <Grid size={{ xs: 6 }}>
+            <Grid size={{ xs: 12, sm: 6 }}>
               <TextField
                 label="Género"
                 fullWidth
@@ -346,7 +356,7 @@ export default function Productos() {
               />
             </Grid>
 
-            <Grid size={{ xs: 6 }}>
+            <Grid size={{ xs: 12, sm: 6 }}>
               <FormControl fullWidth>
                 <InputLabel>Tela</InputLabel>
                 <Select
@@ -365,7 +375,7 @@ export default function Productos() {
               </FormControl>
             </Grid>
 
-            <Grid size={{ xs: 6 }}>
+            <Grid size={{ xs: 12, sm: 6 }}>
               <FormControl fullWidth>
                 <InputLabel>Talla</InputLabel>
                 <Select
@@ -384,7 +394,7 @@ export default function Productos() {
               </FormControl>
             </Grid>
 
-            <Grid size={{ xs: 6 }}>
+            <Grid size={{ xs: 12, sm: 6 }}>
               <FormControl fullWidth>
                 <InputLabel>Color</InputLabel>
                 <Select
@@ -403,7 +413,7 @@ export default function Productos() {
               </FormControl>
             </Grid>
 
-            <Grid size={{ xs: 6 }}>
+            <Grid size={{ xs: 12, sm: 6 }}>
               <FormControl fullWidth>
                 <InputLabel>Categoría</InputLabel>
                 <Select
@@ -422,7 +432,7 @@ export default function Productos() {
               </FormControl>
             </Grid>
 
-            <Grid size={{ xs: 6 }}>
+            <Grid size={{ xs: 12, sm: 6 }}>
               <TextField
                 label="Precio"
                 type="number"
@@ -434,7 +444,7 @@ export default function Productos() {
               />
             </Grid>
 
-            <Grid size={{ xs: 6 }}>
+            <Grid size={{ xs: 12, sm: 6 }}>
               <TextField
                 label="Stock Máximo"
                 type="number"
@@ -446,7 +456,7 @@ export default function Productos() {
               />
             </Grid>
 
-            <Grid size={{ xs: 6 }}>
+            <Grid size={{ xs: 12, sm: 6 }}>
               <TextField
                 label="Merma %"
                 type="number"

@@ -28,6 +28,7 @@ interface Props {
   open: boolean;
   width: number;
   onToggle: () => void;
+  mobile?: boolean;
 }
 
 const normalizeSearchText = (value?: string) =>
@@ -78,12 +79,12 @@ const filterSections = (sections: typeof menuSections, query: string) => {
     .filter((section) => section.items.length > 0);
 };
 
-export default function Sidebar({ open, width, onToggle }: Props) {
+export default function Sidebar({ open, width, onToggle, mobile = false }: Props) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [openMap, setOpenMap] = useState<Record<string, boolean>>({});
   const [search, setSearch] = useState("");
-  const collapsed = !open;
+  const collapsed = mobile ? false : !open;
   const { fetchConfig } = useSystemConfigStore();
   const { rol, permisos } = useAuthStore();
 
@@ -97,6 +98,7 @@ export default function Sidebar({ open, width, onToggle }: Props) {
 
   const goToModule = (path: string) => {
     navigate(path, { state: { sidebarClickAt: Date.now() } });
+    if (mobile) onToggle();
   };
 
   const isActive = useMemo(
@@ -248,7 +250,10 @@ export default function Sidebar({ open, width, onToggle }: Props) {
 
   return (
     <Drawer
-      variant="permanent"
+      variant={mobile ? "temporary" : "permanent"}
+      open={mobile ? open : true}
+      onClose={mobile ? onToggle : undefined}
+      ModalProps={{ keepMounted: true }}
       sx={{
         width,
         [`& .MuiDrawer-paper`]: {
@@ -265,11 +270,11 @@ export default function Sidebar({ open, width, onToggle }: Props) {
           borderRadius: 0,
           backgroundColor: "background.paper",
           boxShadow: "none",
-          paddingTop: 1.25,
+          paddingTop: mobile ? 1 : 1.25,
           display: "flex",
           flexDirection: "column",
           height: "100vh",
-          zIndex: (theme) => theme.zIndex.drawer + 2,
+          zIndex: (theme) => theme.zIndex.drawer + (mobile ? 4 : 2),
           overflowY: "auto",
           overflowX: "hidden",
           "&::-webkit-scrollbar": { width: 6 },
