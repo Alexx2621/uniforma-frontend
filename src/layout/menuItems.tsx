@@ -32,6 +32,7 @@ import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
 import LocalShippingOutlined from "@mui/icons-material/LocalShippingOutlined";
 import BusinessOutlined from "@mui/icons-material/BusinessOutlined";
 import NotificationsActiveOutlined from "@mui/icons-material/NotificationsActiveOutlined";
+import ApprovalOutlined from "@mui/icons-material/ApprovalOutlined";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import { whatsappFeatureEnabled } from "../config/features";
 
@@ -136,6 +137,7 @@ export const menuSections: MenuSection[] = [
       ...(whatsappFeatureEnabled ? [{ label: "WhatsApp Business", icon: <WhatsAppIcon />, path: "/whatsapp/config" }] : []),
       { label: "Auditoria", icon: <ManageSearchOutlined />, path: "/auditoria" },
       { label: "Correcciones", icon: <FactCheckOutlined />, path: "/correcciones" },
+      { label: "Autorizaciones", icon: <ApprovalOutlined />, path: "/autorizaciones" },
       { label: "Alertas", icon: <NotificationsActiveOutlined />, path: "/alertas" },
       { label: "Metas mensuales", icon: <TrendingUpOutlined />, path: "/metas-mensuales" },
     ],

@@ -166,6 +166,13 @@ const getTodayDateInputValue = () => {
   return today.toISOString().slice(0, 10);
 };
 
+const getDateInputValueDaysAgo = (days: number) => {
+  const date = new Date();
+  date.setDate(date.getDate() - days);
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 10);
+};
+
 const formatDateForFilename = (date = new Date()) => {
   const year = date.getFullYear();
   const month = `${date.getMonth() + 1}`.padStart(2, "0");
@@ -345,7 +352,7 @@ export default function Pedidos() {
   const [colores, setColores] = useState<CatalogoItem[]>([]);
   const [filterCliente, setFilterCliente] = useState(() => restoredPedidosState?.filters?.cliente || "");
   const [filterFechaInicio, setFilterFechaInicio] = useState(
-    () => restoredPedidosState?.filters?.fechaInicio || getTodayDateInputValue()
+    () => restoredPedidosState?.filters?.fechaInicio || getDateInputValueDaysAgo(5)
   );
   const [filterFechaFin, setFilterFechaFin] = useState(
     () => restoredPedidosState?.filters?.fechaFin || getTodayDateInputValue()
@@ -714,7 +721,7 @@ export default function Pedidos() {
     if (!nextState) return;
 
     setFilterCliente(nextState.filters?.cliente || "");
-    setFilterFechaInicio(nextState.filters?.fechaInicio || getTodayDateInputValue());
+    setFilterFechaInicio(nextState.filters?.fechaInicio || getDateInputValueDaysAgo(5));
     setFilterFechaFin(nextState.filters?.fechaFin || getTodayDateInputValue());
     setFilterBodega(nextState.filters?.bodega ?? "all");
     setFilterTipoPedido(nextState.filters?.tipoPedido || "clientes");

@@ -44,6 +44,10 @@ interface ClienteFichaData {
     ventasCantidad: number;
     pedidosCantidad: number;
     postventaCantidad: number;
+    pagosCantidad?: number;
+    enviosCantidad?: number;
+    ordenesMixtasCantidad?: number;
+    totalOrdenesMixtas?: number;
     ticketPromedio: number;
     diasSinCompra?: number | null;
     ultimaActividad?: string | null;
@@ -62,6 +66,9 @@ interface ClienteFichaData {
     total: number;
     saldoPendiente?: number;
     bodega?: string | null;
+    metodo?: string | null;
+    referencia?: string | null;
+    documentos?: number;
   }[];
   oportunidades: string[];
 }
@@ -185,6 +192,12 @@ export default function ClienteFicha() {
           <Paper variant="outlined" sx={{ p: 2, height: "100%", borderRadius: 1 }}>
             <Typography variant="h6">Preferencias</Typography>
             <Divider sx={{ my: 1 }} />
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 2 }}>
+              <Chip label={`${resumen.postventaCantidad} postventa`} color={resumen.postventaCantidad ? "warning" : "default"} variant="outlined" />
+              <Chip label={`${resumen.pagosCantidad || 0} pagos`} variant="outlined" />
+              <Chip label={`${resumen.enviosCantidad || 0} envios`} variant="outlined" />
+              <Chip label={`${resumen.ordenesMixtasCantidad || 0} ordenes mixtas`} variant="outlined" />
+            </Stack>
             <Typography variant="subtitle2">Productos frecuentes</Typography>
             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ my: 1 }}>
               {preferencias.productos.length ? preferencias.productos.map((item) => (
@@ -204,7 +217,7 @@ export default function ClienteFicha() {
 
         <Grid size={{ xs: 12, lg: 8 }}>
           <Paper variant="outlined" sx={{ p: 2, borderRadius: 1 }}>
-            <Typography variant="h6">Actividad reciente</Typography>
+            <Typography variant="h6">Linea de tiempo del cliente</Typography>
             <Divider sx={{ my: 1 }} />
             {actividad.length ? (
               <List dense disablePadding>
@@ -212,7 +225,15 @@ export default function ClienteFicha() {
                   <ListItem key={`${item.tipo}-${item.id}`} disableGutters>
                     <ListItemText
                       primary={`${item.folio} - ${titleCase(item.tipo)} - ${money(item.total)}`}
-                      secondary={`${dateLabel(item.fecha)} | ${titleCase(item.estado)}${item.bodega ? ` | ${item.bodega}` : ""}${item.saldoPendiente ? ` | Saldo ${money(item.saldoPendiente)}` : ""}`}
+                      secondary={[
+                        dateLabel(item.fecha),
+                        titleCase(item.estado),
+                        item.bodega,
+                        item.metodo ? `Metodo ${titleCase(item.metodo)}` : null,
+                        item.referencia ? `Ref. ${item.referencia}` : null,
+                        item.documentos ? `${item.documentos} doc. relacionados` : null,
+                        item.saldoPendiente ? `Saldo ${money(item.saldoPendiente)}` : null,
+                      ].filter(Boolean).join(" | ")}
                     />
                   </ListItem>
                 ))}

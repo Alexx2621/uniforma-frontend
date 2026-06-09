@@ -171,6 +171,20 @@ export default function Auditoria() {
     URL.revokeObjectURL(url);
   };
 
+  const resumenAuditoria = useMemo(() => {
+    const usuariosUnicos = new Set(logs.map((log) => `${log.usuario || ""}`.trim()).filter(Boolean));
+    const errores = logs.filter((log) => Number(log.resultado || 0) >= 400).length;
+    const escrituras = logs.filter((log) => ["POST", "PUT", "PATCH", "DELETE"].includes(`${log.metodo || ""}`.toUpperCase())).length;
+    const accesos = logs.filter((log) => normalizeEndpoint(log.endpoint) === "/auth/login").length;
+    return {
+      total: logs.length,
+      usuarios: usuariosUnicos.size,
+      errores,
+      escrituras,
+      accesos,
+    };
+  }, [logs]);
+
   const columns = useMemo<GridColDef<ActivityLog>[]>(
     () => [
       {
@@ -220,6 +234,29 @@ export default function Auditoria() {
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
         Revisa acciones importantes por usuario: accesos, pedidos, cierres, PDFs, anulaciones y unificados.
       </Typography>
+
+      <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} sx={{ mb: 2 }}>
+        <Paper variant="outlined" sx={{ p: 1.5, flex: 1 }}>
+          <Typography variant="caption" color="text.secondary">Acciones visibles</Typography>
+          <Typography variant="h5">{resumenAuditoria.total}</Typography>
+        </Paper>
+        <Paper variant="outlined" sx={{ p: 1.5, flex: 1 }}>
+          <Typography variant="caption" color="text.secondary">Usuarios activos</Typography>
+          <Typography variant="h5">{resumenAuditoria.usuarios}</Typography>
+        </Paper>
+        <Paper variant="outlined" sx={{ p: 1.5, flex: 1 }}>
+          <Typography variant="caption" color="text.secondary">Cambios registrados</Typography>
+          <Typography variant="h5">{resumenAuditoria.escrituras}</Typography>
+        </Paper>
+        <Paper variant="outlined" sx={{ p: 1.5, flex: 1 }}>
+          <Typography variant="caption" color="text.secondary">Errores detectados</Typography>
+          <Typography variant="h5" color={resumenAuditoria.errores ? "error.main" : "text.primary"}>{resumenAuditoria.errores}</Typography>
+        </Paper>
+        <Paper variant="outlined" sx={{ p: 1.5, flex: 1 }}>
+          <Typography variant="caption" color="text.secondary">Inicios de sesion</Typography>
+          <Typography variant="h5">{resumenAuditoria.accesos}</Typography>
+        </Paper>
+      </Stack>
 
       <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} sx={{ mb: 2 }}>
         <TextField

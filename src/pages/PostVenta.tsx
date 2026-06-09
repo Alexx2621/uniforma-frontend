@@ -83,9 +83,17 @@ interface Usuario {
   bodegaId?: number | string | null;
 }
 
+interface Bodega {
+  id: number;
+  nombre: string;
+}
+
 interface DetallePostventa {
   key: number;
   productoId?: number | null;
+  bodegaId?: number | "";
+  bodegaNombre?: string;
+  operacion?: "devuelto" | "entregado";
   codigo: string;
   producto: string;
   tipoProducto?: string;
@@ -95,13 +103,18 @@ interface DetallePostventa {
   color: string;
   cantidad: number;
   precio: number;
+  condicion?: string;
+  accionInventario?: string;
   observaciones: string;
 }
 
 interface CapturaArticulo {
   productoId: number | "";
+  bodegaId: number | "";
+  operacion: "devuelto" | "entregado";
   cantidad: number;
   precio: number;
+  condicion: string;
   observaciones: string;
 }
 
@@ -118,7 +131,7 @@ interface RegistroPostventa {
   resolucion?: string | null;
   monto: number;
   observaciones?: string | null;
-  detalle: DetallePostventa[];
+  detalle: any;
   usuario?: { nombre?: string | null; usuario?: string | null };
 }
 
@@ -131,8 +144,11 @@ const estadoLabels: Record<string, string> = {
 
 const capturaInicial = (): CapturaArticulo => ({
   productoId: "",
+  bodegaId: "",
+  operacion: "devuelto",
   cantidad: 1,
   precio: 0,
+  condicion: "vendible",
   observaciones: "",
 });
 
@@ -146,6 +162,13 @@ const escapeHtml = (value?: string | number | null) =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+
+const getDetalleLineas = (detalle: any): DetallePostventa[] => {
+  if (Array.isArray(detalle)) return detalle;
+  const devueltos = Array.isArray(detalle?.devueltos) ? detalle.devueltos : [];
+  const entregados = Array.isArray(detalle?.entregados) ? detalle.entregados : [];
+  return [...devueltos, ...entregados];
+};
 
 const uniqueSorted = (values: string[]) =>
   Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b));
@@ -180,11 +203,12 @@ const resolveColorNombre = (prod: Producto | undefined, colores: CatalogoItem[])
 };
 
 const buildPdfHtml = (registro: RegistroPostventa, titulo: string) => {
-  const detalle = Array.isArray(registro.detalle) ? registro.detalle : [];
+  const detalle = getDetalleLineas(registro.detalle);
   const filas = detalle
     .map(
       (item, index) => `<tr>
         <td>${index + 1}</td>
+        <td>${escapeHtml(item.operacion === "entregado" ? "Entregado" : "Devuelto")}</td>
         <td>${escapeHtml(item.codigo)}</td>
         <td>${escapeHtml(item.producto)}</td>
         <td>${escapeHtml(item.talla || "-")}</td>
@@ -239,9 +263,9 @@ const buildPdfHtml = (registro: RegistroPostventa, titulo: string) => {
         </div>
         <table>
           <thead>
-            <tr><th>#</th><th>Codigo</th><th>Producto</th><th>Talla</th><th>Color</th><th>Cant.</th><th>Monto</th></tr>
+            <tr><th>#</th><th>Operacion</th><th>Codigo</th><th>Producto</th><th>Talla</th><th>Color</th><th>Cant.</th><th>Monto</th></tr>
           </thead>
-          <tbody>${filas || `<tr><td colspan="7">Sin detalle</td></tr>`}</tbody>
+          <tbody>${filas || `<tr><td colspan="8">Sin detalle</td></tr>`}</tbody>
         </table>
         <div class="notes"><strong>Observaciones:</strong> ${escapeHtml(registro.observaciones || "N/D")}</div>
         <div class="total">Monto de referencia: ${money(Number(registro.monto || 0))}</div>
@@ -267,6 +291,7 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
+  const [bodegas, setBodegas] = useState<Bodega[]>([]);
   const [telas, setTelas] = useState<CatalogoItem[]>([]);
   const [tallas, setTallas] = useState<CatalogoItem[]>([]);
   const [colores, setColores] = useState<CatalogoItem[]>([]);
@@ -288,6 +313,14 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
   const [detalle, setDetalle] = useState<DetallePostventa[]>([]);
   const [clienteId, setClienteId] = useState<number | "">("");
   const [articuloActual, setArticuloActual] = useState<CapturaArticulo>(() => capturaInicial());
+  const [pagoDiferencia, setPagoDiferencia] = useState({
+    metodo: "",
+    referencia: "",
+    banco: "",
+    ubicacion: "TIENDA",
+    montoPagado: 0,
+    observaciones: "",
+  });
   const [cantidadInput, setCantidadInput] = useState("1");
   const [editingDetalleKey, setEditingDetalleKey] = useState<number | null>(null);
   const [filtroTipo, setFiltroTipo] = useState("");
@@ -317,18 +350,20 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
 
   const cargarCatalogos = useCallback(async () => {
     try {
-      const [respClientes, respProductos, respTelas, respTallas, respColores] = await Promise.all([
+      const [respClientes, respProductos, respTelas, respTallas, respColores, respBodegas] = await Promise.all([
         api.get("/clientes"),
         api.get("/productos"),
         api.get("/telas").catch(() => ({ data: [] })),
         api.get("/tallas").catch(() => ({ data: [] })),
         api.get("/colores").catch(() => ({ data: [] })),
+        api.get("/bodegas").catch(() => ({ data: [] })),
       ]);
       setClientes(respClientes.data || []);
       setProductos(respProductos.data || []);
       setTelas(respTelas.data || []);
       setTallas(respTallas.data || []);
       setColores(respColores.data || []);
+      setBodegas(respBodegas.data || []);
       if (canUseDropdown) {
         const respUsuarios = await api.get("/usuarios").catch(() => ({ data: [] }));
         setUsuarios(respUsuarios.data || []);
@@ -500,10 +535,32 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
     }));
   }, [productoDetectado]);
 
-  const totalDetalle = useMemo(
-    () => detalle.reduce((sum, item) => sum + Number(item.precio || 0) * Number(item.cantidad || 0), 0),
+  const totalDevuelto = useMemo(
+    () =>
+      detalle
+        .filter((item) => (item.operacion || "devuelto") === "devuelto")
+        .reduce((sum, item) => sum + Number(item.precio || 0) * Number(item.cantidad || 0), 0),
     [detalle],
   );
+
+  const totalEntregado = useMemo(
+    () =>
+      detalle
+        .filter((item) => item.operacion === "entregado")
+        .reduce((sum, item) => sum + Number(item.precio || 0) * Number(item.cantidad || 0), 0),
+    [detalle],
+  );
+
+  const diferenciaCambio = isCambio ? totalEntregado - totalDevuelto : totalDevuelto;
+  const totalDetalle = isCambio ? diferenciaCambio : totalDevuelto;
+
+  useEffect(() => {
+    if (!isCambio || diferenciaCambio <= 0) return;
+    setPagoDiferencia((prev) => ({
+      ...prev,
+      montoPagado: Number(prev.montoPagado || 0) > 0 ? prev.montoPagado : diferenciaCambio,
+    }));
+  }, [diferenciaCambio, isCambio]);
 
   const filtrados = useMemo(() => {
     const query = busqueda.trim().toLowerCase();
@@ -540,6 +597,14 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
       observaciones: "",
     });
     setDetalle([]);
+    setPagoDiferencia({
+      metodo: "",
+      referencia: "",
+      banco: "",
+      ubicacion: "TIENDA",
+      montoPagado: 0,
+      observaciones: "",
+    });
     limpiarArticulo();
   };
 
@@ -562,11 +627,16 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
       resolucion: row.resolucion || "",
       observaciones: row.observaciones || "",
     });
-    setDetalle(
-      Array.isArray(row.detalle)
-        ? row.detalle.map((item) => ({ ...item, key: item.key || Date.now() + Math.random() }))
-        : [],
-    );
+    setDetalle(getDetalleLineas(row.detalle).map((item) => ({ ...item, key: item.key || Date.now() + Math.random() })));
+    const pago = !Array.isArray(row.detalle) ? row.detalle?.pago : null;
+    setPagoDiferencia({
+      metodo: pago?.metodo || "",
+      referencia: pago?.referencia || "",
+      banco: pago?.banco || "",
+      ubicacion: pago?.ubicacion || "TIENDA",
+      montoPagado: Number(pago?.montoPagado || Math.max(Number(row.monto || 0), 0)),
+      observaciones: pago?.observaciones || "",
+    });
     limpiarArticulo();
     setVista("form");
   };
@@ -586,10 +656,22 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
       Swal.fire("Validacion", "Ingresa una cantidad mayor a 0", "warning");
       return;
     }
+    if (!articuloActual.bodegaId) {
+      Swal.fire("Validacion", articuloActual.operacion === "entregado" ? "Selecciona la bodega de salida" : "Selecciona la bodega de ingreso", "warning");
+      return;
+    }
+    if (!isCambio && articuloActual.operacion === "entregado") {
+      Swal.fire("Validacion", "En devoluciones solo se registran productos devueltos", "warning");
+      return;
+    }
+    const bodega = bodegas.find((item) => Number(item.id) === Number(articuloActual.bodegaId));
 
     const row: DetallePostventa = {
       key: editingDetalleKey ?? Date.now(),
       productoId: productoDetectado.id,
+      bodegaId: articuloActual.bodegaId,
+      bodegaNombre: bodega?.nombre || "",
+      operacion: articuloActual.operacion,
       codigo: productoDetectado.codigo || "",
       producto: productoDetectado.nombre || "",
       tipoProducto: productoDetectado.tipo || "",
@@ -599,6 +681,8 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
       color: obtenerColor(productoDetectado),
       cantidad,
       precio: Number(articuloActual.precio || 0),
+      condicion: articuloActual.operacion === "devuelto" ? articuloActual.condicion || "vendible" : "",
+      accionInventario: "aplicar",
       observaciones: articuloActual.observaciones.trim(),
     };
 
@@ -613,8 +697,11 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
     setEditingDetalleKey(row.key);
     setArticuloActual({
       productoId: Number(producto?.id || row.productoId || ""),
+      bodegaId: Number(row.bodegaId || ""),
+      operacion: row.operacion || "devuelto",
       cantidad: row.cantidad,
       precio: Number(row.precio || producto?.precio || 0),
+      condicion: row.condicion || "vendible",
       observaciones: row.observaciones || "",
     });
     setCantidadInput(String(row.cantidad || 1));
@@ -645,12 +732,37 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
       Swal.fire("Validacion", "Agrega al menos un producto a la lista temporal", "info");
       return;
     }
+    const devueltos = detalle.filter((item) => (item.operacion || "devuelto") === "devuelto");
+    const entregados = detalle.filter((item) => item.operacion === "entregado");
+    if (isCambio && (!devueltos.length || !entregados.length)) {
+      Swal.fire("Validacion", "Un cambio debe tener al menos un producto devuelto y un producto entregado", "info");
+      return;
+    }
+    if (isCambio && diferenciaCambio > 0 && Number(pagoDiferencia.montoPagado || 0) < diferenciaCambio) {
+      Swal.fire("Validacion", `La diferencia a pagar es ${money(diferenciaCambio)}. Registra el pago completo.`, "info");
+      return;
+    }
+    if (isCambio && diferenciaCambio > 0 && !pagoDiferencia.metodo) {
+      Swal.fire("Validacion", "Selecciona el metodo de pago de la diferencia", "info");
+      return;
+    }
 
     const payload = {
       tipo,
       ...form,
       monto: totalDetalle,
-      detalle: detalle.map(({ key, ...item }) => item),
+      detalle: {
+        version: 2,
+        modo: form.documentoReferencia.trim() ? "con_documento_origen" : "sin_documento_origen",
+        devueltos: devueltos.map(({ key, ...item }) => item),
+        entregados: entregados.map(({ key, ...item }) => item),
+        pago: isCambio
+          ? {
+              ...pagoDiferencia,
+              montoPagado: Number(pagoDiferencia.montoPagado || 0),
+            }
+          : null,
+      },
     };
 
     const pdfWindow = window.open("", "_blank");
@@ -688,7 +800,7 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
     if (!canManage) return;
     const confirm = await Swal.fire({
       title: action === "cerrar" ? `Cerrar ${singular.toLowerCase()}` : `Anular ${singular.toLowerCase()}`,
-      text: `Se actualizara el estado de ${row.folio}.`,
+      text: action === "cerrar" ? `Se aplicaran los movimientos de inventario de ${row.folio}.` : `Se actualizara el estado de ${row.folio}.`,
       icon: "question",
       showCancelButton: true,
       confirmButtonText: action === "cerrar" ? "Cerrar" : "Anular",
@@ -698,8 +810,9 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
     try {
       await api.post(`/postventa/${row.id}/${action}`);
       await cargar();
-    } catch {
-      Swal.fire("Error", "No se pudo actualizar el estado", "error");
+    } catch (error: any) {
+      const msg = error?.response?.data?.message || "No se pudo actualizar el estado";
+      Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
     }
   };
 
@@ -811,13 +924,13 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
           </Grid>
           <Grid size={{ xs: 12, sm: 4 }}>
             <TextField select label="Estado" fullWidth value={form.estado} onChange={(e) => setForm({ ...form, estado: e.target.value })}>
-              {Object.entries(estadoLabels).map(([key, label]) => (
+              {Object.entries(estadoLabels).filter(([key]) => key === "pendiente" || key === "en_revision").map(([key, label]) => (
                 <MenuItem key={key} value={key}>{label}</MenuItem>
               ))}
             </TextField>
           </Grid>
           <Grid size={{ xs: 12, sm: 4 }}>
-            <TextField label="Monto calculado" fullWidth value={money(totalDetalle)} InputProps={{ readOnly: true }} />
+            <TextField label={isCambio ? "Diferencia calculada" : "Monto calculado"} fullWidth value={money(totalDetalle)} InputProps={{ readOnly: true }} />
           </Grid>
           <Grid size={{ xs: 12, sm: 6 }}>
             <TextField label="Resolucion" fullWidth value={form.resolucion} onChange={(e) => setForm({ ...form, resolucion: e.target.value })} />
@@ -830,10 +943,41 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
         <Divider sx={{ my: 3 }} />
         <Typography variant="h6" sx={{ mb: 1 }}>Seleccion de codigo</Typography>
         <Alert severity="info" sx={{ mb: 2 }}>
-          Selecciona la combinacion del producto y agregala a la lista temporal antes de guardar. Esta accion no modifica inventario.
+          {isCambio
+            ? "Agrega lo que el cliente devuelve y lo que se le entregara. Si no hay factura o venta origen, deja la referencia vacia y el cambio quedara como operacion sin documento origen."
+            : "Agrega lo que el cliente devuelve. El inventario se afectara hasta cerrar el documento."}
         </Alert>
 
         <Grid container spacing={2}>
+          {isCambio && (
+            <Grid size={{ xs: 12, sm: 2 }}>
+              <FormControl fullWidth>
+                <InputLabel>Operacion</InputLabel>
+                <Select
+                  label="Operacion"
+                  value={articuloActual.operacion}
+                  onChange={(e) => setArticuloActual({ ...articuloActual, operacion: e.target.value as "devuelto" | "entregado" })}
+                >
+                  <MenuItem value="devuelto">Cliente devuelve</MenuItem>
+                  <MenuItem value="entregado">Se entrega</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+          )}
+          <Grid size={{ xs: 12, sm: 2 }}>
+            <FormControl fullWidth>
+              <InputLabel>{articuloActual.operacion === "entregado" ? "Bodega salida" : "Bodega ingreso"}</InputLabel>
+              <Select
+                label={articuloActual.operacion === "entregado" ? "Bodega salida" : "Bodega ingreso"}
+                value={articuloActual.bodegaId}
+                onChange={(e) => setArticuloActual({ ...articuloActual, bodegaId: Number(e.target.value) || "" })}
+              >
+                {bodegas.map((bodega) => (
+                  <MenuItem key={bodega.id} value={bodega.id}>{bodega.nombre}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
           <Grid size={{ xs: 12, sm: 2 }}>
             <FormControl fullWidth>
               <InputLabel>Tipo</InputLabel>
@@ -902,7 +1046,22 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
           <Grid size={{ xs: 12, sm: 2 }}>
             <TextField label="Monto" type="number" fullWidth value={articuloActual.precio} onChange={(e) => setArticuloActual({ ...articuloActual, precio: Number(e.target.value) || 0 })} />
           </Grid>
-          <Grid size={{ xs: 12, sm: 8 }}>
+          {articuloActual.operacion === "devuelto" && (
+            <Grid size={{ xs: 12, sm: 2 }}>
+              <TextField
+                select
+                label="Condicion"
+                fullWidth
+                value={articuloActual.condicion}
+                onChange={(e) => setArticuloActual({ ...articuloActual, condicion: e.target.value })}
+              >
+                <MenuItem value="vendible">Vendible</MenuItem>
+                <MenuItem value="revision">Revision</MenuItem>
+                <MenuItem value="danado">Danado</MenuItem>
+              </TextField>
+            </Grid>
+          )}
+          <Grid size={{ xs: 12, sm: articuloActual.operacion === "devuelto" ? 6 : 8 }}>
             <TextField label="Observaciones del articulo" fullWidth value={articuloActual.observaciones} onChange={(e) => setArticuloActual({ ...articuloActual, observaciones: e.target.value })} />
           </Grid>
           <Grid size={{ xs: 12, sm: 4 }}>
@@ -916,20 +1075,84 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
         </Grid>
 
         <Divider sx={{ my: 3 }} />
+        {isCambio && (
+          <>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ mb: 2 }}>
+              <Chip label={`Devuelto: ${money(totalDevuelto)}`} color="info" variant="outlined" />
+              <Chip label={`Entregado: ${money(totalEntregado)}`} color="success" variant="outlined" />
+              <Chip
+                label={diferenciaCambio >= 0 ? `Diferencia a pagar: ${money(diferenciaCambio)}` : `Saldo a favor: ${money(Math.abs(diferenciaCambio))}`}
+                color={diferenciaCambio > 0 ? "warning" : "default"}
+                variant="outlined"
+              />
+            </Stack>
+            {diferenciaCambio > 0 && (
+              <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+                <Typography variant="subtitle1" sx={{ mb: 1 }}>Pago de diferencia</Typography>
+                <Grid container spacing={2}>
+                  <Grid size={{ xs: 12, sm: 3 }}>
+                    <TextField
+                      select
+                      label="Metodo de pago"
+                      fullWidth
+                      value={pagoDiferencia.metodo}
+                      onChange={(e) => setPagoDiferencia({ ...pagoDiferencia, metodo: e.target.value })}
+                    >
+                      <MenuItem value="efectivo">Efectivo</MenuItem>
+                      <MenuItem value="transferencia">Transferencia</MenuItem>
+                      <MenuItem value="deposito_bancario">Deposito bancario</MenuItem>
+                      <MenuItem value="tarjeta">Tarjeta</MenuItem>
+                    </TextField>
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 3 }}>
+                    <TextField label="Monto pagado" type="number" fullWidth value={pagoDiferencia.montoPagado} onChange={(e) => setPagoDiferencia({ ...pagoDiferencia, montoPagado: Number(e.target.value) || 0 })} />
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 3 }}>
+                    <TextField label="Referencia" fullWidth value={pagoDiferencia.referencia} onChange={(e) => setPagoDiferencia({ ...pagoDiferencia, referencia: e.target.value })} />
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 3 }}>
+                    <TextField label="Banco" fullWidth value={pagoDiferencia.banco} onChange={(e) => setPagoDiferencia({ ...pagoDiferencia, banco: e.target.value })} />
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 3 }}>
+                    <TextField
+                      select
+                      label="Ubicacion del pago"
+                      fullWidth
+                      value={pagoDiferencia.ubicacion}
+                      onChange={(e) => setPagoDiferencia({ ...pagoDiferencia, ubicacion: e.target.value })}
+                    >
+                      <MenuItem value="TIENDA">Tienda</MenuItem>
+                      <MenuItem value="CAPITAL">Capital / Mensajero</MenuItem>
+                      <MenuItem value="DEPARTAMENTO">Departamento</MenuItem>
+                    </TextField>
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 9 }}>
+                    <TextField label="Observaciones del pago" fullWidth value={pagoDiferencia.observaciones} onChange={(e) => setPagoDiferencia({ ...pagoDiferencia, observaciones: e.target.value })} />
+                  </Grid>
+                </Grid>
+              </Paper>
+            )}
+          </>
+        )}
+
+        <Divider sx={{ my: 3 }} />
         <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
           <Typography variant="h6">Lista temporal</Typography>
-          <Chip label={`Total: ${money(totalDetalle)}`} color="primary" variant="outlined" />
+          <Chip label={isCambio ? `Diferencia: ${money(totalDetalle)}` : `Total: ${money(totalDetalle)}`} color="primary" variant="outlined" />
         </Stack>
         <TableContainer>
           <Table size="small">
             <TableHead>
               <TableRow>
+                {isCambio && <TableCell align="center">Operacion</TableCell>}
                 <TableCell align="center">Codigo</TableCell>
                 <TableCell align="center">Producto</TableCell>
                 <TableCell align="center">Tipo</TableCell>
                 <TableCell align="center">Tela</TableCell>
                 <TableCell align="center">Talla</TableCell>
                 <TableCell align="center">Color</TableCell>
+                <TableCell align="center">Bodega</TableCell>
+                <TableCell align="center">Condicion</TableCell>
                 <TableCell align="center">Cant.</TableCell>
                 <TableCell align="center">Monto</TableCell>
                 <TableCell align="center">Opciones</TableCell>
@@ -938,12 +1161,15 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
             <TableBody>
               {detalle.map((row) => (
                 <TableRow key={row.key}>
+                  {isCambio && <TableCell align="center">{row.operacion === "entregado" ? "Se entrega" : "Devuelto"}</TableCell>}
                   <TableCell align="center">{row.codigo}</TableCell>
                   <TableCell align="center">{row.producto}</TableCell>
                   <TableCell align="center">{row.tipoProducto || "N/D"}</TableCell>
                   <TableCell align="center">{row.tela || "N/D"}</TableCell>
                   <TableCell align="center">{row.talla || "N/D"}</TableCell>
                   <TableCell align="center">{row.color || "N/D"}</TableCell>
+                  <TableCell align="center">{row.bodegaNombre || "N/D"}</TableCell>
+                  <TableCell align="center">{row.operacion === "entregado" ? "-" : row.condicion || "vendible"}</TableCell>
                   <TableCell align="center">{row.cantidad}</TableCell>
                   <TableCell align="center">{money(Number(row.precio || 0))}</TableCell>
                   <TableCell align="center">
@@ -954,7 +1180,7 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
               ))}
               {!detalle.length && (
                 <TableRow>
-                  <TableCell colSpan={9} align="center">Agrega productos a la lista temporal.</TableCell>
+                  <TableCell colSpan={isCambio ? 12 : 11} align="center">Agrega productos a la lista temporal.</TableCell>
                 </TableRow>
               )}
             </TableBody>
