@@ -35,6 +35,7 @@ import { useAuthStore } from "../auth/useAuthStore";
 import { hasPermission } from "../auth/permissions";
 import { UniformaLoader } from "../components/UniformaLoader";
 import { formatCurrency } from "../utils/currency";
+import { emptyWhenZero, parseNumberInput } from "../utils/numberInputs";
 import {
   DEFAULT_DAILY_REPORT_SCHEDULE_RULES,
   DAY_LABELS,
@@ -1236,8 +1237,8 @@ export default function Admin() {
                   label="SMTP Port"
                   type="number"
                   fullWidth
-                  value={config.smtpPort}
-                  onChange={(e) => setConfig((prev) => ({ ...prev, smtpPort: Number(e.target.value) || 0 }))}
+                  value={emptyWhenZero(config.smtpPort)}
+                  onChange={(e) => setConfig((prev) => ({ ...prev, smtpPort: parseNumberInput(e.target.value) }))}
                 />
               </Grid>
               <Grid size={{ xs: 12, md: 3 }}>
@@ -1564,8 +1565,8 @@ export default function Admin() {
                     type="number"
                     fullWidth
                     disabled={!productBulkUpdateDraft.actualizarPrecio}
-                    value={productBulkUpdateDraft.precio}
-                    onChange={(e) => setProductBulkUpdateDraft((prev) => ({ ...prev, precio: Number(e.target.value) || 0 }))}
+                    value={emptyWhenZero(productBulkUpdateDraft.precio)}
+                    onChange={(e) => setProductBulkUpdateDraft((prev) => ({ ...prev, precio: parseNumberInput(e.target.value) }))}
                   />
                 </Stack>
               </Grid>
@@ -1587,8 +1588,8 @@ export default function Admin() {
                     type="number"
                     fullWidth
                     disabled={!productBulkUpdateDraft.actualizarStockMax}
-                    value={productBulkUpdateDraft.stockMax}
-                    onChange={(e) => setProductBulkUpdateDraft((prev) => ({ ...prev, stockMax: Number(e.target.value) || 0 }))}
+                    value={emptyWhenZero(productBulkUpdateDraft.stockMax)}
+                    onChange={(e) => setProductBulkUpdateDraft((prev) => ({ ...prev, stockMax: parseNumberInput(e.target.value) }))}
                   />
                 </Stack>
               </Grid>
@@ -1610,9 +1611,9 @@ export default function Admin() {
                     type="number"
                     fullWidth
                     disabled={!productBulkUpdateDraft.actualizarMerma}
-                    value={productBulkUpdateDraft.mermaPorcentaje}
+                    value={emptyWhenZero(productBulkUpdateDraft.mermaPorcentaje)}
                     onChange={(e) =>
-                      setProductBulkUpdateDraft((prev) => ({ ...prev, mermaPorcentaje: Number(e.target.value) || 0 }))
+                      setProductBulkUpdateDraft((prev) => ({ ...prev, mermaPorcentaje: parseNumberInput(e.target.value) }))
                     }
                   />
                 </Stack>
@@ -1732,9 +1733,9 @@ export default function Admin() {
                   label="Precio"
                   type="number"
                   fullWidth
-                  value={productBulkCreateDraft.precio}
+                  value={emptyWhenZero(productBulkCreateDraft.precio)}
                   onChange={(e) =>
-                    setProductBulkCreateDraft((prev) => ({ ...prev, precio: Number(e.target.value) || 0 }))
+                    setProductBulkCreateDraft((prev) => ({ ...prev, precio: parseNumberInput(e.target.value) }))
                   }
                 />
               </Grid>
@@ -1743,9 +1744,9 @@ export default function Admin() {
                   label="Stock maximo"
                   type="number"
                   fullWidth
-                  value={productBulkCreateDraft.stockMax}
+                  value={emptyWhenZero(productBulkCreateDraft.stockMax)}
                   onChange={(e) =>
-                    setProductBulkCreateDraft((prev) => ({ ...prev, stockMax: Number(e.target.value) || 0 }))
+                    setProductBulkCreateDraft((prev) => ({ ...prev, stockMax: parseNumberInput(e.target.value) }))
                   }
                 />
               </Grid>
@@ -1754,11 +1755,11 @@ export default function Admin() {
                   label="Merma %"
                   type="number"
                   fullWidth
-                  value={productBulkCreateDraft.mermaPorcentaje}
+                  value={emptyWhenZero(productBulkCreateDraft.mermaPorcentaje)}
                   onChange={(e) =>
                     setProductBulkCreateDraft((prev) => ({
                       ...prev,
-                      mermaPorcentaje: Number(e.target.value) || 0,
+                      mermaPorcentaje: parseNumberInput(e.target.value),
                     }))
                   }
                 />
@@ -1804,9 +1805,9 @@ export default function Admin() {
                   label="Precio"
                   type="number"
                   fullWidth
-                  value={productMassConfigDraft.precio}
+                  value={emptyWhenZero(productMassConfigDraft.precio)}
                   onChange={(e) =>
-                    setProductMassConfigDraft((prev) => ({ ...prev, precio: Number(e.target.value) || 0 }))
+                    setProductMassConfigDraft((prev) => ({ ...prev, precio: parseNumberInput(e.target.value) }))
                   }
                 />
               </Grid>
@@ -1815,9 +1816,9 @@ export default function Admin() {
                   label="Stock maximo"
                   type="number"
                   fullWidth
-                  value={productMassConfigDraft.stockMax}
+                  value={emptyWhenZero(productMassConfigDraft.stockMax)}
                   onChange={(e) =>
-                    setProductMassConfigDraft((prev) => ({ ...prev, stockMax: Number(e.target.value) || 0 }))
+                    setProductMassConfigDraft((prev) => ({ ...prev, stockMax: parseNumberInput(e.target.value) }))
                   }
                 />
               </Grid>
@@ -1826,11 +1827,11 @@ export default function Admin() {
                   label="Merma %"
                   type="number"
                   fullWidth
-                  value={productMassConfigDraft.mermaPorcentaje}
+                  value={emptyWhenZero(productMassConfigDraft.mermaPorcentaje)}
                   onChange={(e) =>
                     setProductMassConfigDraft((prev) => ({
                       ...prev,
-                      mermaPorcentaje: Number(e.target.value) || 0,
+                      mermaPorcentaje: parseNumberInput(e.target.value),
                     }))
                   }
                 />
@@ -2225,8 +2226,8 @@ export default function Admin() {
             label="Umbral de stock bajo"
             type="number"
             fullWidth
-            value={config.stockThreshold}
-            onChange={(e) => setConfig({ ...config, stockThreshold: Number(e.target.value) || 0 })}
+            value={emptyWhenZero(config.stockThreshold)}
+            onChange={(e) => setConfig({ ...config, stockThreshold: parseNumberInput(e.target.value) })}
             helperText="Se notificara cuando el stock este por debajo de este valor."
           />
         </Grid>
@@ -2235,8 +2236,8 @@ export default function Admin() {
             label="Alerta por venta alta (monto)"
             type="number"
             fullWidth
-            value={config.highSaleThreshold}
-            onChange={(e) => setConfig({ ...config, highSaleThreshold: Number(e.target.value) || 0 })}
+            value={emptyWhenZero(config.highSaleThreshold)}
+            onChange={(e) => setConfig({ ...config, highSaleThreshold: parseNumberInput(e.target.value) })}
             helperText="Disparara notificacion para ventas iguales o mayores a este monto."
           />
         </Grid>

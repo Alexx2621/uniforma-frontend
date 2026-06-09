@@ -42,6 +42,7 @@ import { useSystemConfigStore } from "../../config/useSystemConfigStore";
 import { UniformaLoader } from "../../components/UniformaLoader";
 import { canUseVendedorDropdown, filterUsuariosByBodega } from "../../utils/vendedorDropdownAccess";
 import { formatReportScheduleForDay, getReportSchedule, isReportScheduleOpen } from "../../utils/reportSchedule";
+import { emptyWhenZero, parseNumberInput } from "../../utils/numberInputs";
 
 interface PagoVenta {
   id?: number | string | null;
@@ -105,6 +106,26 @@ interface PedidoReporte {
   usuario?: { id?: number | string | null; nombre?: string | null; usuario?: string | null } | null;
   bodega?: { nombre?: string | null; ubicacion?: string | null } | null;
   pagos?: PagoVenta[];
+}
+
+interface OrdenMixtaReporte {
+  id: number;
+  folio?: string | null;
+  fecha: string;
+  total?: number | null;
+  envio?: number | null;
+  ubicacion?: string | null;
+  metodoPago?: string | null;
+  referenciaPago?: string | null;
+  bancoPago?: string | null;
+  clienteNombre?: string | null;
+  vendedor?: string | null;
+  usuarioId?: number | string | null;
+  usuario?: { id?: number | string | null; nombre?: string | null; usuario?: string | null } | null;
+  ventaId?: number | string | null;
+  pedidoId?: number | string | null;
+  venta?: { id?: number | string | null; folio?: string | null; total?: number | null; pagos?: PagoVenta[] } | null;
+  pedido?: { id?: number | string | null; folio?: string | null; pagos?: PagoVenta[] } | null;
 }
 
 interface CapitalRow {
@@ -218,6 +239,12 @@ const pedidoPerteneceAUsuario = (pedido: PedidoReporte, usuario: Usuario | null)
   return textMatchesUsuario(pedido.solicitadoPor, usuario) || textMatchesUsuario(pedido.usuario?.nombre, usuario) || textMatchesUsuario(pedido.usuario?.usuario, usuario);
 };
 
+const ordenMixtaPerteneceAUsuario = (orden: OrdenMixtaReporte, usuario: Usuario | null) => {
+  if (!usuario) return true;
+  if (Number(orden.usuarioId || orden.usuario?.id || 0) === Number(usuario.id)) return true;
+  return textMatchesUsuario(orden.vendedor, usuario) || textMatchesUsuario(orden.usuario?.nombre, usuario) || textMatchesUsuario(orden.usuario?.usuario, usuario);
+};
+
 const metodoCuentaComoTarjeta = (metodo?: string | null) => {
   const normalized = normalizarMetodoPago(metodo);
   return normalized === "tarjeta" || normalized === "visalink";
@@ -245,6 +272,14 @@ const normalizeUbicacionPedido = (pedido: PedidoReporte, pago?: PagoVenta | null
   const raw = `${pago?.ubicacion || pedido.ubicacion || ""}`.trim();
   const fallbackFromBodega = `${pedido.bodega?.ubicacion || pedido.bodega?.nombre || ""}`.trim();
   const normalized = (raw || fallbackFromBodega || "TIENDA").toUpperCase();
+  if (normalized.includes("CAPITAL")) return "CAPITAL";
+  if (normalized.includes("DEPART")) return "DEPARTAMENTO";
+  if (normalized.includes("ANTIGUA")) return "DEPARTAMENTO";
+  return "TIENDA";
+};
+
+const normalizeUbicacionOrdenMixta = (orden: OrdenMixtaReporte, pago?: PagoVenta | null) => {
+  const normalized = `${pago?.ubicacion || orden.ubicacion || "TIENDA"}`.trim().toUpperCase();
   if (normalized.includes("CAPITAL")) return "CAPITAL";
   if (normalized.includes("DEPART")) return "DEPARTAMENTO";
   if (normalized.includes("ANTIGUA")) return "DEPARTAMENTO";
@@ -303,6 +338,42 @@ const getPedidoPagosReporte = (pedido: PedidoReporte, fecha: string): PagoVenta[
 const getPedidoPagoRowId = (pedido: PedidoReporte, pago?: PagoVenta | null) => {
   const pagoId = `${pago?.id || ""}`.replace(/\D/g, "");
   return -(Number(pedido.id || 0) * 100000 + Number(pagoId || 0));
+};
+
+const getOrdenMixtaRecibo = (orden: OrdenMixtaReporte) => orden.folio || `OM-${orden.id}`;
+
+const getOrdenMixtaPagosReporte = (orden: OrdenMixtaReporte, fecha: string): PagoVenta[] => {
+  const pagosVenta = Array.isArray(orden.venta?.pagos) ? orden.venta?.pagos || [] : [];
+  const pagosPedido = Array.isArray(orden.pedido?.pagos) ? orden.pedido?.pagos || [] : [];
+  const pagos = [
+    ...pagosVenta,
+    ...pagosPedido,
+  ].filter((pago) => pago.fecha && toDateOnly(pago.fecha) === fecha && getPagoMontoAplicado(pago) > 0);
+  const grouped = new Map<string, PagoVenta>();
+  pagos.forEach((pago) => {
+    const metodo = normalizarMetodoPago(pago.metodo || orden.metodoPago);
+    const referencia = `${pago.referencia || orden.referenciaPago || ""}`.trim();
+    const banco = `${pago.banco || orden.bancoPago || ""}`.trim();
+    const ubicacion = `${pago.ubicacion || orden.ubicacion || ""}`.trim();
+    const key = [metodo, referencia, banco, ubicacion].join("|");
+    const current = grouped.get(key);
+    grouped.set(key, {
+      id: current?.id || `om-${orden.id}-${grouped.size + 1}`,
+      metodo,
+      referencia,
+      banco,
+      ubicacion,
+      fecha,
+      monto: Number(current?.monto || 0) + getPagoMontoAplicado(pago),
+      recargo: 0,
+    });
+  });
+  return Array.from(grouped.values());
+};
+
+const getOrdenMixtaPagoRowId = (orden: OrdenMixtaReporte, pago?: PagoVenta | null) => {
+  const pagoId = `${pago?.id || ""}`.replace(/\D/g, "");
+  return -(900000000 + Number(orden.id || 0) * 100000 + Number(pagoId || 0));
 };
 
 const createCapitalRowFromVenta = (venta: Venta, fecha: string): CapitalRow => {
@@ -401,6 +472,65 @@ const createTiendaRowFromPedido = (pedido: PedidoReporte, fecha: string, pago?: 
   };
 };
 
+const createCapitalRowFromOrdenMixta = (orden: OrdenMixtaReporte, fecha: string, pago: PagoVenta): CapitalRow => {
+  const metodo = normalizarMetodoPago(pago.metodo || orden.metodoPago);
+  const referencia = `${pago.referencia || orden.referenciaPago || ""}`.trim();
+  const banco = `${pago.banco || orden.bancoPago || ""}`.trim();
+  const total = getPagoMontoAplicado(pago);
+  return {
+    id: getOrdenMixtaPagoRowId(orden, pago),
+    fecha,
+    envio: "",
+    transferencia: metodo === "transferencia" ? total : 0,
+    autorizacion: metodo === "transferencia" ? referencia : "",
+    deposito: metodo === "deposito_bancario" ? total : 0,
+    boleta: metodo === "deposito_bancario" ? referencia : "",
+    banco: metodo === "deposito_bancario" ? banco : "",
+    efectivo: metodo === "efectivo" ? total : 0,
+    observaciones: "",
+  };
+};
+
+const createDepartamentoRowFromOrdenMixta = (orden: OrdenMixtaReporte, fecha: string, pago: PagoVenta): DepartamentoRow => {
+  const metodo = normalizarMetodoPago(pago.metodo || orden.metodoPago);
+  const referencia = `${pago.referencia || orden.referenciaPago || ""}`.trim();
+  const banco = `${pago.banco || orden.bancoPago || ""}`.trim();
+  const total = getPagoMontoAplicado(pago);
+  return {
+    id: getOrdenMixtaPagoRowId(orden, pago),
+    fecha,
+    envio: "",
+    transferencia: metodo === "transferencia" ? total : 0,
+    autorizacion: metodo === "transferencia" ? referencia : "",
+    deposito: metodo === "deposito_bancario" ? total : 0,
+    boleta: metodo === "deposito_bancario" ? referencia : "",
+    banco: metodo === "deposito_bancario" ? banco : "",
+    observaciones: "",
+  };
+};
+
+const createTiendaRowFromOrdenMixta = (orden: OrdenMixtaReporte, fecha: string, pago: PagoVenta): TiendaRow => {
+  const metodo = normalizarMetodoPago(pago.metodo || orden.metodoPago);
+  const referencia = `${pago.referencia || orden.referenciaPago || ""}`.trim();
+  const banco = `${pago.banco || orden.bancoPago || ""}`.trim();
+  const total = getPagoMontoAplicado(pago);
+  return {
+    id: getOrdenMixtaPagoRowId(orden, pago),
+    fecha,
+    recibo: getOrdenMixtaRecibo(orden),
+    transferencia: metodo === "transferencia" ? total : 0,
+    autorizacionTransferencia: metodo === "transferencia" ? referencia : "",
+    deposito: metodo === "deposito_bancario" ? total : 0,
+    boleta: metodo === "deposito_bancario" ? referencia : "",
+    banco: metodo === "deposito_bancario" ? banco : "",
+    tarjeta: metodoCuentaComoTarjeta(metodo) ? total : 0,
+    autorizacionTarjeta: metodoCuentaComoTarjeta(metodo) ? referencia : "",
+    efectivo: metodo === "efectivo" ? total : 0,
+    total,
+    observaciones: "",
+  };
+};
+
 const createCapitalRow = (fecha: string): CapitalRow => ({
   id: Date.now() + Math.floor(Math.random() * 100000),
   fecha,
@@ -446,28 +576,37 @@ const getTiendaRowTotal = (row: TiendaRow) =>
   Number(row.total || 0) ||
   Number(row.transferencia || 0) + Number(row.deposito || 0) + Number(row.tarjeta || 0) + Number(row.efectivo || 0);
 
-const getReporteDiarioDocumentoTotal = (doc: DocumentoGenerado) =>
-  (doc.data?.capitalRows || []).reduce(
-    (sum: number, row: any) => sum + Number(row.transferencia || 0) + Number(row.deposito || 0) + Number(row.efectivo || 0),
-    0
-  ) +
-  (doc.data?.departamentoRows || []).reduce(
-    (sum: number, row: any) => sum + Number(row.transferencia || 0) + Number(row.deposito || 0),
-    0
-  ) +
-  (doc.data?.ventasSnapshot || [])
-    .filter((venta: Venta) => normalizeUbicacionVenta(venta) === "TIENDA")
-    .reduce((sum: number, venta: any) => sum + Number(venta.total || 0), 0) +
-  (doc.data?.pedidosSnapshot || [])
-    .reduce(
-      (sum: number, pedido: PedidoReporte) =>
-        sum +
-        getPedidoPagosReporte(pedido, doc.data?.fecha || toDateOnly(pedido.fecha))
-          .filter((pago) => normalizeUbicacionPedido(pedido, pago) === "TIENDA")
-          .reduce((pagoSum, pago) => pagoSum + getPagoMontoAplicado(pago), 0),
+const getReporteDiarioDocumentoTotal = (doc: DocumentoGenerado) => {
+  const tiendaAutoRows = Array.isArray(doc.data?.tiendaAutoRows) ? doc.data.tiendaAutoRows : null;
+  const tiendaAutoTotal = tiendaAutoRows
+    ? tiendaAutoRows.reduce((sum: number, row: any) => sum + getTiendaRowTotal(row), 0)
+    : null;
+  const tiendaSnapshotTotal =
+    tiendaAutoTotal ??
+    (doc.data?.ventasSnapshot || [])
+      .filter((venta: Venta) => normalizeUbicacionVenta(venta) === "TIENDA")
+      .reduce((sum: number, venta: any) => sum + Number(venta.total || 0), 0) +
+      (doc.data?.pedidosSnapshot || []).reduce(
+        (sum: number, pedido: PedidoReporte) =>
+          sum +
+          getPedidoPagosReporte(pedido, doc.data?.fecha || toDateOnly(pedido.fecha))
+            .filter((pago) => normalizeUbicacionPedido(pedido, pago) === "TIENDA")
+            .reduce((pagoSum, pago) => pagoSum + getPagoMontoAplicado(pago), 0),
+        0
+      );
+  return (
+    (doc.data?.capitalRows || []).reduce(
+      (sum: number, row: any) => sum + Number(row.transferencia || 0) + Number(row.deposito || 0) + Number(row.efectivo || 0),
       0
     ) +
-  (doc.data?.tiendaManualRows || []).reduce((sum: number, row: any) => sum + getTiendaRowTotal(row), 0);
+    (doc.data?.departamentoRows || []).reduce(
+      (sum: number, row: any) => sum + Number(row.transferencia || 0) + Number(row.deposito || 0),
+      0
+    ) +
+    tiendaSnapshotTotal +
+    (doc.data?.tiendaManualRows || []).reduce((sum: number, row: any) => sum + getTiendaRowTotal(row), 0)
+  );
+};
 
 const hasTiendaRowData = (row: TiendaRow) =>
   Boolean(
@@ -507,6 +646,42 @@ const hasDepartamentoRowData = (row: DepartamentoRow) =>
       Number(row.deposito || 0) > 0
   );
 
+const reportTableContainerSx = {
+  overflowX: "auto",
+  width: "100%",
+  "& .MuiTable-root": {
+    width: "max-content",
+    minWidth: "100%",
+    tableLayout: "auto",
+  },
+  "& .MuiTableCell-root": {
+    px: 1,
+    py: 0.75,
+    fontSize: "0.8rem",
+    lineHeight: 1.25,
+    whiteSpace: "nowrap",
+    verticalAlign: "top",
+  },
+  "& .MuiTableHead-root .MuiTableCell-root": {
+    fontSize: "0.84rem",
+    fontWeight: 700,
+  },
+  "& .MuiInputBase-root": {
+    minHeight: 36,
+  },
+  "& .MuiInputBase-input": {
+    px: 1,
+    py: 0.7,
+    fontSize: "0.82rem",
+  },
+  "& input[type='date']": {
+    fontSize: "0.78rem",
+  },
+  "& .MuiIconButton-root": {
+    p: 0.25,
+  },
+};
+
 export default function ReporteDiario() {
   const today = toDateOnly(new Date());
   const { nombre, primerNombre, primerApellido, usuario, rol, rolId, permisos, id: userId } = useAuthStore();
@@ -522,6 +697,7 @@ export default function ReporteDiario() {
   const [filtroHasta, setFiltroHasta] = useState(today);
   const [ventas, setVentas] = useState<Venta[]>([]);
   const [pedidos, setPedidos] = useState<PedidoReporte[]>([]);
+  const [ordenesMixtas, setOrdenesMixtas] = useState<OrdenMixtaReporte[]>([]);
   const [fecha, setFecha] = useState(today);
   const [reporteUsuarioId, setReporteUsuarioId] = useState<number | "">(userId ?? "");
   const [omitirCorreoReporte, setOmitirCorreoReporte] = useState(false);
@@ -586,12 +762,14 @@ export default function ReporteDiario() {
     if (rellenando || generandoPdf) return;
     try {
       setRellenando(true);
-      const [respVentas, respPedidos] = await Promise.all([
+      const [respVentas, respPedidos, respOrdenesMixtas] = await Promise.all([
         api.get("/ventas"),
         api.get("/produccion"),
+        api.get("/orden-mixta"),
       ]);
       setVentas(respVentas.data || []);
       setPedidos(respPedidos.data || []);
+      setOrdenesMixtas(respOrdenesMixtas.data || []);
       setCapitalAutoEnvios({});
       setDepartamentoAutoEnvios({});
       setCapitalAutoObservaciones({});
@@ -602,11 +780,11 @@ export default function ReporteDiario() {
       setTiendaAutoEditId(null);
       Swal.fire(
         "Listo",
-        `Se rellenaron las ventas y pedidos registrados para ${fecha}. Revisa cada seccion antes de imprimir.`,
+        `Se rellenaron las ventas, pedidos y ordenes mixtas registrados para ${fecha}. Revisa cada seccion antes de imprimir.`,
         "success"
       );
     } catch {
-      Swal.fire("Error", "No se pudieron rellenar las ventas y pedidos del reporte diario", "error");
+      Swal.fire("Error", "No se pudieron rellenar las ventas, pedidos y ordenes mixtas del reporte diario", "error");
     } finally {
       setRellenando(false);
     }
@@ -690,6 +868,7 @@ export default function ReporteDiario() {
     await cargarSiguienteLiquidacion(defaultUsuarioId);
     setVentas([]);
     setPedidos([]);
+    setOrdenesMixtas([]);
     setFecha(today);
     setOmitirCorreoReporte(false);
     setCapitalRows([createCapitalRow(today)]);
@@ -706,23 +885,46 @@ export default function ReporteDiario() {
     setShowForm(true);
   };
 
+  const ordenesMixtasDelDia = useMemo(
+    () =>
+      ordenesMixtas.filter((orden) => {
+        const pagosDelDia = getOrdenMixtaPagosReporte(orden, fecha);
+        if (!pagosDelDia.length) return false;
+        if (canGenerateForOtherUser && reporteUsuarioId) return ordenMixtaPerteneceAUsuario(orden, reporteUsuario);
+        return true;
+      }),
+    [ordenesMixtas, fecha, canGenerateForOtherUser, reporteUsuarioId, reporteUsuario]
+  );
+
+  const ordenMixtaVentaIds = useMemo(
+    () => new Set(ordenesMixtas.map((orden) => Number(orden.ventaId || orden.venta?.id || 0)).filter(Boolean)),
+    [ordenesMixtas]
+  );
+
+  const ordenMixtaPedidoIds = useMemo(
+    () => new Set(ordenesMixtas.map((orden) => Number(orden.pedidoId || orden.pedido?.id || 0)).filter(Boolean)),
+    [ordenesMixtas]
+  );
+
   const ventasDelDia = useMemo(
     () =>
       ventas.filter((venta) => {
         if (toDateOnly(venta.fecha) !== fecha) return false;
+        if (ordenMixtaVentaIds.has(Number(venta.id))) return false;
         if (canGenerateForOtherUser && reporteUsuarioId) return ventaPerteneceAUsuario(venta, reporteUsuario);
         return true;
       }),
-    [ventas, fecha, canGenerateForOtherUser, reporteUsuarioId, reporteUsuario]
+    [ventas, fecha, ordenMixtaVentaIds, canGenerateForOtherUser, reporteUsuarioId, reporteUsuario]
   );
 
   const pedidosPagosDelDia = useMemo(
     () =>
       pedidos.flatMap((pedido) => {
+        if (ordenMixtaPedidoIds.has(Number(pedido.id))) return [];
         if (canGenerateForOtherUser && reporteUsuarioId && !pedidoPerteneceAUsuario(pedido, reporteUsuario)) return [];
         return getPedidoPagosReporte(pedido, fecha).map((pago) => ({ pedido, pago }));
       }),
-    [pedidos, fecha, canGenerateForOtherUser, reporteUsuarioId, reporteUsuario]
+    [pedidos, fecha, ordenMixtaPedidoIds, canGenerateForOtherUser, reporteUsuarioId, reporteUsuario]
   );
 
   const pedidosDelDia = useMemo(() => {
@@ -743,12 +945,17 @@ export default function ReporteDiario() {
               .filter((pago) => normalizeUbicacionPedido(pedido, pago) === "CAPITAL")
               .map((pago) => createCapitalRowFromPedido(pedido, fecha, pago))
           ),
+        ...ordenesMixtasDelDia.flatMap((orden) =>
+          getOrdenMixtaPagosReporte(orden, fecha)
+            .filter((pago) => normalizeUbicacionOrdenMixta(orden, pago) === "CAPITAL")
+            .map((pago) => createCapitalRowFromOrdenMixta(orden, fecha, pago))
+        ),
       ].map((row) => ({
         ...row,
         envio: capitalAutoEnvios[row.id] || "",
         observaciones: capitalAutoObservaciones[row.id] || "",
       })),
-    [ventasDelDia, pedidosDelDia, fecha, capitalAutoEnvios, capitalAutoObservaciones]
+    [ventasDelDia, pedidosDelDia, ordenesMixtasDelDia, fecha, capitalAutoEnvios, capitalAutoObservaciones]
   );
 
   const departamentoAutoRows = useMemo<DepartamentoRow[]>(
@@ -763,12 +970,17 @@ export default function ReporteDiario() {
               .filter((pago) => normalizeUbicacionPedido(pedido, pago) === "DEPARTAMENTO")
               .map((pago) => createDepartamentoRowFromPedido(pedido, fecha, pago))
           ),
+        ...ordenesMixtasDelDia.flatMap((orden) =>
+          getOrdenMixtaPagosReporte(orden, fecha)
+            .filter((pago) => normalizeUbicacionOrdenMixta(orden, pago) === "DEPARTAMENTO")
+            .map((pago) => createDepartamentoRowFromOrdenMixta(orden, fecha, pago))
+        ),
       ].map((row) => ({
         ...row,
         envio: departamentoAutoEnvios[row.id] || "",
         observaciones: departamentoAutoObservaciones[row.id] || "",
       })),
-    [ventasDelDia, pedidosDelDia, fecha, departamentoAutoEnvios, departamentoAutoObservaciones]
+    [ventasDelDia, pedidosDelDia, ordenesMixtasDelDia, fecha, departamentoAutoEnvios, departamentoAutoObservaciones]
   );
 
   const tiendaAutoRows = useMemo<TiendaRow[]>(() => {
@@ -798,11 +1010,16 @@ export default function ReporteDiario() {
           .filter((pago) => normalizeUbicacionPedido(pedido, pago) === "TIENDA")
           .map((pago) => createTiendaRowFromPedido(pedido, fecha, pago))
       );
-    return [...ventaRows, ...pedidoRows].map((row) => ({
+    const ordenMixtaRows = ordenesMixtasDelDia.flatMap((orden) =>
+      getOrdenMixtaPagosReporte(orden, fecha)
+        .filter((pago) => normalizeUbicacionOrdenMixta(orden, pago) === "TIENDA")
+        .map((pago) => createTiendaRowFromOrdenMixta(orden, fecha, pago))
+    );
+    return [...ventaRows, ...pedidoRows, ...ordenMixtaRows].map((row) => ({
       ...row,
       observaciones: tiendaAutoObservaciones[row.id] || "",
     }));
-  }, [ventasDelDia, pedidosDelDia, fecha, tiendaAutoObservaciones]);
+  }, [ventasDelDia, pedidosDelDia, ordenesMixtasDelDia, fecha, tiendaAutoObservaciones]);
 
   const tiendaRows = useMemo<TiendaRow[]>(
     () => [...tiendaAutoRows, ...tiendaManualRows.filter(hasTiendaRowData)],
@@ -904,6 +1121,7 @@ export default function ReporteDiario() {
     tiendaManualRows,
     ventasSnapshot: ventasDelDia,
     pedidosSnapshot: pedidosDelDia,
+    ordenesMixtasSnapshot: ordenesMixtasDelDia,
   });
 
   const guardarDocumento = async () => {
@@ -1206,7 +1424,7 @@ export default function ReporteDiario() {
         )}
         <Grid size={{ xs: 12, sm: 6, md: canGenerateForOtherUser ? 12 : 6 }}>
           <Stack direction="row" spacing={1} alignItems="center" sx={{ height: "100%", flexWrap: "wrap" }}>
-            <Chip label={`${ventasDelDia.length + pedidosDelDia.length} registros del dia`} />
+          <Chip label={`${ventasDelDia.length + pedidosDelDia.length + ordenesMixtasDelDia.length} registros del dia`} />
             <Chip label={`Capital ${money(subtotalCapital)}`} color="primary" variant="outlined" />
             <Chip label={`Departamento ${money(subtotalDepartamento)}`} color="warning" variant="outlined" />
             <Chip label={`Tienda ${money(subtotalTienda)}`} color="success" />
@@ -1232,7 +1450,7 @@ export default function ReporteDiario() {
               Agregar fila
             </Button>
           </Stack>
-          <TableContainer sx={{ overflowX: "auto" }}>
+          <TableContainer sx={reportTableContainerSx}>
             <Table size="small">
               <TableHead>
                 <TableRow>
@@ -1320,8 +1538,8 @@ export default function ReporteDiario() {
                           type="number"
                           size="small"
                           fullWidth
-                          value={row.transferencia}
-                          onChange={(e) => updateCapitalRow(row.id, "transferencia", Number(e.target.value) || 0)}
+                          value={emptyWhenZero(row.transferencia)}
+                          onChange={(e) => updateCapitalRow(row.id, "transferencia", parseNumberInput(e.target.value))}
                         />
                       </TableCell>
                       <TableCell sx={{ minWidth: 140 }}>
@@ -1332,8 +1550,8 @@ export default function ReporteDiario() {
                           type="number"
                           size="small"
                           fullWidth
-                          value={row.deposito}
-                          onChange={(e) => updateCapitalRow(row.id, "deposito", Number(e.target.value) || 0)}
+                          value={emptyWhenZero(row.deposito)}
+                          onChange={(e) => updateCapitalRow(row.id, "deposito", parseNumberInput(e.target.value))}
                         />
                       </TableCell>
                       <TableCell sx={{ minWidth: 120 }}>
@@ -1347,8 +1565,8 @@ export default function ReporteDiario() {
                           type="number"
                           size="small"
                           fullWidth
-                          value={row.efectivo}
-                          onChange={(e) => updateCapitalRow(row.id, "efectivo", Number(e.target.value) || 0)}
+                          value={emptyWhenZero(row.efectivo)}
+                          onChange={(e) => updateCapitalRow(row.id, "efectivo", parseNumberInput(e.target.value))}
                         />
                       </TableCell>
                       <TableCell sx={{ whiteSpace: "nowrap", fontWeight: 600 }}>{money(total)}</TableCell>
@@ -1389,7 +1607,7 @@ export default function ReporteDiario() {
               Agregar fila
             </Button>
           </Stack>
-          <TableContainer sx={{ overflowX: "auto" }}>
+          <TableContainer sx={reportTableContainerSx}>
             <Table size="small">
               <TableHead>
                 <TableRow>
@@ -1475,8 +1693,8 @@ export default function ReporteDiario() {
                           type="number"
                           size="small"
                           fullWidth
-                          value={row.transferencia}
-                          onChange={(e) => updateDepartamentoRow(row.id, "transferencia", Number(e.target.value) || 0)}
+                          value={emptyWhenZero(row.transferencia)}
+                          onChange={(e) => updateDepartamentoRow(row.id, "transferencia", parseNumberInput(e.target.value))}
                         />
                       </TableCell>
                       <TableCell sx={{ minWidth: 140 }}>
@@ -1487,8 +1705,8 @@ export default function ReporteDiario() {
                           type="number"
                           size="small"
                           fullWidth
-                          value={row.deposito}
-                          onChange={(e) => updateDepartamentoRow(row.id, "deposito", Number(e.target.value) || 0)}
+                          value={emptyWhenZero(row.deposito)}
+                          onChange={(e) => updateDepartamentoRow(row.id, "deposito", parseNumberInput(e.target.value))}
                         />
                       </TableCell>
                       <TableCell sx={{ minWidth: 120 }}>
@@ -1535,7 +1753,7 @@ export default function ReporteDiario() {
               Agregar fila
             </Button>
           </Stack>
-          <TableContainer sx={{ overflowX: "auto" }}>
+          <TableContainer sx={reportTableContainerSx}>
             <Table size="small">
               <TableHead>
                 <TableRow>
@@ -1614,8 +1832,8 @@ export default function ReporteDiario() {
                         type="number"
                         size="small"
                         fullWidth
-                        value={row.transferencia}
-                        onChange={(e) => updateTiendaManualRow(row.id, "transferencia", Number(e.target.value) || 0)}
+                        value={emptyWhenZero(row.transferencia)}
+                        onChange={(e) => updateTiendaManualRow(row.id, "transferencia", parseNumberInput(e.target.value))}
                       />
                     </TableCell>
                     <TableCell sx={{ minWidth: 120 }}>
@@ -1631,8 +1849,8 @@ export default function ReporteDiario() {
                         type="number"
                         size="small"
                         fullWidth
-                        value={row.deposito}
-                        onChange={(e) => updateTiendaManualRow(row.id, "deposito", Number(e.target.value) || 0)}
+                        value={emptyWhenZero(row.deposito)}
+                        onChange={(e) => updateTiendaManualRow(row.id, "deposito", parseNumberInput(e.target.value))}
                       />
                     </TableCell>
                     <TableCell sx={{ minWidth: 120 }}>
@@ -1646,8 +1864,8 @@ export default function ReporteDiario() {
                         type="number"
                         size="small"
                         fullWidth
-                        value={row.tarjeta}
-                        onChange={(e) => updateTiendaManualRow(row.id, "tarjeta", Number(e.target.value) || 0)}
+                        value={emptyWhenZero(row.tarjeta)}
+                        onChange={(e) => updateTiendaManualRow(row.id, "tarjeta", parseNumberInput(e.target.value))}
                       />
                     </TableCell>
                     <TableCell sx={{ minWidth: 150 }}>
@@ -1663,8 +1881,8 @@ export default function ReporteDiario() {
                         type="number"
                         size="small"
                         fullWidth
-                        value={row.efectivo}
-                        onChange={(e) => updateTiendaManualRow(row.id, "efectivo", Number(e.target.value) || 0)}
+                        value={emptyWhenZero(row.efectivo)}
+                        onChange={(e) => updateTiendaManualRow(row.id, "efectivo", parseNumberInput(e.target.value))}
                       />
                     </TableCell>
                     <TableCell sx={{ whiteSpace: "nowrap", fontWeight: 600 }}>{money(getTiendaRowTotal(row))}</TableCell>

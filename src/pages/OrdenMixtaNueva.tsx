@@ -33,6 +33,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
 import { formatCurrency } from "../utils/currency";
+import { emptyWhenZero, parseNumberInput } from "../utils/numberInputs";
 
 type Cliente = { id: number; nombre: string; telefono?: string | null };
 type Bodega = { id: number; nombre: string; tipo?: string | null; usaInventarioVentas?: boolean };
@@ -129,6 +130,7 @@ export default function OrdenMixtaNueva() {
   const [metodoPago, setMetodoPago] = useState("efectivo");
   const [referenciaPago, setReferenciaPago] = useState("");
   const [bancoPago, setBancoPago] = useState("");
+  const [envio, setEnvio] = useState(0);
   const [anticipoTotal, setAnticipoTotal] = useState(0);
   const [linea, setLinea] = useState<Linea>({ ...lineBase, key: Date.now(), bodegaId: auth.bodegaId ? Number(auth.bodegaId) : "" });
   const [lineas, setLineas] = useState<Linea[]>([]);
@@ -174,11 +176,14 @@ export default function OrdenMixtaNueva() {
     () => lineas.filter((item) => item.tipoOperacion === "pedido").reduce((sum, item) => sum + calcularSubtotal(item), 0),
     [lineas],
   );
-  const total = subtotalVenta + subtotalPedido;
+  const envioMonto = Math.max(0, Number(envio || 0));
+  const total = subtotalVenta + subtotalPedido + envioMonto;
+  const totalVentaDocumento = subtotalVenta + (subtotalVenta > 0 ? envioMonto : 0);
+  const totalPedidoDocumento = subtotalPedido + (subtotalVenta > 0 ? 0 : envioMonto);
   const anticipoVenta =
-    subtotalVenta > 0 && subtotalPedido > 0
-      ? Math.round(Number(anticipoTotal || 0) * (subtotalVenta / total) * 100) / 100
-      : subtotalVenta > 0
+    totalVentaDocumento > 0 && totalPedidoDocumento > 0
+      ? Math.round(Number(anticipoTotal || 0) * (totalVentaDocumento / total) * 100) / 100
+      : totalVentaDocumento > 0
         ? Number(anticipoTotal || 0)
         : 0;
   const anticipoPedido = Math.max(0, Math.round((Number(anticipoTotal || 0) - anticipoVenta) * 100) / 100);
@@ -429,6 +434,7 @@ export default function OrdenMixtaNueva() {
         metodoPago,
         referenciaPago,
         bancoPago,
+        envio: envioMonto,
         anticipoTotal: Number(anticipoTotal || 0),
         vendedor: auth.nombre || auth.usuario,
         detalle: lineas,
@@ -521,7 +527,10 @@ export default function OrdenMixtaNueva() {
             </FormControl>
           </Grid>
           <Grid size={{ xs: 12, md: 3 }}>
-            <TextField fullWidth type="number" label="Anticipo total" value={anticipoTotal} onChange={(event) => setAnticipoTotal(Number(event.target.value))} />
+            <TextField fullWidth type="number" label="Anticipo total" value={emptyWhenZero(anticipoTotal)} onChange={(event) => setAnticipoTotal(parseNumberInput(event.target.value))} />
+          </Grid>
+          <Grid size={{ xs: 12, md: 3 }}>
+            <TextField fullWidth type="number" label="Envio" value={emptyWhenZero(envio)} onChange={(event) => setEnvio(parseNumberInput(event.target.value))} />
           </Grid>
           {requiereReferencia && (
             <Grid size={{ xs: 12, md: 3 }}>
@@ -658,16 +667,16 @@ export default function OrdenMixtaNueva() {
             />
           </Grid>
           <Grid size={{ xs: 6, sm: 3, md: 1 }}>
-            <TextField fullWidth type="number" label="Cant." value={linea.cantidad} onChange={(event) => setLinea((prev) => ({ ...prev, cantidad: Number(event.target.value) }))} />
+            <TextField fullWidth type="number" label="Cant." value={emptyWhenZero(linea.cantidad)} onChange={(event) => setLinea((prev) => ({ ...prev, cantidad: parseNumberInput(event.target.value) }))} />
           </Grid>
           <Grid size={{ xs: 6, sm: 3, md: 1 }}>
-            <TextField fullWidth type="number" label="Precio" value={linea.precioUnit} onChange={(event) => setLinea((prev) => ({ ...prev, precioUnit: Number(event.target.value) }))} />
+            <TextField fullWidth type="number" label="Precio" value={linea.precioUnit} disabled helperText="Catalogo" />
           </Grid>
           <Grid size={{ xs: 6, sm: 3, md: 1 }}>
-            <TextField fullWidth type="number" label="Bordado" value={linea.bordado} onChange={(event) => setLinea((prev) => ({ ...prev, bordado: Number(event.target.value) }))} />
+            <TextField fullWidth type="number" label="Bordado" value={emptyWhenZero(linea.bordado)} onChange={(event) => setLinea((prev) => ({ ...prev, bordado: parseNumberInput(event.target.value) }))} />
           </Grid>
           <Grid size={{ xs: 6, sm: 3, md: 1 }}>
-            <TextField fullWidth type="number" label="Desc. %" value={linea.descuento} onChange={(event) => setLinea((prev) => ({ ...prev, descuento: Number(event.target.value) }))} />
+            <TextField fullWidth type="number" label="Desc. %" value={emptyWhenZero(linea.descuento)} onChange={(event) => setLinea((prev) => ({ ...prev, descuento: parseNumberInput(event.target.value) }))} />
           </Grid>
           <Grid size={{ xs: 12, sm: 3, md: 2 }}>
             <Button fullWidth variant="contained" startIcon={<AddIcon />} onClick={agregarLinea} sx={{ minHeight: 40, mt: "8px" }}>
@@ -780,6 +789,7 @@ export default function OrdenMixtaNueva() {
               {[
                 ["Venta desde inventario", subtotalVenta],
                 ["Pedido producción", subtotalPedido],
+                ["Envio", envioMonto],
                 ["Total operación", total],
                 ["Anticipo aplicado a venta", anticipoVenta],
                 ["Anticipo aplicado a pedido", anticipoPedido],

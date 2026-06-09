@@ -39,6 +39,7 @@ import { useAuthStore } from "../auth/useAuthStore";
 import LOGO_URL from "../assets/3-logos.png";
 import { buildVentaPdfHtml } from "../utils/ventaPdf";
 import { formatCurrency } from "../utils/currency";
+import { emptyWhenZero, parseNumberInput } from "../utils/numberInputs";
 
 interface Cliente {
   id: number;
@@ -1328,8 +1329,8 @@ export default function VentaNueva() {
             label="Envio"
             type="number"
             fullWidth
-            value={envio}
-            onChange={(e) => setEnvio(Math.max(0, Number(e.target.value) || 0))}
+            value={emptyWhenZero(envio)}
+            onChange={(e) => setEnvio(Math.max(0, parseNumberInput(e.target.value)))}
             helperText="Monto cobrado por envio en esta venta"
           />
         </Grid>
@@ -1339,8 +1340,8 @@ export default function VentaNueva() {
               label="Recargo %"
               type="number"
               fullWidth
-              value={porcentajeRecargo}
-              onChange={(e) => setPorcentajeRecargo(Number(e.target.value))}
+              value={emptyWhenZero(porcentajeRecargo)}
+              onChange={(e) => setPorcentajeRecargo(parseNumberInput(e.target.value))}
             />
           </Grid>
         )}
@@ -1584,11 +1585,11 @@ export default function VentaNueva() {
               label="Monto estilo"
               type="number"
               fullWidth
-              value={articuloActual.estiloEspecialMonto}
+              value={emptyWhenZero(articuloActual.estiloEspecialMonto)}
               onChange={(e) =>
                 setArticuloActual((prev) => ({
                   ...prev,
-                  estiloEspecialMonto: Number(e.target.value) || 0,
+                  estiloEspecialMonto: parseNumberInput(e.target.value),
                 }))
               }
               InputProps={{
@@ -1633,8 +1634,8 @@ export default function VentaNueva() {
               label="Descuento %"
               type="number"
               fullWidth
-              value={articuloActual.descuento}
-              onChange={(e) => setArticuloActual((prev) => ({ ...prev, descuento: Number(e.target.value) || 0 }))}
+              value={emptyWhenZero(articuloActual.descuento)}
+              onChange={(e) => setArticuloActual((prev) => ({ ...prev, descuento: parseNumberInput(e.target.value) }))}
             />
           </Grid>
           <Grid size={{ xs: 12, sm: 8, md: 6 }}>
@@ -1840,8 +1841,8 @@ export default function VentaNueva() {
                   label="Monto"
                   type="number"
                   fullWidth
-                  value={articuloActual.bordado}
-                  onChange={(e) => setArticuloActual((prev) => ({ ...prev, bordado: Number(e.target.value) || 0 }))}
+                  value={emptyWhenZero(articuloActual.bordado)}
+                  onChange={(e) => setArticuloActual((prev) => ({ ...prev, bordado: parseNumberInput(e.target.value) }))}
                   sx={bordadoTextFieldSx}
                 />
               </Grid>

@@ -30,6 +30,7 @@ import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
 import { hasPermission } from "../auth/permissions";
 import { formatCurrency } from "../utils/currency";
+import { emptyWhenZero, parseNumberInput } from "../utils/numberInputs";
 
 interface FormProducto {
   id: number | null;
@@ -437,9 +438,9 @@ export default function Productos() {
                 label="Precio"
                 type="number"
                 fullWidth
-                value={form.precio}
+                value={emptyWhenZero(form.precio)}
                 onChange={(e) =>
-                  setForm({ ...form, precio: Number(e.target.value) })
+                  setForm({ ...form, precio: parseNumberInput(e.target.value) })
                 }
               />
             </Grid>
@@ -449,9 +450,9 @@ export default function Productos() {
                 label="Stock Máximo"
                 type="number"
                 fullWidth
-                value={form.stockMax}
+                value={emptyWhenZero(form.stockMax)}
                 onChange={(e) =>
-                  setForm({ ...form, stockMax: Number(e.target.value) })
+                  setForm({ ...form, stockMax: parseNumberInput(e.target.value) })
                 }
               />
             </Grid>
@@ -461,11 +462,11 @@ export default function Productos() {
                 label="Merma %"
                 type="number"
                 fullWidth
-                value={form.mermaPorcentaje}
+                value={emptyWhenZero(form.mermaPorcentaje)}
                 onChange={(e) =>
                   setForm({
                     ...form,
-                    mermaPorcentaje: Number(e.target.value),
+                    mermaPorcentaje: parseNumberInput(e.target.value),
                   })
                 }
               />

@@ -34,6 +34,7 @@ import { api } from "../api/axios";
 import { hasPermission } from "../auth/permissions";
 import { useAuthStore } from "../auth/useAuthStore";
 import { formatCurrency } from "../utils/currency";
+import { emptyWhenZero } from "../utils/numberInputs";
 
 interface Proveedor {
   id: number;
@@ -597,9 +598,9 @@ export default function FacturasProveedores() {
               <Paper variant="outlined" sx={{ p: 2, height: "100%", bgcolor: "background.paper" }}>
                 <Typography variant="subtitle1" sx={{ mb: 1.5 }}>Totales y control</Typography>
                 <Grid container spacing={1.75}>
-                  <Grid size={{ xs: 6 }}><TextField size="small" label="Subtotal" type="number" fullWidth value={dialog.form.subtotal} onChange={(e) => setFormValue("subtotal", e.target.value)} InputProps={moneyInputProps} /></Grid>
-                  <Grid size={{ xs: 6 }}><TextField size="small" label="Impuestos" type="number" fullWidth value={dialog.form.impuestos} onChange={(e) => setFormValue("impuestos", e.target.value)} InputProps={moneyInputProps} /></Grid>
-                  <Grid size={{ xs: 6 }}><TextField size="small" label="Total" type="number" fullWidth value={dialog.form.total} onChange={(e) => setFormValue("total", e.target.value)} InputProps={moneyInputProps} /></Grid>
+                  <Grid size={{ xs: 6 }}><TextField size="small" label="Subtotal" type="number" fullWidth value={emptyWhenZero(dialog.form.subtotal)} onChange={(e) => setFormValue("subtotal", e.target.value)} InputProps={moneyInputProps} /></Grid>
+                  <Grid size={{ xs: 6 }}><TextField size="small" label="Impuestos" type="number" fullWidth value={emptyWhenZero(dialog.form.impuestos)} onChange={(e) => setFormValue("impuestos", e.target.value)} InputProps={moneyInputProps} /></Grid>
+                  <Grid size={{ xs: 6 }}><TextField size="small" label="Total" type="number" fullWidth value={emptyWhenZero(dialog.form.total)} onChange={(e) => setFormValue("total", e.target.value)} InputProps={moneyInputProps} /></Grid>
                   <Grid size={{ xs: 6 }}><TextField size="small" label="Moneda" fullWidth value={dialog.form.moneda} onChange={(e) => setFormValue("moneda", e.target.value)} /></Grid>
                   <Grid size={{ xs: 12 }}><TextField size="small" select label="Tipo gasto" fullWidth value={dialog.form.tipoGasto} onChange={(e) => setFormValue("tipoGasto", e.target.value)}><MenuItem value="">Sin clasificar</MenuItem>{tiposGasto.map((t) => <MenuItem key={t} value={t}>{t}</MenuItem>)}</TextField></Grid>
                   <Grid size={{ xs: 6 }}><TextField size="small" label="Metodo pago" fullWidth value={dialog.form.metodoPago} onChange={(e) => setFormValue("metodoPago", e.target.value)} /></Grid>
@@ -649,13 +650,13 @@ export default function FacturasProveedores() {
                         dialog.detalle.map((item, index) => (
                           <TableRow key={item.id || index} sx={{ "& .MuiTextField-root": { bgcolor: "background.paper" } }}>
                             <TableCell>{index + 1}</TableCell>
-                            <TableCell><TextField size="small" type="number" value={item.cantidad} onChange={(e) => setDetalleValue(index, "cantidad", e.target.value)} /></TableCell>
+                            <TableCell><TextField size="small" type="number" value={emptyWhenZero(item.cantidad)} onChange={(e) => setDetalleValue(index, "cantidad", e.target.value)} /></TableCell>
                             <TableCell><TextField size="small" value={item.tipo || ""} onChange={(e) => setDetalleValue(index, "tipo", e.target.value)} /></TableCell>
                             <TableCell><TextField size="small" fullWidth value={item.descripcion} onChange={(e) => setDetalleValue(index, "descripcion", e.target.value)} /></TableCell>
-                            <TableCell><TextField size="small" type="number" value={item.precioUnitario} onChange={(e) => setDetalleValue(index, "precioUnitario", e.target.value)} InputProps={moneyInputProps} inputProps={{ style: { textAlign: "right" } }} /></TableCell>
-                            <TableCell><TextField size="small" type="number" value={item.descuento} onChange={(e) => setDetalleValue(index, "descuento", e.target.value)} InputProps={moneyInputProps} inputProps={{ style: { textAlign: "right" } }} /></TableCell>
-                            <TableCell><TextField size="small" type="number" value={item.impuestoMonto} onChange={(e) => setDetalleValue(index, "impuestoMonto", e.target.value)} InputProps={moneyInputProps} inputProps={{ style: { textAlign: "right" } }} /></TableCell>
-                            <TableCell><TextField size="small" type="number" value={item.total} onChange={(e) => setDetalleValue(index, "total", e.target.value)} InputProps={moneyInputProps} inputProps={{ style: { textAlign: "right" } }} /></TableCell>
+                            <TableCell><TextField size="small" type="number" value={emptyWhenZero(item.precioUnitario)} onChange={(e) => setDetalleValue(index, "precioUnitario", e.target.value)} InputProps={moneyInputProps} inputProps={{ style: { textAlign: "right" } }} /></TableCell>
+                            <TableCell><TextField size="small" type="number" value={emptyWhenZero(item.descuento)} onChange={(e) => setDetalleValue(index, "descuento", e.target.value)} InputProps={moneyInputProps} inputProps={{ style: { textAlign: "right" } }} /></TableCell>
+                            <TableCell><TextField size="small" type="number" value={emptyWhenZero(item.impuestoMonto)} onChange={(e) => setDetalleValue(index, "impuestoMonto", e.target.value)} InputProps={moneyInputProps} inputProps={{ style: { textAlign: "right" } }} /></TableCell>
+                            <TableCell><TextField size="small" type="number" value={emptyWhenZero(item.total)} onChange={(e) => setDetalleValue(index, "total", e.target.value)} InputProps={moneyInputProps} inputProps={{ style: { textAlign: "right" } }} /></TableCell>
                             <TableCell align="right">
                               <IconButton size="small" color="error" onClick={() => quitarDetalle(index)}>
                                 <DeleteOutline fontSize="small" />

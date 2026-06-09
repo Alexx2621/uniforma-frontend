@@ -18,6 +18,7 @@ import { api } from "../api/axios";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../auth/useAuthStore";
 import { hasPermission } from "../auth/permissions";
+import { emptyWhenZero, parseNumberInput } from "../utils/numberInputs";
 
 interface FormProducto {
   codigo: string;
@@ -231,8 +232,8 @@ export default function ProductoNuevo() {
             label="Precio"
             type="number"
             fullWidth
-            value={form.precio}
-            onChange={(e) => setForm({ ...form, precio: Number(e.target.value) })}
+            value={emptyWhenZero(form.precio)}
+            onChange={(e) => setForm({ ...form, precio: parseNumberInput(e.target.value) })}
           />
         </Grid>
 
@@ -241,8 +242,8 @@ export default function ProductoNuevo() {
             label="Stock Maximo"
             type="number"
             fullWidth
-            value={form.stockMax}
-            onChange={(e) => setForm({ ...form, stockMax: Number(e.target.value) })}
+            value={emptyWhenZero(form.stockMax)}
+            onChange={(e) => setForm({ ...form, stockMax: parseNumberInput(e.target.value) })}
           />
         </Grid>
 
@@ -251,9 +252,9 @@ export default function ProductoNuevo() {
             label="Merma %"
             type="number"
             fullWidth
-            value={form.mermaPorcentaje}
+            value={emptyWhenZero(form.mermaPorcentaje)}
             onChange={(e) =>
-              setForm({ ...form, mermaPorcentaje: Number(e.target.value) })
+              setForm({ ...form, mermaPorcentaje: parseNumberInput(e.target.value) })
             }
           />
         </Grid>

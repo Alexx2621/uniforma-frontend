@@ -29,6 +29,7 @@ import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../utils/fontFamily";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import { canUseVendedorDropdown } from "../utils/vendedorDropdownAccess";
+import { emptyWhenZero, parseNumberInput } from "../utils/numberInputs";
 
 interface Pago {
   monto: number;
@@ -423,8 +424,8 @@ export default function PagosPedidos() {
                         label="Monto"
                         type="number"
                         size="small"
-                        value={form.monto}
-                        onChange={(e) => updateForm(pedido.id, { monto: Number(e.target.value) })}
+                        value={emptyWhenZero(form.monto)}
+                        onChange={(e) => updateForm(pedido.id, { monto: parseNumberInput(e.target.value) })}
                         sx={{ flex: 1 }}
                       />
                       <FormControl size="small" sx={{ flex: 1 }}>
@@ -467,8 +468,8 @@ export default function PagosPedidos() {
                         label="Recargo %"
                         type="number"
                         size="small"
-                        value={form.porcentajeRecargo}
-                        onChange={(e) => updateForm(pedido.id, { porcentajeRecargo: Number(e.target.value) })}
+                        value={emptyWhenZero(form.porcentajeRecargo)}
+                        onChange={(e) => updateForm(pedido.id, { porcentajeRecargo: parseNumberInput(e.target.value) })}
                       />
                     )}
                     {requiereReferencia && (

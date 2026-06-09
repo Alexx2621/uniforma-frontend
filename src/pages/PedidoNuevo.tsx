@@ -47,6 +47,7 @@ import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../utils/fontFamily";
 import { findPotentialMisspellings } from "../utils/spellcheck";
 import { formatCurrency } from "../utils/currency";
 import { formatReportScheduleForDay, getActionSchedule, isReportScheduleOpen } from "../utils/reportSchedule";
+import { emptyWhenZero, parseNumberInput } from "../utils/numberInputs";
 
 interface Cliente {
   id: number;
@@ -2660,11 +2661,11 @@ export default function PedidoNuevo() {
                   label="Monto estilo"
                   type="number"
                   fullWidth
-                  value={articuloActual.estiloEspecialMonto}
+                  value={emptyWhenZero(articuloActual.estiloEspecialMonto)}
                   onChange={(e) =>
                     setArticuloActual((prev) => ({
                       ...prev,
-                      estiloEspecialMonto: Number(e.target.value) || 0,
+                      estiloEspecialMonto: parseNumberInput(e.target.value),
                     }))
                   }
                   InputProps={{
@@ -2709,9 +2710,9 @@ export default function PedidoNuevo() {
                   label="Descuento %"
                   type="number"
                   fullWidth
-                  value={articuloActual.descuento}
+                  value={emptyWhenZero(articuloActual.descuento)}
                   onChange={(e) =>
-                    setArticuloActual((prev) => ({ ...prev, descuento: Number(e.target.value) || 0 }))
+                    setArticuloActual((prev) => ({ ...prev, descuento: parseNumberInput(e.target.value) }))
                   }
                 />
               </Grid>
@@ -2891,8 +2892,8 @@ export default function PedidoNuevo() {
             label="Anticipo"
             type="number"
             fullWidth
-            value={anticipo}
-            onChange={(e) => setAnticipo(Number(e.target.value))}
+            value={emptyWhenZero(anticipo)}
+            onChange={(e) => setAnticipo(parseNumberInput(e.target.value))}
             disabled={pedidoSinCobro}
             helperText="Se calcula automaticamente como el 50% del total y puedes modificarlo"
           />
@@ -2931,8 +2932,8 @@ export default function PedidoNuevo() {
               label="Recargo %"
               type="number"
               fullWidth
-              value={porcentajeRecargo}
-              onChange={(e) => setPorcentajeRecargo(Number(e.target.value))}
+              value={emptyWhenZero(porcentajeRecargo)}
+              onChange={(e) => setPorcentajeRecargo(parseNumberInput(e.target.value))}
               helperText="Aplica para pagos con tarjeta o Visalink"
             />
           </Grid>
@@ -2964,8 +2965,8 @@ export default function PedidoNuevo() {
             label="Envio"
             type="number"
             fullWidth
-            value={envio}
-            onChange={(e) => setEnvio(Math.max(0, Number(e.target.value) || 0))}
+            value={emptyWhenZero(envio)}
+            onChange={(e) => setEnvio(Math.max(0, parseNumberInput(e.target.value)))}
             disabled={pedidoSinCobro}
             helperText="Monto cobrado por envio en este pedido"
           />
@@ -3047,8 +3048,8 @@ export default function PedidoNuevo() {
                   label="Monto"
                   type="number"
                   fullWidth
-                  value={articuloActual.bordado}
-                  onChange={(e) => setArticuloActual((prev) => ({ ...prev, bordado: Number(e.target.value) || 0 }))}
+                  value={emptyWhenZero(articuloActual.bordado)}
+                  onChange={(e) => setArticuloActual((prev) => ({ ...prev, bordado: parseNumberInput(e.target.value) }))}
                   sx={bordadoTextFieldSx}
                 />
               </Grid>

@@ -30,6 +30,7 @@ import { hasPermission } from "../auth/permissions";
 import { useAuthStore } from "../auth/useAuthStore";
 import UniformaTableLoadingRow from "../components/UniformaTableLoadingRow";
 import { useTablePagination } from "../utils/useTablePagination";
+import { emptyWhenZero } from "../utils/numberInputs";
 
 interface Bodega {
   id: number;
@@ -285,7 +286,7 @@ export default function MetasMensuales() {
           label="Meta mes"
           type="number"
           size="small"
-          value={metaMes}
+          value={emptyWhenZero(metaMes)}
           onChange={(e) => actualizarMetaMes(e.target.value)}
           sx={{ width: 150 }}
           disabled={!canManage}
@@ -294,7 +295,7 @@ export default function MetasMensuales() {
           label="Promedio diario"
           type="number"
           size="small"
-          value={promedioDiario}
+          value={emptyWhenZero(promedioDiario)}
           onChange={(e) => {
             setPromedioManual(true);
             setPromedioDiario(e.target.value);

@@ -30,6 +30,7 @@ import { api } from "../api/axios";
 import { hasPermission } from "../auth/permissions";
 import { useAuthStore } from "../auth/useAuthStore";
 import { formatCurrency } from "../utils/currency";
+import { emptyWhenZero } from "../utils/numberInputs";
 
 interface Catalogo {
   id: number;
@@ -699,11 +700,11 @@ export default function InventarioTelas() {
             <Grid size={{ xs: 12, md: 4 }}><TextField label="Proveedor manual" fullWidth value={rolloDialog.form.proveedor} onChange={(e) => setRolloDialog((p) => ({ ...p, form: { ...p.form, proveedor: e.target.value } }))} helperText="Usalo solo si aun no existe en catalogo" /></Grid>
             <Grid size={{ xs: 12, md: 2 }}><TextField label="Lote" fullWidth value={rolloDialog.form.lote} onChange={(e) => setRolloDialog((p) => ({ ...p, form: { ...p.form, lote: e.target.value } }))} /></Grid>
             <Grid size={{ xs: 12, md: 2 }}><TextField label="Tono" fullWidth value={rolloDialog.form.tono} onChange={(e) => setRolloDialog((p) => ({ ...p, form: { ...p.form, tono: e.target.value } }))} /></Grid>
-            <Grid size={{ xs: 12, md: 3 }}><TextField label="Cantidad inicial" type="number" fullWidth value={rolloDialog.form.cantidadInicial} onChange={(e) => setRolloDialog((p) => ({ ...p, form: { ...p.form, cantidadInicial: e.target.value, cantidadDisponible: p.editing ? p.form.cantidadDisponible : e.target.value } }))} /></Grid>
-            <Grid size={{ xs: 12, md: 3 }}><TextField label="Cantidad disponible" type="number" fullWidth value={rolloDialog.form.cantidadDisponible} onChange={(e) => setRolloDialog((p) => ({ ...p, form: { ...p.form, cantidadDisponible: e.target.value } }))} /></Grid>
+            <Grid size={{ xs: 12, md: 3 }}><TextField label="Cantidad inicial" type="number" fullWidth value={emptyWhenZero(rolloDialog.form.cantidadInicial)} onChange={(e) => setRolloDialog((p) => ({ ...p, form: { ...p.form, cantidadInicial: e.target.value, cantidadDisponible: p.editing ? p.form.cantidadDisponible : e.target.value } }))} /></Grid>
+            <Grid size={{ xs: 12, md: 3 }}><TextField label="Cantidad disponible" type="number" fullWidth value={emptyWhenZero(rolloDialog.form.cantidadDisponible)} onChange={(e) => setRolloDialog((p) => ({ ...p, form: { ...p.form, cantidadDisponible: e.target.value } }))} /></Grid>
             <Grid size={{ xs: 12, md: 2 }}><TextField label="Unidad" fullWidth value={rolloDialog.form.unidad} onChange={(e) => setRolloDialog((p) => ({ ...p, form: { ...p.form, unidad: e.target.value } }))} /></Grid>
-            <Grid size={{ xs: 12, md: 2 }}><TextField label="Ancho" type="number" fullWidth value={rolloDialog.form.ancho} onChange={(e) => setRolloDialog((p) => ({ ...p, form: { ...p.form, ancho: e.target.value } }))} /></Grid>
-            <Grid size={{ xs: 12, md: 2 }}><TextField label="Costo unitario" type="number" fullWidth value={rolloDialog.form.costoUnitario} onChange={(e) => setRolloDialog((p) => ({ ...p, form: { ...p.form, costoUnitario: e.target.value } }))} /></Grid>
+            <Grid size={{ xs: 12, md: 2 }}><TextField label="Ancho" type="number" fullWidth value={emptyWhenZero(rolloDialog.form.ancho)} onChange={(e) => setRolloDialog((p) => ({ ...p, form: { ...p.form, ancho: e.target.value } }))} /></Grid>
+            <Grid size={{ xs: 12, md: 2 }}><TextField label="Costo unitario" type="number" fullWidth value={emptyWhenZero(rolloDialog.form.costoUnitario)} onChange={(e) => setRolloDialog((p) => ({ ...p, form: { ...p.form, costoUnitario: e.target.value } }))} /></Grid>
             <Grid size={{ xs: 12, md: 3 }}><TextField label="Fecha ingreso" type="date" InputLabelProps={{ shrink: true }} fullWidth value={rolloDialog.form.fechaIngreso} onChange={(e) => setRolloDialog((p) => ({ ...p, form: { ...p.form, fechaIngreso: e.target.value } }))} /></Grid>
             <Grid size={{ xs: 12, md: 3 }}><TextField select label="Estado" fullWidth value={rolloDialog.form.estado} onChange={(e) => setRolloDialog((p) => ({ ...p, form: { ...p.form, estado: e.target.value } }))}><MenuItem value="disponible">Disponible</MenuItem><MenuItem value="agotado">Agotado</MenuItem><MenuItem value="bloqueado">Bloqueado</MenuItem><MenuItem value="danado">Dañado</MenuItem></TextField></Grid>
             <Grid size={{ xs: 12, md: 6 }}><TextField label="Ubicacion" fullWidth value={rolloDialog.form.ubicacion} onChange={(e) => setRolloDialog((p) => ({ ...p, form: { ...p.form, ubicacion: e.target.value } }))} /></Grid>
@@ -722,7 +723,7 @@ export default function InventarioTelas() {
           <Stack spacing={2} sx={{ mt: 1 }}>
             <TextField select label="Rollo" fullWidth value={movDialog.form.rolloId} onChange={(e) => setMovDialog((p) => ({ ...p, form: { ...p.form, rolloId: e.target.value } }))}>{rollos.map((r) => <MenuItem key={r.id} value={r.id}>{r.codigo} - {r.tela?.nombre} / {r.color?.nombre || "Sin color"}</MenuItem>)}</TextField>
             <TextField select label="Tipo" fullWidth value={movDialog.form.tipo} onChange={(e) => setMovDialog((p) => ({ ...p, form: { ...p.form, tipo: e.target.value } }))}><MenuItem value="ingreso">Ingreso</MenuItem><MenuItem value="salida">Salida manual</MenuItem><MenuItem value="merma">Merma</MenuItem><MenuItem value="ajuste">Ajuste a cantidad final</MenuItem></TextField>
-            <TextField label="Cantidad" type="number" fullWidth value={movDialog.form.cantidad} onChange={(e) => setMovDialog((p) => ({ ...p, form: { ...p.form, cantidad: e.target.value } }))} />
+            <TextField label="Cantidad" type="number" fullWidth value={emptyWhenZero(movDialog.form.cantidad)} onChange={(e) => setMovDialog((p) => ({ ...p, form: { ...p.form, cantidad: e.target.value } }))} />
             <TextField label="Fecha" type="date" InputLabelProps={{ shrink: true }} fullWidth value={movDialog.form.fecha} onChange={(e) => setMovDialog((p) => ({ ...p, form: { ...p.form, fecha: e.target.value } }))} />
             <TextField label="Referencia" fullWidth value={movDialog.form.referencia} onChange={(e) => setMovDialog((p) => ({ ...p, form: { ...p.form, referencia: e.target.value } }))} />
             <TextField label="Motivo" fullWidth value={movDialog.form.motivo} onChange={(e) => setMovDialog((p) => ({ ...p, form: { ...p.form, motivo: e.target.value } }))} />
@@ -742,9 +743,9 @@ export default function InventarioTelas() {
             <TextField select label="Producto" fullWidth value={consumoDialog.form.productoId} onChange={(e) => setConsumoDialog((p) => ({ ...p, form: { ...p.form, productoId: e.target.value } }))}>{productosOptions.map((p: any) => <MenuItem key={p.id} value={p.id}>{p.label}</MenuItem>)}</TextField>
             <TextField select label="Tela aplicable" fullWidth value={consumoDialog.form.telaId} onChange={(e) => setConsumoDialog((p) => ({ ...p, form: { ...p.form, telaId: e.target.value } }))}><MenuItem value="">Usar tela del producto</MenuItem>{telas.map((item) => <MenuItem key={item.id} value={item.id}>{item.nombre}</MenuItem>)}</TextField>
             <TextField select label="Talla aplicable" fullWidth value={consumoDialog.form.tallaId} onChange={(e) => setConsumoDialog((p) => ({ ...p, form: { ...p.form, tallaId: e.target.value } }))}><MenuItem value="">Usar talla del producto</MenuItem>{tallas.map((item) => <MenuItem key={item.id} value={item.id}>{item.nombre}</MenuItem>)}</TextField>
-            <TextField label="Cantidad por unidad" type="number" fullWidth value={consumoDialog.form.cantidad} onChange={(e) => setConsumoDialog((p) => ({ ...p, form: { ...p.form, cantidad: e.target.value } }))} />
+            <TextField label="Cantidad por unidad" type="number" fullWidth value={emptyWhenZero(consumoDialog.form.cantidad)} onChange={(e) => setConsumoDialog((p) => ({ ...p, form: { ...p.form, cantidad: e.target.value } }))} />
             <TextField label="Unidad" fullWidth value={consumoDialog.form.unidad} onChange={(e) => setConsumoDialog((p) => ({ ...p, form: { ...p.form, unidad: e.target.value } }))} />
-            <TextField label="Merma %" type="number" fullWidth value={consumoDialog.form.mermaPorcentaje} onChange={(e) => setConsumoDialog((p) => ({ ...p, form: { ...p.form, mermaPorcentaje: e.target.value } }))} />
+            <TextField label="Merma %" type="number" fullWidth value={emptyWhenZero(consumoDialog.form.mermaPorcentaje)} onChange={(e) => setConsumoDialog((p) => ({ ...p, form: { ...p.form, mermaPorcentaje: e.target.value } }))} />
             <TextField label="Observaciones" multiline minRows={2} fullWidth value={consumoDialog.form.observaciones} onChange={(e) => setConsumoDialog((p) => ({ ...p, form: { ...p.form, observaciones: e.target.value } }))} />
           </Stack>
         </DialogContent>
@@ -787,7 +788,7 @@ export default function InventarioTelas() {
               <TextField label="Unidad" fullWidth value={aliasDialog.form.unidad} onChange={(e) => setAliasDialog((p) => ({ ...p, form: { ...p.form, unidad: e.target.value } }))} />
             </Grid>
             <Grid size={{ xs: 12, md: 3 }}>
-              <TextField label="Ancho" type="number" fullWidth value={aliasDialog.form.ancho} onChange={(e) => setAliasDialog((p) => ({ ...p, form: { ...p.form, ancho: e.target.value } }))} />
+              <TextField label="Ancho" type="number" fullWidth value={emptyWhenZero(aliasDialog.form.ancho)} onChange={(e) => setAliasDialog((p) => ({ ...p, form: { ...p.form, ancho: e.target.value } }))} />
             </Grid>
             <Grid size={{ xs: 12, md: 2 }}>
               <TextField select label="Estado" fullWidth value={aliasDialog.form.activo} onChange={(e) => setAliasDialog((p) => ({ ...p, form: { ...p.form, activo: e.target.value } }))}>

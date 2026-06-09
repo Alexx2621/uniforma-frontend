@@ -35,6 +35,7 @@ import { api } from "../../api/axios";
 import UniformaTableLoadingRow from "../../components/UniformaTableLoadingRow";
 import { PDF_FONT_FAMILY, PDF_FONT_SEMIBOLD_FAMILY } from "../../utils/fontFamily";
 import { useTablePagination } from "../../utils/useTablePagination";
+import { emptyWhenZero, parseNumberInput } from "../../utils/numberInputs";
 
 interface RowInv {
   productoId: number;
@@ -1057,8 +1058,8 @@ export default function StockBajo() {
                         <TextField
                           size="small"
                           type="number"
-                          value={cantidades[key] ?? getSugerido(row)}
-                          onChange={(e) => setCantidades((current) => ({ ...current, [key]: Math.max(0, Number(e.target.value) || 0) }))}
+                          value={emptyWhenZero(cantidades[key] ?? getSugerido(row))}
+                          onChange={(e) => setCantidades((current) => ({ ...current, [key]: Math.max(0, parseNumberInput(e.target.value)) }))}
                           inputProps={{ min: 0, step: 1, style: { textAlign: "right" } }}
                           sx={{ width: 96 }}
                         />

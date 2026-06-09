@@ -26,6 +26,7 @@ import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { hasPermission } from "../auth/permissions";
 import { useAuthStore } from "../auth/useAuthStore";
+import { emptyWhenZero, parseNumberInput } from "../utils/numberInputs";
 
 interface DocumentoRelacionable {
   tipo: string;
@@ -353,7 +354,7 @@ export default function EnvioNuevo() {
                   <TextField label="Numero de guia" size="small" fullWidth value={numeroGuia} onChange={(e) => setNumeroGuia(e.target.value)} />
                 </Grid>
                 <Grid size={{ xs: 12, md: 3 }}>
-                  <TextField label="Costo envio" type="number" size="small" fullWidth value={costo} onChange={(e) => setCosto(Number(e.target.value) || 0)} />
+                  <TextField label="Costo envio" type="number" size="small" fullWidth value={emptyWhenZero(costo)} onChange={(e) => setCosto(parseNumberInput(e.target.value))} />
                 </Grid>
                 <Grid size={{ xs: 12, md: 3 }}>
                   <TextField
@@ -380,7 +381,7 @@ export default function EnvioNuevo() {
                 </Grid>
                 {usaRecargo && (
                   <Grid size={{ xs: 12, md: 3 }}>
-                    <TextField label="Recargo %" type="number" size="small" fullWidth value={porcentajeRecargo} onChange={(e) => setPorcentajeRecargo(Number(e.target.value) || 0)} />
+                    <TextField label="Recargo %" type="number" size="small" fullWidth value={emptyWhenZero(porcentajeRecargo)} onChange={(e) => setPorcentajeRecargo(parseNumberInput(e.target.value))} />
                   </Grid>
                 )}
                 {requiereReferencia && (

@@ -33,6 +33,7 @@ import PictureAsPdfOutlined from "@mui/icons-material/PictureAsPdfOutlined";
 import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
 import SaveOutlined from "@mui/icons-material/SaveOutlined";
 import SwapHorizOutlined from "@mui/icons-material/SwapHorizOutlined";
+import { emptyWhenZero, parseNumberInput } from "../utils/numberInputs";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { hasPermission } from "../auth/permissions";
@@ -1044,7 +1045,7 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
             <TextField label="Cantidad" type="number" fullWidth value={cantidadInput} onChange={(e) => setCantidadInput(e.target.value)} />
           </Grid>
           <Grid size={{ xs: 12, sm: 2 }}>
-            <TextField label="Monto" type="number" fullWidth value={articuloActual.precio} onChange={(e) => setArticuloActual({ ...articuloActual, precio: Number(e.target.value) || 0 })} />
+            <TextField label="Monto" type="number" fullWidth value={emptyWhenZero(articuloActual.precio)} onChange={(e) => setArticuloActual({ ...articuloActual, precio: parseNumberInput(e.target.value) })} />
           </Grid>
           {articuloActual.operacion === "devuelto" && (
             <Grid size={{ xs: 12, sm: 2 }}>
@@ -1105,7 +1106,7 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
                     </TextField>
                   </Grid>
                   <Grid size={{ xs: 12, sm: 3 }}>
-                    <TextField label="Monto pagado" type="number" fullWidth value={pagoDiferencia.montoPagado} onChange={(e) => setPagoDiferencia({ ...pagoDiferencia, montoPagado: Number(e.target.value) || 0 })} />
+                    <TextField label="Monto pagado" type="number" fullWidth value={emptyWhenZero(pagoDiferencia.montoPagado)} onChange={(e) => setPagoDiferencia({ ...pagoDiferencia, montoPagado: parseNumberInput(e.target.value) })} />
                   </Grid>
                   <Grid size={{ xs: 12, sm: 3 }}>
                     <TextField label="Referencia" fullWidth value={pagoDiferencia.referencia} onChange={(e) => setPagoDiferencia({ ...pagoDiferencia, referencia: e.target.value })} />

@@ -29,6 +29,7 @@ import { api } from "../api/axios";
 import { hasPermission } from "../auth/permissions";
 import { useAuthStore } from "../auth/useAuthStore";
 import { formatCurrency } from "../utils/currency";
+import { emptyWhenZero } from "../utils/numberInputs";
 
 interface Proveedor {
   id: number;
@@ -465,10 +466,10 @@ export default function Proveedores() {
             <Typography variant="subtitle2" color="primary">Credito y banco</Typography>
             <Grid container spacing={2}>
               <Grid size={{ xs: 12, md: 3 }}>
-                <TextField label="Dias credito" type="number" fullWidth value={dialog.form.diasCredito} onChange={(e) => setFormValue("diasCredito", e.target.value)} />
+                <TextField label="Dias credito" type="number" fullWidth value={emptyWhenZero(dialog.form.diasCredito)} onChange={(e) => setFormValue("diasCredito", e.target.value)} />
               </Grid>
               <Grid size={{ xs: 12, md: 3 }}>
-                <TextField label="Limite credito" type="number" fullWidth value={dialog.form.limiteCredito} onChange={(e) => setFormValue("limiteCredito", e.target.value)} />
+                <TextField label="Limite credito" type="number" fullWidth value={emptyWhenZero(dialog.form.limiteCredito)} onChange={(e) => setFormValue("limiteCredito", e.target.value)} />
               </Grid>
               <Grid size={{ xs: 12, md: 3 }}>
                 <TextField label="Banco" fullWidth value={dialog.form.banco} onChange={(e) => setFormValue("banco", e.target.value)} />

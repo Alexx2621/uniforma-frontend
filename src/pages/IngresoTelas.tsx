@@ -25,6 +25,7 @@ import { api } from "../api/axios";
 import { hasPermission } from "../auth/permissions";
 import { useAuthStore } from "../auth/useAuthStore";
 import { formatCurrency } from "../utils/currency";
+import { emptyWhenZero } from "../utils/numberInputs";
 
 interface Catalogo { id: number; nombre: string }
 interface Proveedor { id: number; nombre: string; nit?: string | null }
@@ -466,8 +467,8 @@ export default function IngresoTelas() {
                         <Grid size={{ xs: 1.25 }}><TextField select size="small" label="Tela" fullWidth value={item.telaId || ""} onChange={(e) => setDetalleValue(index, "telaId", e.target.value)}><MenuItem value="">Pendiente</MenuItem>{telas.map((t) => <MenuItem key={t.id} value={t.id}>{t.nombre}</MenuItem>)}</TextField></Grid>
                         <Grid size={{ xs: 1.2 }}><TextField select size="small" label="Bodega" required fullWidth value={item.bodegaId || ""} onChange={(e) => setDetalleValue(index, "bodegaId", e.target.value)}><MenuItem value="">Seleccionar</MenuItem>{bodegas.map((b) => <MenuItem key={b.id} value={b.id}>{b.nombre}</MenuItem>)}</TextField></Grid>
                         <Grid size={{ xs: 1 }}><TextField select size="small" label="Color interno" fullWidth value={item.colorId || ""} onChange={(e) => setDetalleValue(index, "colorId", e.target.value)}><MenuItem value="">Sin color</MenuItem>{colores.map((c) => <MenuItem key={c.id} value={c.id}>{c.nombre}</MenuItem>)}</TextField></Grid>
-                        <Grid size={{ xs: 0.8 }}><TextField size="small" type="number" label="Cant." fullWidth value={item.cantidad} onChange={(e) => setDetalleValue(index, "cantidad", e.target.value)} /></Grid>
-                        <Grid size={{ xs: 0.8 }}><TextField size="small" type="number" label="Costo" fullWidth value={item.costoUnitario} onChange={(e) => setDetalleValue(index, "costoUnitario", e.target.value)} /></Grid>
+                        <Grid size={{ xs: 0.8 }}><TextField size="small" type="number" label="Cant." fullWidth value={emptyWhenZero(item.cantidad)} onChange={(e) => setDetalleValue(index, "cantidad", e.target.value)} /></Grid>
+                        <Grid size={{ xs: 0.8 }}><TextField size="small" type="number" label="Costo" fullWidth value={emptyWhenZero(item.costoUnitario)} onChange={(e) => setDetalleValue(index, "costoUnitario", e.target.value)} /></Grid>
                         <Grid size={{ xs: 0.8 }}><TextField size="small" label="Lote" fullWidth value={item.lote || ""} onChange={(e) => setDetalleValue(index, "lote", e.target.value)} /></Grid>
                         <Grid size={{ xs: 0.8 }}><Chip size="small" color={item.rolloId ? "success" : item.telaId && item.bodegaId ? "info" : "warning"} label={item.rolloId ? "Ingresado" : item.telaId && item.bodegaId ? "Listo" : "Pendiente"} /></Grid>
                         <Grid size={{ xs: 0.45 }}>
@@ -519,7 +520,7 @@ export default function IngresoTelas() {
                 <TextField label="Fecha" type="date" InputLabelProps={{ shrink: true }} fullWidth value={manualForm.fecha} onChange={(e) => setManualForm((p) => ({ ...p, fecha: e.target.value }))} />
               </Grid>
               <Grid size={{ xs: 12, md: 2 }}>
-                <TextField label="Total documento" type="number" fullWidth value={manualForm.documentoTotal} onChange={(e) => setManualForm((p) => ({ ...p, documentoTotal: e.target.value }))} />
+                <TextField label="Total documento" type="number" fullWidth value={emptyWhenZero(manualForm.documentoTotal)} onChange={(e) => setManualForm((p) => ({ ...p, documentoTotal: e.target.value }))} />
               </Grid>
               <Grid size={{ xs: 12 }}>
                 <TextField label="Observaciones" fullWidth multiline minRows={2} value={manualForm.observaciones} onChange={(e) => setManualForm((p) => ({ ...p, observaciones: e.target.value }))} />
@@ -550,8 +551,8 @@ export default function IngresoTelas() {
                         <Grid size={{ xs: 1.15 }}><TextField select size="small" label="Tela" fullWidth value={item.telaId} onChange={(e) => setManualLineValue(index, "telaId", e.target.value)}><MenuItem value="">Pendiente</MenuItem>{telas.map((t) => <MenuItem key={t.id} value={t.id}>{t.nombre}</MenuItem>)}</TextField></Grid>
                         <Grid size={{ xs: 1.05 }}><TextField select size="small" label="Bodega" required fullWidth value={item.bodegaId} onChange={(e) => setManualLineValue(index, "bodegaId", e.target.value)}><MenuItem value="">Seleccionar</MenuItem>{bodegas.map((b) => <MenuItem key={b.id} value={b.id}>{b.nombre}</MenuItem>)}</TextField></Grid>
                         <Grid size={{ xs: 1 }}><TextField select size="small" label="Color interno" fullWidth value={item.colorId} onChange={(e) => setManualLineValue(index, "colorId", e.target.value)}><MenuItem value="">Sin color</MenuItem>{colores.map((c) => <MenuItem key={c.id} value={c.id}>{c.nombre}</MenuItem>)}</TextField></Grid>
-                        <Grid size={{ xs: 0.75 }}><TextField size="small" type="number" label="Cant." fullWidth value={item.cantidad} onChange={(e) => setManualLineValue(index, "cantidad", e.target.value)} /></Grid>
-                        <Grid size={{ xs: 0.75 }}><TextField size="small" type="number" label="Costo" fullWidth value={item.costoUnitario} onChange={(e) => setManualLineValue(index, "costoUnitario", e.target.value)} /></Grid>
+                        <Grid size={{ xs: 0.75 }}><TextField size="small" type="number" label="Cant." fullWidth value={emptyWhenZero(item.cantidad)} onChange={(e) => setManualLineValue(index, "cantidad", e.target.value)} /></Grid>
+                        <Grid size={{ xs: 0.75 }}><TextField size="small" type="number" label="Costo" fullWidth value={emptyWhenZero(item.costoUnitario)} onChange={(e) => setManualLineValue(index, "costoUnitario", e.target.value)} /></Grid>
                         <Grid size={{ xs: 0.75 }}><TextField size="small" label="Lote" fullWidth value={item.lote} onChange={(e) => setManualLineValue(index, "lote", e.target.value)} /></Grid>
                         <Grid size={{ xs: 0.45 }}>
                           <Button

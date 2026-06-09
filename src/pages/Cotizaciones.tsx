@@ -33,6 +33,7 @@ import { useSystemConfigStore } from "../config/useSystemConfigStore";
 import LOGO_URL from "../assets/cotizacion-logo.png";
 import { PDF_FONT_BOLD_FAMILY, PDF_FONT_FAMILY } from "../utils/fontFamily";
 import { canUseVendedorDropdown, filterUsuariosByBodega } from "../utils/vendedorDropdownAccess";
+import { emptyWhenZero } from "../utils/numberInputs";
 import { useTablePagination } from "../utils/useTablePagination";
 
 interface CotizacionItem {
@@ -965,7 +966,7 @@ export default function Cotizaciones() {
             {items.map((item) => (
               <TableRow key={item.key}>
                 <TableCell>
-                  <TextField type="number" size="small" fullWidth value={item.cantidad} onChange={(e) => updateItem(item.key, "cantidad", e.target.value)} />
+                  <TextField type="number" size="small" fullWidth value={emptyWhenZero(item.cantidad)} onChange={(e) => updateItem(item.key, "cantidad", e.target.value)} />
                 </TableCell>
                 <TableCell>
                   <TextField
@@ -978,7 +979,7 @@ export default function Cotizaciones() {
                   />
                 </TableCell>
                 <TableCell>
-                  <TextField type="number" size="small" fullWidth value={item.precioUnitario} onChange={(e) => updateItem(item.key, "precioUnitario", e.target.value)} />
+                  <TextField type="number" size="small" fullWidth value={emptyWhenZero(item.precioUnitario)} onChange={(e) => updateItem(item.key, "precioUnitario", e.target.value)} />
                 </TableCell>
                 <TableCell>{money(Number(item.cantidad || 0) * Number(item.precioUnitario || 0))}</TableCell>
                 <TableCell align="center">

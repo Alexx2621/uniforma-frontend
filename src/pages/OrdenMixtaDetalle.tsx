@@ -67,13 +67,9 @@ export default function OrdenMixtaDetalle() {
   const saldoPedido = Number(orden?.saldoPedido || 0);
 
   const registrarPago = async () => {
-    const monto = Number(pago.monto || 0);
+    const monto = Number(saldoTotal || 0);
     if (monto <= 0) {
-      Swal.fire("Validacion", "Ingresa un monto mayor a 0", "warning");
-      return;
-    }
-    if (monto > saldoTotal) {
-      Swal.fire("Validacion", `El pago no puede superar el saldo pendiente ${formatCurrency(saldoTotal)}`, "warning");
+      Swal.fire("Validacion", "La orden mixta no tiene saldo pendiente", "warning");
       return;
     }
     if (metodoRequiereReferencia && !pago.referencia.trim()) {
@@ -97,7 +93,7 @@ export default function OrdenMixtaDetalle() {
 
     try {
       setGuardandoPago(true);
-      const { data } = await api.post(`/orden-mixta/${id}/pago`, pago);
+      const { data } = await api.post(`/orden-mixta/${id}/pago`, { ...pago, monto });
       setOrden(data.orden);
       setPago((prev) => ({
         ...prev,
@@ -135,6 +131,12 @@ export default function OrdenMixtaDetalle() {
       </Stack>
 
       <Grid container spacing={2}>
+        <Grid size={{ xs: 12, md: 3 }}>
+          <Paper sx={{ p: 2 }}>
+            <Typography variant="caption">Envio</Typography>
+            <Typography variant="h5">{formatCurrency(orden.envio || 0)}</Typography>
+          </Paper>
+        </Grid>
         <Grid size={{ xs: 12, md: 3 }}>
           <Paper sx={{ p: 2 }}>
             <Typography variant="caption">Total</Typography>
@@ -186,9 +188,10 @@ export default function OrdenMixtaDetalle() {
                   fullWidth
                   type="number"
                   label="Monto"
-                  value={pago.monto}
-                  onChange={(e) => setPago((prev) => ({ ...prev, monto: Number(e.target.value) }))}
+                  value={saldoTotal}
+                  disabled
                   inputProps={{ min: 0, step: "0.01" }}
+                  helperText="Saldo pendiente"
                 />
               </Grid>
               <Grid size={{ xs: 12, md: 2 }}>

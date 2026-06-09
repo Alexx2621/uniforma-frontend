@@ -12,6 +12,7 @@ import { useState, useEffect } from "react";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { formatCurrency } from "../utils/currency";
+import { emptyWhenZero, parseNumberInput } from "../utils/numberInputs";
 
 interface Props {
   open: boolean;
@@ -207,10 +208,10 @@ export default function ModalVenta({ open, onClose, onSaved }: Props) {
                 <td>
                   <input
                     type="number"
-                    value={r.cantidad}
+                    value={emptyWhenZero(r.cantidad)}
                     min={1}
                     onChange={(e) =>
-                      actualizarCantidad(r.productoId, Number(e.target.value))
+                      actualizarCantidad(r.productoId, parseNumberInput(e.target.value))
                     }
                     style={{ width: 60 }}
                   />
