@@ -150,6 +150,14 @@ const getTodayInputValue = () => {
   const day = `${date.getDate()}`.padStart(2, "0");
   return `${year}-${month}-${day}`;
 };
+const getInputValueDaysAgo = (days: number) => {
+  const date = new Date();
+  date.setDate(date.getDate() - days);
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
 const estadoChipSx = (estado?: string | null) => {
   const palette = BORDADO_ESTADO_COLORS[`${estado || "EN PRODUCCION"}`] || BORDADO_ESTADO_COLORS.VARIOS;
   return {
@@ -172,7 +180,7 @@ export default function Bordados() {
   const [pedidos, setPedidos] = useState<PedidoBordado[]>([]);
   const [usuarios, setUsuarios] = useState<UsuarioOption[]>([]);
   const [usuarioFiltro, setUsuarioFiltro] = useState(() => restoredBordadosState?.usuarioFiltro || "");
-  const [fechaInicio, setFechaInicio] = useState(() => restoredBordadosState?.fechaInicio || getTodayInputValue());
+  const [fechaInicio, setFechaInicio] = useState(() => restoredBordadosState?.fechaInicio || getInputValueDaysAgo(5));
   const [fechaFin, setFechaFin] = useState(() => restoredBordadosState?.fechaFin || getTodayInputValue());
   const [paginationModel, setPaginationModel] = useState(() => ({
     page: Math.max(0, Number(restoredBordadosState?.pagination?.page || 0)),
@@ -441,16 +449,15 @@ export default function Bordados() {
             InputLabelProps={{ shrink: true }}
             sx={{ minWidth: 150 }}
           />
-          {(fechaInicio !== getTodayInputValue() || fechaFin !== getTodayInputValue()) && (
+          {(fechaInicio !== getInputValueDaysAgo(5) || fechaFin !== getTodayInputValue()) && (
             <Button
               variant="text"
               onClick={() => {
-                const today = getTodayInputValue();
-                setFechaInicio(today);
-                setFechaFin(today);
+                setFechaInicio(getInputValueDaysAgo(5));
+                setFechaFin(getTodayInputValue());
               }}
             >
-              Hoy
+              Ultimos 5 dias
             </Button>
           )}
           <Button variant="outlined" onClick={cargar} disabled={loading}>

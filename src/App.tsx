@@ -116,6 +116,7 @@ export default function App() {
           <Route path="/produccion/correlativos" element={<Correlativos />} />
           <Route path="/produccion" element={<Pedidos />} />
           <Route path="/produccion/nuevo" element={<PedidoNuevo />} />
+          <Route path="/produccion/:id/editar" element={<PedidoNuevo />} />
           <Route path="/produccion/:id" element={<PedidoDetalle />} />
           <Route path="/bordados" element={<Bordados />} />
           <Route path="/envios" element={<Envios />} />

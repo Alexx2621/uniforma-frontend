@@ -38,7 +38,7 @@ import KeyboardArrowDownOutlined from "@mui/icons-material/KeyboardArrowDownOutl
 import Swal from "sweetalert2";
 import { io, Socket } from "socket.io-client";
 import { api } from "../api/axios";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { hasPermission } from "../auth/permissions";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
@@ -528,6 +528,9 @@ const buildPdfStyles = () => `
 `;
 
 export default function PedidoNuevo() {
+  const { id: pedidoEditIdParam } = useParams();
+  const pedidoEditId = Number(pedidoEditIdParam || 0) || null;
+  const isEditingPedido = Boolean(pedidoEditId);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [bodegas, setBodegas] = useState<Bodega[]>([]);
@@ -563,11 +566,14 @@ export default function PedidoNuevo() {
   const [cantidadAdvertida, setCantidadAdvertida] = useState<number | null>(null);
   const [bordadoPreviewOpen, setBordadoPreviewOpen] = useState(false);
   const [bordadosModalOpen, setBordadosModalOpen] = useState(false);
+  const [pedidoEditFolio, setPedidoEditFolio] = useState("");
+  const [loadingPedidoEdit, setLoadingPedidoEdit] = useState(false);
   const autorizacionSocketRef = useRef<Socket | null>(null);
   const autorizacionPendienteRef = useRef<{
     id: number;
     clienteParaPedido: ClientePedido;
     pedidoParaStock: boolean;
+    modo?: "creacion" | "edicion";
   } | null>(null);
 
   const {
@@ -655,6 +661,117 @@ export default function PedidoNuevo() {
     cargarCatalogos();
     void fetchConfig();
   }, [fetchConfig]);
+
+  useEffect(() => {
+    if (!pedidoEditId) return;
+    let cancelled = false;
+    const cargarPedidoEdicion = async () => {
+      try {
+        setLoadingPedidoEdit(true);
+        const { data } = await api.get(`/produccion/${pedidoEditId}`);
+        if (cancelled) return;
+        if (rol !== "ADMIN" && Number(data?.usuarioId || 0) !== Number(userId || 0)) {
+          await Swal.fire("Acceso restringido", "Solo el usuario que registro el pedido o un administrador puede modificarlo.", "warning");
+          navigate(returnState?.returnTo || "/produccion", {
+            state: returnState || undefined,
+            replace: true,
+          });
+          return;
+        }
+        const metodo = `${data?.metodoPago || "efectivo"}`.trim().toLowerCase();
+        const esStock = metodo === "sin_cobro_stock";
+        setPedidoEditFolio(data?.folio || `P-${data?.id || pedidoEditId}`);
+        setPedidoParaStock(esStock);
+        setClienteId(data?.clienteId ? Number(data.clienteId) : "");
+        setClienteNombre(data?.clienteNombre || data?.cliente?.nombre || (esStock ? "Pedido para stock" : "Mostrador"));
+        setClienteTelefono(formatTelefono(data?.clienteTelefono || data?.cliente?.telefono || ""));
+        setClienteCorreo(`${data?.clienteCorreo || data?.cliente?.correo || ""}`.trim().toLowerCase());
+        setBodegaId(data?.bodegaId ? Number(data.bodegaId) : "");
+        setUbicacion(data?.ubicacion || "TIENDA");
+        setMetodoPago(metodo || "efectivo");
+        setPorcentajeRecargo(Number(data?.porcentajeRecargo || 0));
+        const pagoAnticipo = Array.isArray(data?.pagos)
+          ? data.pagos.find((pago: any) => `${pago?.tipo || ""}`.toLowerCase() === "anticipo") || data.pagos[0]
+          : null;
+        setReferenciaPago(`${pagoAnticipo?.referencia || ""}`);
+        setBancoPago(`${pagoAnticipo?.banco || ""}`);
+        setAnticipo(Number(data?.anticipo ?? pagoAnticipo?.monto ?? 0));
+        setEnvio(Number(data?.envio || 0));
+        setPostventaId(data?.postventaId ? Number(data.postventaId) : "");
+        setPostventaCobro(data?.postventaCobro === "sin_cobro" ? "sin_cobro" : "normal");
+        setDetalle(
+          (Array.isArray(data?.detalle) ? data.detalle : []).map((item: any, index: number) => {
+            const bordados = Array.isArray(item?.bordados)
+              ? item.bordados.map((bordado: any) => ({
+                  key: getBordadoKey() + index,
+                  monto: Number(bordado?.monto || 0),
+                  color: bordado?.color || "FULL COLOR",
+                  tamano: bordado?.tamano || "NORMAL",
+                  posicion: bordado?.posicion || "PECHO IZQUIERDO",
+                  observaciones: bordado?.observaciones || "",
+                  imagenUrl: bordado?.imagenUrl || "",
+                }))
+              : [];
+            const bordadosFinales =
+              bordados.length > 0
+                ? bordados
+                : Number(item?.bordado || 0) > 0 || item?.bordadoColor || item?.bordadoPosicion
+                  ? [
+                      {
+                        key: getBordadoKey() + index,
+                        monto: Number(item?.bordado || 0),
+                        color: item?.bordadoColor || "FULL COLOR",
+                        tamano: item?.bordadoTamano || "NORMAL",
+                        posicion: item?.bordadoPosicion || "PECHO IZQUIERDO",
+                        observaciones: item?.bordadoObservaciones || "",
+                        imagenUrl: item?.bordadoImagenUrl || "",
+                      },
+                    ]
+                  : [];
+            const primerBordado = bordadosFinales[0] || null;
+            return {
+              key: Date.now() + index,
+              productoId: Number(item?.productoId || item?.producto?.id || 0),
+              cantidad: Number(item?.cantidad || 0),
+              precioUnit: Number(item?.precioUnit || 0),
+              bordado: getBordadoTotal(bordadosFinales),
+              bordadoActivo: bordadosFinales.length > 0,
+              bordados: bordadosFinales,
+              bordadoColor: primerBordado?.color || item?.bordadoColor || "FULL COLOR",
+              bordadoTamano: primerBordado?.tamano || item?.bordadoTamano || "NORMAL",
+              bordadoPosicion: primerBordado?.posicion || item?.bordadoPosicion || "PECHO IZQUIERDO",
+              bordadoObservaciones: primerBordado?.observaciones || item?.bordadoObservaciones || "",
+              bordadoImagenUrl: primerBordado?.imagenUrl || item?.bordadoImagenUrl || "",
+              estiloEspecial: Boolean(item?.estiloEspecial),
+              estiloEspecialMonto: Number(item?.estiloEspecialMonto || 0),
+              descuento: Number(item?.descuento || 0),
+              descripcion: `${item?.descripcion || ""}`,
+            };
+          }),
+        );
+      } catch (error: any) {
+        Swal.fire("Error", getApiErrorMessage(error, "No se pudo cargar el pedido para modificar"), "error");
+        navigate(returnState?.returnTo || "/produccion", {
+          state: pedidoEditId && returnState?.pedidosState
+            ? {
+                ...returnState,
+                pedidosState: {
+                  ...returnState.pedidosState,
+                  selectedId: pedidoEditId,
+                },
+              }
+            : returnState || undefined,
+          replace: true,
+        });
+      } finally {
+        if (!cancelled) setLoadingPedidoEdit(false);
+      }
+    };
+    void cargarPedidoEdicion();
+    return () => {
+      cancelled = true;
+    };
+  }, [pedidoEditId, navigate, returnState, rol, userId]);
 
   const clientePerteneceCartera = (cliente: Cliente) =>
     rol === "ADMIN" || Number(cliente.usuarioId || 0) === Number(userId || 0);
@@ -1427,7 +1544,7 @@ export default function PedidoNuevo() {
   };
 
   const guardar = async () => {
-    if (!pedidoScheduleOpen) {
+    if (!isEditingPedido && !pedidoScheduleOpen) {
       Swal.fire(
         "Horario no habilitado",
         `La creacion de pedidos esta habilitada en este horario: ${formatReportScheduleForDay(pedidoSchedule)}.`,
@@ -1548,6 +1665,85 @@ export default function PedidoNuevo() {
     };
 
     try {
+      if (isEditingPedido && pedidoEditId) {
+        if (rol === "ADMIN") {
+          const confirmacion = await Swal.fire({
+            title: "Guardar cambios",
+            text: `Se modificara el pedido ${pedidoEditFolio || `P-${pedidoEditId}`}.`,
+            icon: "question",
+            showCancelButton: true,
+            confirmButtonText: "Guardar",
+            cancelButtonText: "Cancelar",
+          });
+          if (!confirmacion.isConfirmed) return;
+          const resp = await api.put(`/produccion/${pedidoEditId}`, payload);
+          Swal.fire("Guardado", "Pedido modificado", "success");
+          volverAlListado(Number(resp.data?.id || pedidoEditId));
+          return;
+        }
+
+        const detalleHtml = detalle
+          .map((item, index) => {
+            const producto = productos.find((p) => p.id === item.productoId);
+            return `<li>${index + 1}. ${escapeHtml(producto?.codigo || item.productoId)} - ${escapeHtml(producto?.nombre || "Producto")} (${escapeHtml(item.cantidad)})</li>`;
+          })
+          .join("");
+        const result = await Swal.fire({
+          title: "Solicitar autorizacion de cambio",
+          html: `
+            <div style="text-align:left;font-size:14px;line-height:1.45;">
+              <p>Los cambios del pedido ${escapeHtml(pedidoEditFolio || `P-${pedidoEditId}`)} deben ser autorizados por un administrador antes de aplicarse.</p>
+              <p><strong>Cliente:</strong> ${escapeHtml(clienteParaPedido.nombre)}<br/>
+              <strong>Total estimado:</strong> ${escapeHtml(formatCurrency(totalsPedido.total))}<br/>
+              <strong>Detalle actualizado:</strong></p>
+              <ul style="max-height:140px;overflow:auto;margin:0 0 12px 18px;padding:0;">${detalleHtml}</ul>
+              <label for="pedido-autorizacion-comentario" style="display:block;margin-bottom:6px;font-weight:600;">Comentario para autorizacion</label>
+              <textarea id="pedido-autorizacion-comentario" class="swal2-textarea" placeholder="Explica que se modifico..." style="height:90px;margin:0;width:100%;"></textarea>
+            </div>
+          `,
+          icon: "warning",
+          showCancelButton: true,
+          confirmButtonText: "Solicitar autorizacion",
+          cancelButtonText: "Cancelar",
+          confirmButtonColor: "#1f3f87",
+          width: 680,
+          preConfirm: () =>
+            (document.getElementById("pedido-autorizacion-comentario") as HTMLTextAreaElement | null)?.value || "",
+        });
+        if (!result.isConfirmed) return;
+
+        const resp = await api.put(`/produccion/${pedidoEditId}`, {
+          ...payload,
+          comentarioAutorizacion: result.value || "",
+        });
+        const solicitudId = Number(resp.data?.id || 0);
+        autorizacionPendienteRef.current = {
+          id: solicitudId,
+          clienteParaPedido,
+          pedidoParaStock,
+          modo: "edicion",
+        };
+
+        const espera = await Swal.fire({
+          title: "Esperando autorizacion",
+          text: "La solicitud fue enviada. Puedes esperar aqui hasta que se autorice o regresar al modulo de pedidos generados.",
+          icon: "info",
+          showCancelButton: true,
+          showConfirmButton: false,
+          cancelButtonText: "Ir a pedidos",
+          allowOutsideClick: false,
+          allowEscapeKey: false,
+          didOpen: () => {
+            Swal.showLoading();
+          },
+        });
+        if (espera.dismiss === Swal.DismissReason.cancel && autorizacionPendienteRef.current?.id === solicitudId) {
+          autorizacionPendienteRef.current = null;
+          volverAlListado(pedidoEditId);
+        }
+        return;
+      }
+
       const requiereAutorizacion = pedidoParaStock || Number(totalsPedido.total || 0) > PEDIDO_AUTORIZACION_MONTO_MINIMO;
       if (canCrearPedidoSinAutorizacion || !requiereAutorizacion) {
         const resp = await api.post("/produccion", payload);
@@ -1594,6 +1790,7 @@ export default function PedidoNuevo() {
         id: solicitudId,
         clienteParaPedido,
         pedidoParaStock,
+        modo: "creacion",
       };
 
       const espera = await Swal.fire({
@@ -1894,6 +2091,11 @@ export default function PedidoNuevo() {
         const folioPedido = pedido?.folio || (pedido?.id ? `P-${pedido.id}` : "PEND");
         const fechaPedido = pedido?.fecha ? new Date(pedido.fecha) : new Date();
         const nuevoPedidoId = Number(pedido?.id) || null;
+        if (pendiente.modo === "edicion") {
+          Swal.fire("Autorizado", "El cambio fue autorizado y el pedido quedo modificado.", "success");
+          setTimeout(() => volverAlListado(nuevoPedidoId), 300);
+          return;
+        }
         Swal.fire("Autorizado", "El pedido fue autorizado y generado correctamente.", "success");
         generarPdfPedidoProduccion(folioPedido, pendiente.clienteParaPedido, fechaPedido);
         if (pendiente.pedidoParaStock) {
@@ -1929,16 +2131,24 @@ export default function PedidoNuevo() {
       <Stack direction={{ xs: "column", sm: "row" }} alignItems={{ xs: "flex-start", sm: "center" }} justifyContent="space-between" spacing={1.5} sx={{ mb: 2 }}>
         <Stack direction="row" alignItems="center" spacing={1}>
           <PlaylistAddCheckOutlined color="primary" />
-          <Typography variant="h4">NUEVO PEDIDO</Typography>
+          <Typography variant="h4">{isEditingPedido ? `MODIFICAR ${pedidoEditFolio || "PEDIDO"}` : "NUEVO PEDIDO"}</Typography>
         </Stack>
         <Button
           variant={pedidoParaStock ? "contained" : "outlined"}
           color={pedidoParaStock ? "success" : "primary"}
           onClick={togglePedidoParaStock}
+          disabled={loadingPedidoEdit}
         >
           Pedido para stock
         </Button>
       </Stack>
+      {isEditingPedido && (
+        <Alert severity={rol === "ADMIN" ? "info" : "warning"} sx={{ mb: 2 }}>
+          {rol === "ADMIN"
+            ? "Como administrador puedes guardar cambios directamente."
+            : "Los cambios que realices se enviaran a autorizacion antes de aplicarse al pedido."}
+        </Alert>
+      )}
       <Divider sx={{ mb: 2 }} />
 
       <Grid container spacing={2}>
@@ -2802,7 +3012,7 @@ export default function PedidoNuevo() {
       )}
 
       <Stack direction="row" justifyContent="flex-end" spacing={2} sx={{ mt: 3 }}>
-        {!pedidoScheduleOpen && (
+        {!isEditingPedido && !pedidoScheduleOpen && (
           <Alert severity="info" sx={{ mr: "auto" }}>
             La creacion de pedidos esta fuera de horario. Horario de hoy: {formatReportScheduleForDay(pedidoSchedule)}.
           </Alert>
@@ -2821,9 +3031,9 @@ export default function PedidoNuevo() {
               backgroundColor: "#232148",
             },
           }}
-          disabled={!pedidoScheduleOpen}
+          disabled={loadingPedidoEdit || (!isEditingPedido && !pedidoScheduleOpen)}
         >
-          Guardar pedido
+          {isEditingPedido ? (rol === "ADMIN" ? "Guardar cambios" : "Solicitar autorizacion") : "Guardar pedido"}
         </Button>
       </Stack>
 

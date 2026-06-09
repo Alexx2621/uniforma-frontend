@@ -83,6 +83,7 @@ interface PedidoRow {
   displayFolio?: string;
   metodoPago?: string | null;
   solicitadoPor?: string | null;
+  usuarioId?: number | null;
   unificado?: boolean;
   unificadoCorrelativo?: string | null;
   unificaciones?: Array<{
@@ -164,13 +165,6 @@ const getTodayDateInputValue = () => {
   const today = new Date();
   today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
   return today.toISOString().slice(0, 10);
-};
-
-const getDateInputValueDaysAgo = (days: number) => {
-  const date = new Date();
-  date.setDate(date.getDate() - days);
-  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
-  return date.toISOString().slice(0, 10);
 };
 
 const formatDateForFilename = (date = new Date()) => {
@@ -352,7 +346,7 @@ export default function Pedidos() {
   const [colores, setColores] = useState<CatalogoItem[]>([]);
   const [filterCliente, setFilterCliente] = useState(() => restoredPedidosState?.filters?.cliente || "");
   const [filterFechaInicio, setFilterFechaInicio] = useState(
-    () => restoredPedidosState?.filters?.fechaInicio || getDateInputValueDaysAgo(5)
+    () => restoredPedidosState?.filters?.fechaInicio || getTodayDateInputValue()
   );
   const [filterFechaFin, setFilterFechaFin] = useState(
     () => restoredPedidosState?.filters?.fechaFin || getTodayDateInputValue()
@@ -377,7 +371,7 @@ export default function Pedidos() {
   const cargandoPedidosRef = useRef(false);
   const pedidosSocketRef = useRef<Socket | null>(null);
   const skipInitialPaginationResetRef = useRef(Boolean(restoredPedidosState));
-  const { rol, permisos, bodegaId: userBodegaId } = useAuthStore();
+  const { rol, permisos, bodegaId: userBodegaId, id: userId } = useAuthStore();
   const { fetchConfig, reportesConfig } = useSystemConfigStore();
   const canAccessAllBodegas = hasPermission(rol, permisos, "sistema.multi-tienda");
   const canUnifyPedidos = hasPermission(rol, permisos, "produccion.unificar");
@@ -410,6 +404,16 @@ export default function Pedidos() {
     const pedidoId = Number(pedido.id);
     setSelectedPedidoId(pedidoId);
     navigate(`/produccion/${pedidoId}`, { state: buildPedidosReturnState(pedidoId) });
+  };
+
+  const puedeModificarPedido = (pedido: PedidoRow) =>
+    !["anulado", "recibido", "completado"].includes(`${pedido.estado || ""}`.trim().toLowerCase()) &&
+    (rol === "ADMIN" || Number(pedido.usuarioId || 0) === Number(userId || 0));
+
+  const abrirModificarPedido = (pedido: PedidoRow) => {
+    const pedidoId = Number(pedido.id);
+    setSelectedPedidoId(pedidoId);
+    navigate(`/produccion/${pedidoId}/editar`, { state: buildPedidosReturnState(pedidoId) });
   };
 
   const openRelationModal = async (pedido: PedidoRow) => {
@@ -721,7 +725,7 @@ export default function Pedidos() {
     if (!nextState) return;
 
     setFilterCliente(nextState.filters?.cliente || "");
-    setFilterFechaInicio(nextState.filters?.fechaInicio || getDateInputValueDaysAgo(5));
+    setFilterFechaInicio(nextState.filters?.fechaInicio || getTodayDateInputValue());
     setFilterFechaFin(nextState.filters?.fechaFin || getTodayDateInputValue());
     setFilterBodega(nextState.filters?.bodega ?? "all");
     setFilterTipoPedido(nextState.filters?.tipoPedido || "clientes");
@@ -1172,13 +1176,18 @@ export default function Pedidos() {
     {
       field: "acciones",
       headerName: "Acciones",
-      width: 220,
+      width: 310,
       sortable: false,
       renderCell: (p) => (
         <Stack direction="row" spacing={1}>
           <Button size="small" variant="outlined" onClick={() => abrirPedidoDetalle(p.row)}>
             Ver
           </Button>
+          {puedeModificarPedido(p.row) && (
+            <Button size="small" variant="outlined" onClick={() => abrirModificarPedido(p.row)}>
+              Modificar
+            </Button>
+          )}
           <Button
             size="small"
             variant="outlined"

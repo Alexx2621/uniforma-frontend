@@ -31,6 +31,7 @@ interface AutorizacionRow {
   id: string;
   sourceId: number;
   tipo: "pedido" | "traslado" | "postventa";
+  subtipo?: string;
   titulo: string;
   referencia: string;
   estado: string;
@@ -144,7 +145,7 @@ export default function Autorizaciones() {
   const columns = useMemo<GridColDef<AutorizacionRow>[]>(
     () => [
       { field: "fecha", headerName: "Fecha", minWidth: 165, flex: 0.8, valueFormatter: (value) => dateLabel(`${value || ""}`) },
-      { field: "tipo", headerName: "Tipo", minWidth: 120, flex: 0.6 },
+      { field: "titulo", headerName: "Tipo", minWidth: 150, flex: 0.7 },
       { field: "referencia", headerName: "Referencia", minWidth: 145, flex: 0.7 },
       { field: "resumen", headerName: "Resumen", minWidth: 300, flex: 1.5 },
       { field: "solicitadoPor", headerName: "Solicitado por", minWidth: 165, flex: 0.8 },
@@ -272,6 +273,34 @@ export default function Autorizaciones() {
               </Stack>
               <Typography variant="h6">{selected.referencia}</Typography>
               <Typography>{selected.resumen}</Typography>
+              {selected.tipo === "pedido" && Array.isArray(selected.payload?.detalle) && selected.payload.detalle.length > 0 && (
+                <Paper variant="outlined" sx={{ overflowX: "auto" }}>
+                  <Box component="table" sx={{ width: "100%", borderCollapse: "collapse", "& th, & td": { p: 1, borderBottom: "1px solid", borderColor: "divider", fontSize: 13 } }}>
+                    <Box component="thead">
+                      <Box component="tr">
+                        <Box component="th" sx={{ textAlign: "left" }}>Producto</Box>
+                        <Box component="th" sx={{ textAlign: "right" }}>Cant.</Box>
+                        <Box component="th" sx={{ textAlign: "right" }}>Precio</Box>
+                        <Box component="th" sx={{ textAlign: "right" }}>Bordado</Box>
+                        <Box component="th" sx={{ textAlign: "right" }}>Desc.</Box>
+                        <Box component="th" sx={{ textAlign: "left" }}>Observacion</Box>
+                      </Box>
+                    </Box>
+                    <Box component="tbody">
+                      {selected.payload.detalle.map((item: any, index: number) => (
+                        <Box component="tr" key={`${item.productoId || "p"}-${index}`}>
+                          <Box component="td">{item.codigo || item.productoId || "N/D"}</Box>
+                          <Box component="td" sx={{ textAlign: "right" }}>{Number(item.cantidad || 0)}</Box>
+                          <Box component="td" sx={{ textAlign: "right" }}>{formatCurrency(Number(item.precioUnit || 0))}</Box>
+                          <Box component="td" sx={{ textAlign: "right" }}>{formatCurrency(Number(item.bordado || 0))}</Box>
+                          <Box component="td" sx={{ textAlign: "right" }}>{Number(item.descuento || 0).toFixed(2)}%</Box>
+                          <Box component="td">{item.descripcion || "-"}</Box>
+                        </Box>
+                      ))}
+                    </Box>
+                  </Box>
+                </Paper>
+              )}
               {selected.comentario && (
                 <Paper variant="outlined" sx={{ p: 1.5 }}>
                   <Typography variant="caption" color="text.secondary">Comentario</Typography>

@@ -25,6 +25,7 @@ import {
 import PlaylistAddCheckOutlined from "@mui/icons-material/PlaylistAddCheckOutlined";
 import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import DoneAllOutlined from "@mui/icons-material/DoneAllOutlined";
+import EditOutlined from "@mui/icons-material/EditOutlined";
 import PictureAsPdfOutlined from "@mui/icons-material/PictureAsPdfOutlined";
 import AssignmentReturnOutlined from "@mui/icons-material/AssignmentReturnOutlined";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -104,6 +105,7 @@ interface Pedido {
   cliente?: { nombre: string };
   bodega?: { nombre: string };
   bodegaId?: number | null;
+  usuarioId?: number | null;
   unificadoCorrelativo?: string | null;
   unificaciones?: Array<{
     produccionUnificadoId?: number;
@@ -347,7 +349,7 @@ export default function PedidoDetalle() {
   const navigate = useNavigate();
   const location = useLocation();
   const returnState = location.state as { returnTo?: string; returnLabel?: string } | null;
-  const { rol, permisos, bodegaId: userBodegaId } = useAuthStore();
+  const { rol, permisos, bodegaId: userBodegaId, id: userId } = useAuthStore();
   const { fetchConfig } = useSystemConfigStore();
   const [pedido, setPedido] = useState<Pedido | null>(null);
   const [loading, setLoading] = useState(false);
@@ -419,11 +421,22 @@ export default function PedidoDetalle() {
   const esRegresadoProduccion = `${pedido?.estado || ""}`.trim().toLowerCase() === "regresado_produccion";
   const esRecibido = ["recibido", "completado", "pendiente_pago"].includes(`${pedido?.estado || ""}`.trim().toLowerCase());
   const esPedidoParaStock = `${pedido?.metodoPago || ""}`.trim().toLowerCase() === "sin_cobro_stock";
+  const puedeModificarPedido =
+    Boolean(pedido) &&
+    !["anulado", "recibido", "completado"].includes(`${pedido?.estado || ""}`.trim().toLowerCase()) &&
+    (rol === "ADMIN" || Number(pedido?.usuarioId || 0) === Number(userId || 0));
 
   const volver = () => {
     navigate(returnState?.returnTo || "/produccion", {
       state: returnState || undefined,
       replace: true,
+    });
+  };
+
+  const modificarPedido = () => {
+    if (!pedido) return;
+    navigate(`/produccion/${pedido.id}/editar`, {
+      state: returnState || undefined,
     });
   };
 
@@ -763,6 +776,11 @@ export default function PedidoDetalle() {
           />
         )}
         <Stack direction="row" spacing={1} sx={{ ml: "auto" }}>
+          {puedeModificarPedido && (
+            <Button size="small" variant="outlined" startIcon={<EditOutlined />} onClick={modificarPedido}>
+              Modificar
+            </Button>
+          )}
           <Button size="small" variant="outlined" startIcon={<PictureAsPdfOutlined />} onClick={generarPdfReciboPedido}>
             PDF Recibo
           </Button>
