@@ -58,6 +58,8 @@ interface CorreccionRow {
 const money = (value: number) =>
   `Q ${Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+const METODO_OPTIONS = ["efectivo", "transferencia", "deposito_bancario", "tarjeta", "visalink", "orden_compra", "sin_cobro", "sin_cobro_stock"];
+
 const formatValue = (value: any) => {
   if (value === null || value === undefined || value === "") return "-";
   if (typeof value === "number") return Number.isFinite(value) ? money(value) : `${value}`;
@@ -156,8 +158,6 @@ export default function Correcciones() {
   const fields = useMemo(() => getCorrectionFields(selected), [selected]);
   const currentValue = selected && campo ? getFieldValue(selected, campo) : undefined;
   const { paginatedRows: historialPaginado, paginationProps: historialPaginationProps } = useTablePagination(historial, 10);
-  const metodoOptions = ["efectivo", "transferencia", "deposito_bancario", "tarjeta", "visalink", "orden_compra", "sin_cobro", "sin_cobro_stock"];
-
   const cargarHistorial = useCallback(async (params: { documentoId?: number; tipo?: string; entidadId?: number } = {}) => {
     const { data } = await api.get("/correcciones/historial", { params });
     setHistorial(Array.isArray(data) ? data : []);
@@ -336,7 +336,7 @@ export default function Correcciones() {
                     onChange={(e) => setValorNuevo(e.target.value)}
                     sx={{ minWidth: 220 }}
                   >
-                    {metodoOptions.map((metodo) => (
+                    {METODO_OPTIONS.map((metodo) => (
                       <MenuItem key={metodo} value={metodo}>
                         {metodo}
                       </MenuItem>

@@ -117,6 +117,8 @@ export default function Proveedores() {
   const canManage = hasPermission(rol, permisos, "proveedores.manage");
   const location = useLocation();
   const navigate = useNavigate();
+  const locationPath = location.pathname;
+  const locationState = location.state as ProveedorLocationState | null;
   const [rows, setRows] = useState<Proveedor[]>([]);
   const [loading, setLoading] = useState(false);
   const [filtros, setFiltros] = useState({ q: "", estado: "", tipo: "" });
@@ -144,20 +146,19 @@ export default function Proveedores() {
   }, [cargar]);
 
   useEffect(() => {
-    const state = location.state as ProveedorLocationState | null;
-    if (!state?.openCreate || !canManage) return;
+    if (!locationState?.openCreate || !canManage) return;
     setDialog({
       open: true,
       editing: null,
       form: {
         ...emptyForm,
         ...Object.fromEntries(
-          Object.entries(state.proveedorDraft || {}).map(([key, value]) => [key, `${value ?? ""}`]),
+          Object.entries(locationState.proveedorDraft || {}).map(([key, value]) => [key, `${value ?? ""}`]),
         ),
       },
     });
-    navigate(location.pathname, { replace: true, state: null });
-  }, [canManage, location.pathname, location.state, navigate]);
+    navigate(locationPath, { replace: true, state: null });
+  }, [canManage, locationPath, locationState, navigate]);
 
   const resumen = useMemo(() => {
     const activos = rows.filter((row) => row.estado === "activo").length;

@@ -54,6 +54,8 @@ const estadoColor = (estado?: string): "success" | "warning" | "error" | "info" 
   if (value.includes("revision") || value.includes("aprobacion")) return "info";
   return "default";
 };
+const getAutorizacionDetalleKey = (item: any) =>
+  `${item.id ?? item.productoId ?? item.codigo ?? "linea"}-${item.cantidad ?? ""}-${item.precioUnit ?? ""}-${item.bordado ?? ""}-${item.descuento ?? ""}-${item.descripcion ?? ""}`;
 
 export default function Autorizaciones() {
   const { rol, permisos } = useAuthStore();
@@ -287,8 +289,8 @@ export default function Autorizaciones() {
                       </Box>
                     </Box>
                     <Box component="tbody">
-                      {selected.payload.detalle.map((item: any, index: number) => (
-                        <Box component="tr" key={`${item.productoId || "p"}-${index}`}>
+                      {selected.payload.detalle.map((item: any) => (
+                        <Box component="tr" key={getAutorizacionDetalleKey(item)}>
                           <Box component="td">{item.codigo || item.productoId || "N/D"}</Box>
                           <Box component="td" sx={{ textAlign: "right" }}>{Number(item.cantidad || 0)}</Box>
                           <Box component="td" sx={{ textAlign: "right" }}>{formatCurrency(Number(item.precioUnit || 0))}</Box>

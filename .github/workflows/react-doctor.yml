@@ -1,0 +1,43 @@
+# React Doctor - finds security, performance, correctness, accessibility,
+# bundle-size, and architecture issues in React codebases.
+#
+# Docs: https://www.react.doctor/ci
+# Source: https://github.com/millionco/react-doctor
+
+name: React Doctor
+
+on:
+  # Scans PR changed files and comments only on new issues introduced
+  # relative to the target branch merge base.
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  # Scans main on every push to track the health-score trend.
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  statuses: write
+
+concurrency:
+  group: react-doctor-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  react-doctor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: millionco/react-doctor@v2
+        # Full reference: https://www.react.doctor/ci
+        # with:
+        #   blocking: error
+        #   scope: full
+        #   comment: false
+        #   review-comments: false
+        #   commit-status: false
+        #   version: "0.5.1"
+        #   directory: uniforma-frontend

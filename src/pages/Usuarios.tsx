@@ -609,7 +609,7 @@ export default function Usuarios() {
               <Box>
                 <Button component="label" variant="outlined" disabled={!canManage}>
                   Subir foto
-                  <input hidden type="file" accept="image/*" onChange={handleFotoChange} />
+                  <input hidden type="file" accept="image/*" aria-label="Seleccionar foto del usuario" onChange={handleFotoChange} />
                 </Button>
                 <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 1 }}>
                   JPG, PNG o WebP. Tamano maximo 5 MB.

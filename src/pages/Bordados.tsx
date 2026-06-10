@@ -143,6 +143,8 @@ const isPedidoAnulado = (pedido?: Pick<PedidoBordado, "estado"> | null) =>
   `${pedido?.estado || ""}`.trim().toLowerCase() === "anulado";
 const money = formatCurrency;
 const safeText = (value?: string | null) => `${value || ""}`.trim() || "N/D";
+const getBordadoKey = (detalleId: number, bordado: NonNullable<DetalleBordado["bordados"]>[number]) =>
+  `${detalleId}-${bordado.id ?? [bordado.posicion, bordado.color, bordado.tamano, bordado.monto, bordado.imagenUrl].map((value) => `${value || ""}`.trim()).join("|")}`;
 const getTodayInputValue = () => {
   const date = new Date();
   const year = date.getFullYear();
@@ -559,7 +561,7 @@ export default function Bordados() {
                           <TableCell>
                             <Stack spacing={0.5} sx={{ minWidth: 140 }}>
                               {bordados.map((bordado, index) => (
-                                <Typography key={`${detalle.id}-color-${index}`} variant="body2">
+                                <Typography key={`${getBordadoKey(detalle.id, bordado)}-color`} variant="body2">
                                   {index + 1}. {safeText(bordado.color)}
                                 </Typography>
                               ))}
@@ -567,8 +569,8 @@ export default function Bordados() {
                           </TableCell>
                           <TableCell>
                             <Stack spacing={0.5} sx={{ minWidth: 120 }}>
-                              {bordados.map((bordado, index) => (
-                                <Typography key={`${detalle.id}-tamano-${index}`} variant="body2">
+                              {bordados.map((bordado) => (
+                                <Typography key={`${getBordadoKey(detalle.id, bordado)}-tamano`} variant="body2">
                                   {safeText(bordado.tamano)}
                                 </Typography>
                               ))}
@@ -576,8 +578,8 @@ export default function Bordados() {
                           </TableCell>
                           <TableCell>
                             <Stack spacing={0.5} sx={{ minWidth: 160 }}>
-                              {bordados.map((bordado, index) => (
-                                <Typography key={`${detalle.id}-posicion-${index}`} variant="body2">
+                              {bordados.map((bordado) => (
+                                <Typography key={`${getBordadoKey(detalle.id, bordado)}-posicion`} variant="body2">
                                   {safeText(bordado.posicion)}
                                 </Typography>
                               ))}
@@ -585,8 +587,8 @@ export default function Bordados() {
                           </TableCell>
                           <TableCell>
                             <Stack spacing={0.5} sx={{ minWidth: 240 }}>
-                              {bordados.map((bordado, index) => (
-                                <Typography key={`${detalle.id}-obs-${index}`} variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
+                              {bordados.map((bordado) => (
+                                <Typography key={`${getBordadoKey(detalle.id, bordado)}-obs`} variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
                                   {safeText(bordado.observaciones)}
                                 </Typography>
                               ))}
@@ -596,11 +598,11 @@ export default function Bordados() {
                             <Stack spacing={0.5} sx={{ minWidth: 110 }}>
                               {bordados.map((bordado, index) =>
                                 bordado.imagenUrl ? (
-                                  <Button key={`${detalle.id}-img-${index}`} size="small" href={bordado.imagenUrl} target="_blank" rel="noreferrer" endIcon={<OpenInNewOutlined />}>
+                                  <Button key={`${getBordadoKey(detalle.id, bordado)}-img`} size="small" href={bordado.imagenUrl} target="_blank" rel="noreferrer" endIcon={<OpenInNewOutlined />}>
                                     Ver {index + 1}
                                   </Button>
                                 ) : (
-                                  <Typography key={`${detalle.id}-img-${index}`} variant="body2" color="text.secondary">
+                                  <Typography key={`${getBordadoKey(detalle.id, bordado)}-img`} variant="body2" color="text.secondary">
                                     N/D
                                   </Typography>
                                 ),

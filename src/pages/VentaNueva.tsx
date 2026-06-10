@@ -1265,9 +1265,14 @@ export default function VentaNueva() {
               setClienteId("");
               setClienteTelefono("");
             }}
-            renderOption={(props, option) => (
-              <li {...props}>{formatClienteOption(option)}</li>
-            )}
+            renderOption={(props, option) => {
+              const { key: _key, ...optionProps } = props;
+              return (
+                <li key={option.id} {...optionProps}>
+                  {formatClienteOption(option)}
+                </li>
+              );
+            }}
             renderInput={(params) => (
               <TextField
                 {...params}
@@ -1893,6 +1898,7 @@ export default function VentaNueva() {
                       hidden
                       type="file"
                       accept="image/*"
+                      aria-label="Seleccionar imagen de bordado"
                       onChange={async (event) => {
                         const file = event.target.files?.[0];
                         if (!file) return;

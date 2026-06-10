@@ -721,7 +721,7 @@ export default function Pedidos() {
   }, [filterCliente, filterFechaInicio, filterFechaFin, filterBodega, filterTipoPedido]);
 
   useEffect(() => {
-    const nextState = (location.state as PedidosNavigationState | null)?.pedidosState;
+    const nextState = restoredPedidosState;
     if (!nextState) return;
 
     setFilterCliente(nextState.filters?.cliente || "");
@@ -736,7 +736,7 @@ export default function Pedidos() {
 
     const selectedId = Number(nextState.selectedId);
     setSelectedPedidoId(Number.isFinite(selectedId) && selectedId > 0 ? selectedId : null);
-  }, [location.key, location.state]);
+  }, [restoredPedidosState]);
 
   const filtered = useMemo(() => {
     return rows.filter((r) => {
@@ -804,6 +804,11 @@ export default function Pedidos() {
       return estado !== "anulado" && !pedido.unificado && !esStock;
     });
   }, [filtered, canUnifyPedidos]);
+
+  const pedidosParaDetallePdf = useMemo(
+    () => filtered.filter((pedido) => `${pedido.estado || ""}`.trim().toLowerCase() !== "anulado"),
+    [filtered],
+  );
 
   const anularPedido = async (pedido: PedidoRow) => {
     const estado = `${pedido.estado || ""}`.trim().toLowerCase();
@@ -965,15 +970,17 @@ export default function Pedidos() {
         width: 640,
       });
 
-      await descargarProduccionUnificadoPdf({
-        articulos,
-        fileName,
-        pedidoNo,
-        filtroTienda,
-        totalPedidos: pedidosUnificables.length,
-        fechasPedidos: pedidosUnificables.map((pedido) => pedido.fecha),
-      });
-      await cargar();
+      await Promise.all([
+        descargarProduccionUnificadoPdf({
+          articulos,
+          fileName,
+          pedidoNo,
+          filtroTienda,
+          totalPedidos: pedidosUnificables.length,
+          fechasPedidos: pedidosUnificables.map((pedido) => pedido.fecha),
+        }),
+        cargar(),
+      ]);
     } catch (error: any) {
       Swal.fire(
         "Error",
@@ -987,12 +994,12 @@ export default function Pedidos() {
 
   const generarDetallePedidosPdf = async () => {
     if (generandoDetallePedidos) return;
-    if (!filtered.length) {
-      Swal.fire("Sin datos", "No hay pedidos visibles para generar el detalle.", "info");
+    if (!pedidosParaDetallePdf.length) {
+      Swal.fire("Sin datos", "No hay pedidos activos visibles para generar el detalle.", "info");
       return;
     }
 
-    const articulos: ProduccionDetallePedidoPdf[] = [...filtered]
+    const articulos: ProduccionDetallePedidoPdf[] = [...pedidosParaDetallePdf]
       .sort((a, b) => {
         const porUsuario = compareText(obtenerUsuarioPedido(a), obtenerUsuarioPedido(b));
         if (porUsuario !== 0) return porUsuario;
@@ -1021,7 +1028,7 @@ export default function Pedidos() {
       .filter((articulo) => Number(articulo.cantidad || 0) > 0);
 
     if (!articulos.length) {
-      Swal.fire("Sin detalle", "Los pedidos visibles no tienen lineas de detalle para imprimir.", "info");
+      Swal.fire("Sin detalle", "Los pedidos activos visibles no tienen lineas de detalle para imprimir.", "info");
       return;
     }
 
@@ -1036,7 +1043,7 @@ export default function Pedidos() {
 
     const confirmacion = await Swal.fire({
       title: "Generar detalle de pedidos",
-      text: `Se generara un PDF con ${filtered.length} pedido(s) y ${articulos.length} linea(s) del ${rango}.`,
+      text: `Se generara un PDF con ${pedidosParaDetallePdf.length} pedido(s) activo(s) y ${articulos.length} linea(s) del ${rango}. Los pedidos anulados no se incluiran.`,
       icon: "question",
       showCancelButton: true,
       confirmButtonText: "Si, generar PDF",
@@ -1053,8 +1060,8 @@ export default function Pedidos() {
         articulos,
         fileName: `Detalle_pedidos_${sanitizeFilename(desde)}_${sanitizeFilename(hasta)}_${fechaArchivo}.pdf`,
         filtroTienda,
-        totalPedidos: filtered.length,
-        fechasPedidos: filtered.map((pedido) => pedido.fecha),
+        totalPedidos: pedidosParaDetallePdf.length,
+        fechasPedidos: pedidosParaDetallePdf.map((pedido) => pedido.fecha),
       });
     } catch (error: any) {
       Swal.fire("Error", error?.message || "No se pudo generar el detalle de pedidos", "error");
@@ -1215,7 +1222,7 @@ export default function Pedidos() {
             startIcon={<PictureAsPdfOutlined />}
             variant="outlined"
             onClick={generarDetallePedidosPdf}
-            disabled={generandoDetallePedidos || filtered.length === 0}
+            disabled={generandoDetallePedidos || pedidosParaDetallePdf.length === 0}
           >
             {generandoDetallePedidos ? "Generando..." : "Detalle PDF"}
           </Button>

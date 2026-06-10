@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Alert,
   Button,
@@ -61,7 +61,7 @@ export default function OrdenMixtaDetalle() {
     }));
   }, [orden]);
 
-  const metodoRequiereReferencia = useMemo(() => pago.metodo !== "efectivo", [pago.metodo]);
+  const metodoRequiereReferencia = pago.metodo !== "efectivo";
   const saldoTotal = Number(orden?.saldoTotal || 0);
   const saldoVenta = Number(orden?.saldoVenta || 0);
   const saldoPedido = Number(orden?.saldoPedido || 0);

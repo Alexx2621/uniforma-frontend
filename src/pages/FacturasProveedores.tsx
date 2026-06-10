@@ -545,7 +545,7 @@ export default function FacturasProveedores() {
             </TextField>
             <Button component="label" variant="outlined" startIcon={<PictureAsPdfOutlined />}>
               {archivo ? archivo.name : "Seleccionar PDF"}
-              <input hidden type="file" accept="application/pdf" onChange={(event: ChangeEvent<HTMLInputElement>) => setArchivo(event.target.files?.[0] || null)} />
+              <input hidden type="file" accept="application/pdf" aria-label="Seleccionar factura PDF" onChange={(event: ChangeEvent<HTMLInputElement>) => setArchivo(event.target.files?.[0] || null)} />
             </Button>
             <Typography variant="caption" color="text.secondary">
               El proveedor debe existir y estar activo en el catalogo. Si el PDF pertenece a otro proveedor, la carga sera rechazada.

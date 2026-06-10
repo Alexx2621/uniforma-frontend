@@ -594,10 +594,8 @@ export default function StockBajo() {
 
     try {
       setCreandoPedido(true);
-      let creados = 0;
-      let solicitudes = 0;
 
-      for (const [, rows] of grupos.entries()) {
+      const resultados = await Promise.all(Array.from(grupos.entries()).map(async ([, rows]) => {
         const bodegaId = rows[0].bodegaId;
         const bodegaNombre = rows[0].bodega;
         const detalle = rows.map((row) => ({
@@ -632,7 +630,7 @@ export default function StockBajo() {
 
         try {
           await api.post("/produccion", payload);
-          creados += 1;
+          return { creados: 1, solicitudes: 0 };
         } catch (error: any) {
           const msg = error?.response?.data?.message || "";
           if (`${msg}`.toLowerCase().includes("autorizacion")) {
@@ -640,12 +638,13 @@ export default function StockBajo() {
               pedido: payload,
               comentario: `Solicitud automatica desde Stock bajo para ${bodegaNombre}.`,
             });
-            solicitudes += 1;
-          } else {
-            throw error;
+            return { creados: 0, solicitudes: 1 };
           }
+          throw error;
         }
-      }
+      }));
+      const creados = resultados.reduce((sum, item) => sum + item.creados, 0);
+      const solicitudes = resultados.reduce((sum, item) => sum + item.solicitudes, 0);
 
       limpiarSeleccion();
       await Swal.fire(

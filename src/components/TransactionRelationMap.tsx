@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   PointerSensor,
@@ -270,14 +270,17 @@ export default function TransactionRelationMap({
 
     return next;
   }, [orderedNodes, rootNode]);
+  const buildInitialPositionsEvent = useEffectEvent(buildInitialPositions);
 
   useEffect(() => {
     if (!open) return;
-    const initialize = () => setPositions(buildInitialPositions());
+    const initialize = () => setPositions(buildInitialPositionsEvent());
     initialize();
     window.addEventListener("resize", initialize);
     return () => window.removeEventListener("resize", initialize);
-  }, [open, nodeIdsKey, buildInitialPositions]);
+    // Effect Events always read the latest layout data without re-subscribing this listener.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, nodeIdsKey]);
 
   const updateNodePosition = (nodeId: string, delta: { x: number; y: number }) => {
     const base = dragStartPositionsRef.current[nodeId];

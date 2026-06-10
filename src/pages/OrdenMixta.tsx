@@ -46,8 +46,8 @@ export default function OrdenMixta() {
   const navigate = useNavigate();
   const [rows, setRows] = useState<OrdenMixtaRow[]>([]);
   const [loading, setLoading] = useState(false);
-  const [desde, setDesde] = useState(today());
-  const [hasta, setHasta] = useState(today());
+  const [desde, setDesde] = useState(() => today());
+  const [hasta, setHasta] = useState(() => today());
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 

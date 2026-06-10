@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import {
   Box,
   Paper,
@@ -2071,15 +2071,7 @@ export default function PedidoNuevo() {
     win.document.close();
   };
 
-  useEffect(() => {
-    const socket = io(api.defaults.baseURL || window.location.origin, {
-      withCredentials: true,
-      transports: ["websocket", "polling"],
-      reconnection: true,
-    });
-    autorizacionSocketRef.current = socket;
-
-    const manejarAutorizacionResuelta = (payload: any) => {
+  const manejarAutorizacionResuelta = useEffectEvent((payload: any) => {
       const pendiente = autorizacionPendienteRef.current;
       if (!pendiente || Number(payload?.solicitudId || 0) !== pendiente.id) return;
       if (payload?.solicitanteId && Number(payload.solicitanteId) !== Number(userId || 0)) return;
@@ -2115,7 +2107,15 @@ export default function PedidoNuevo() {
         payload?.comentario ? `Motivo: ${payload.comentario}` : "El pedido no fue autorizado.",
         "warning",
       );
-    };
+    });
+
+  useEffect(() => {
+    const socket = io(api.defaults.baseURL || window.location.origin, {
+      withCredentials: true,
+      transports: ["websocket", "polling"],
+      reconnection: true,
+    });
+    autorizacionSocketRef.current = socket;
 
     socket.on("produccion:autorizacion-resuelta", manejarAutorizacionResuelta);
 
@@ -2124,6 +2124,7 @@ export default function PedidoNuevo() {
       socket.disconnect();
       autorizacionSocketRef.current = null;
     };
+    // Effect Events read the latest values without forcing a socket re-subscription.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
@@ -2210,9 +2211,14 @@ export default function PedidoNuevo() {
               setClienteTelefono("");
               setClienteCorreo("");
             }}
-            renderOption={(props, option) => (
-              <li {...props}>{formatClienteOption(option)}</li>
-            )}
+            renderOption={(props, option) => {
+              const { key: _key, ...optionProps } = props;
+              return (
+                <li key={option.id} {...optionProps}>
+                  {formatClienteOption(option)}
+                </li>
+              );
+            }}
             renderInput={(params) => (
               <TextField
                 {...params}
@@ -2561,6 +2567,7 @@ export default function PedidoNuevo() {
                           hidden
                           type="file"
                           accept="image/*"
+                          aria-label="Seleccionar imagen de bordado"
                           onChange={async (event) => {
                             const file = event.target.files?.[0];
                             if (!file) return;
@@ -3100,6 +3107,7 @@ export default function PedidoNuevo() {
                       hidden
                       type="file"
                       accept="image/*"
+                      aria-label="Seleccionar imagen de bordado"
                       onChange={async (event) => {
                         const file = event.target.files?.[0];
                         if (!file) return;

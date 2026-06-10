@@ -197,7 +197,7 @@ export default function ModalVenta({ open, onClose, onSaved }: Props) {
               <th>Precio</th>
               <th>Cant</th>
               <th>Subtotal</th>
-              <th></th>
+              <th aria-label="Acciones"></th>
             </tr>
           </thead>
           <tbody>
@@ -208,6 +208,7 @@ export default function ModalVenta({ open, onClose, onSaved }: Props) {
                 <td>
                   <input
                     type="number"
+                    aria-label={`Cantidad de ${r.nombre}`}
                     value={emptyWhenZero(r.cantidad)}
                     min={1}
                     onChange={(e) =>

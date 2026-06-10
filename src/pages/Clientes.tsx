@@ -507,7 +507,7 @@ export default function Clientes() {
               <Box>
                 <Button component="label" variant="outlined" disabled={!canManage}>
                   Subir logotipo
-                  <input hidden type="file" accept="image/*" onChange={handleLogoChange} />
+                  <input hidden type="file" accept="image/*" aria-label="Seleccionar logotipo del cliente" onChange={handleLogoChange} />
                 </Button>
                 <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 1 }}>
                   JPG, PNG o WebP. Tamano maximo 5 MB.

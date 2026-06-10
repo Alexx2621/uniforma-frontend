@@ -85,7 +85,7 @@ export default function EnvioNuevo() {
   const [loading, setLoading] = useState(false);
 
   const [fecha, setFecha] = useState(today);
-  const [selectedBodegaId, setSelectedBodegaId] = useState<number | "">("");
+  const [selectedBodegaId, setSelectedBodegaId] = useState<number | "">(() => Number(bodegaId || 0) || "");
   const [destinatarioNombre, setDestinatarioNombre] = useState("");
   const [destinatarioTelefono, setDestinatarioTelefono] = useState("");
   const [direccion, setDireccion] = useState("");
@@ -113,10 +113,6 @@ export default function EnvioNuevo() {
     api.get("/bodegas").then((resp) => setBodegas(resp.data || [])).catch(() => setBodegas([]));
     api.get("/clientes").then((resp) => setClientes(resp.data || [])).catch(() => setClientes([]));
   }, []);
-
-  useEffect(() => {
-    setSelectedBodegaId(Number(bodegaId || 0) || "");
-  }, [bodegaId]);
 
   if (!canManage) return <Navigate to="/envios" replace />;
 
@@ -413,16 +409,19 @@ export default function EnvioNuevo() {
                 getOptionLabel={(option) => `${tipoLabel(option.tipo)} | ${option.referencia || ""} | ${option.titulo || ""}`}
                 onChange={(_, value) => addDocumento(value)}
                 renderInput={(params) => <TextField {...params} label="Relacionar venta, pedido o pago" size="small" />}
-                renderOption={(props, option) => (
-                  <li {...props} key={`${option.tipo}-${option.documentoId}`}>
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <Chip size="small" label={tipoLabel(option.tipo)} />
-                      <Typography>{option.referencia}</Typography>
-                      <Typography color="text.secondary">{option.titulo}</Typography>
-                      <Typography fontWeight={700}>{money(Number(option.monto || 0))}</Typography>
-                    </Stack>
-                  </li>
-                )}
+                renderOption={(props, option) => {
+                  const { key: _key, ...optionProps } = props;
+                  return (
+                    <li key={`${option.tipo}-${option.documentoId}`} {...optionProps}>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <Chip size="small" label={tipoLabel(option.tipo)} />
+                        <Typography>{option.referencia}</Typography>
+                        <Typography color="text.secondary">{option.titulo}</Typography>
+                        <Typography fontWeight={700}>{money(Number(option.monto || 0))}</Typography>
+                      </Stack>
+                    </li>
+                  );
+                }}
               />
 
               <Divider sx={{ my: 2 }} />

@@ -896,7 +896,14 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
                 setClienteId("");
                 setForm((prev) => ({ ...prev, clienteTelefono: "" }));
               }}
-              renderOption={(props, option) => <li {...props}>{formatClienteOption(option)}</li>}
+              renderOption={(props, option) => {
+                const { key: _key, ...optionProps } = props;
+                return (
+                  <li key={option.id} {...optionProps}>
+                    {formatClienteOption(option)}
+                  </li>
+                );
+              }}
               renderInput={(params) => (
                 <TextField {...params} label="Telefono del cliente" fullWidth helperText="Busca por telefono o escribe uno nuevo" />
               )}

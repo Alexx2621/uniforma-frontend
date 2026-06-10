@@ -1,5 +1,5 @@
 // src/layout/Navbar.tsx
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useReducer, useRef } from "react";
 import {
   AppBar,
   Toolbar,
@@ -125,9 +125,95 @@ interface ServerDetails {
   };
 }
 
+interface PerfilNavbar {
+  usuario?: string | null;
+  nombre?: string | null;
+  primerNombre?: string | null;
+  primerApellido?: string | null;
+  segundoApellido?: string | null;
+  fotoUrl?: string | null;
+  bodegaNombre?: string | null;
+}
+
+type AlertPanelTab = "alertas" | "log";
+
+interface NavbarState {
+  perfil: PerfilNavbar | null;
+  alertAnchorEl: HTMLElement | null;
+  alertas: AlertaInterna[];
+  alertPanelTab: AlertPanelTab;
+  logs: ActivityLog[];
+  logsLoading: boolean;
+  serverStatus: ServerStatus;
+  serverDetails: ServerDetails | null;
+  serverDetailsLoading: boolean;
+  serverStatusAnchorEl: HTMLElement | null;
+}
+
+type NavbarAction =
+  | { type: "perfilChanged"; value: PerfilNavbar | null }
+  | { type: "alertAnchorChanged"; value: HTMLElement | null }
+  | { type: "alertasChanged"; value: AlertaInterna[] }
+  | { type: "alertRead"; id: number }
+  | { type: "allAlertsRead" }
+  | { type: "alertPanelTabChanged"; value: AlertPanelTab }
+  | { type: "logsLoadingChanged"; value: boolean }
+  | { type: "logsChanged"; value: ActivityLog[] }
+  | { type: "serverStatusChanged"; value: ServerStatus }
+  | { type: "serverDetailsChanged"; value: ServerDetails | null }
+  | { type: "serverDetailsLoadingChanged"; value: boolean }
+  | { type: "serverStatusAnchorChanged"; value: HTMLElement | null };
+
 const initialServerStatus: ServerStatus = {
   status: "checking",
   message: "Revisando estado del servidor",
+};
+
+const initialNavbarState: NavbarState = {
+  perfil: null,
+  alertAnchorEl: null,
+  alertas: [],
+  alertPanelTab: "alertas",
+  logs: [],
+  logsLoading: false,
+  serverStatus: initialServerStatus,
+  serverDetails: null,
+  serverDetailsLoading: false,
+  serverStatusAnchorEl: null,
+};
+
+const navbarReducer = (state: NavbarState, action: NavbarAction): NavbarState => {
+  switch (action.type) {
+    case "perfilChanged":
+      return { ...state, perfil: action.value };
+    case "alertAnchorChanged":
+      return { ...state, alertAnchorEl: action.value };
+    case "alertasChanged":
+      return { ...state, alertas: action.value };
+    case "alertRead":
+      return {
+        ...state,
+        alertas: state.alertas.map((alerta) => (alerta.id === action.id ? { ...alerta, leida: true } : alerta)),
+      };
+    case "allAlertsRead":
+      return { ...state, alertas: state.alertas.map((alerta) => ({ ...alerta, leida: true })) };
+    case "alertPanelTabChanged":
+      return { ...state, alertPanelTab: action.value };
+    case "logsLoadingChanged":
+      return { ...state, logsLoading: action.value };
+    case "logsChanged":
+      return { ...state, logs: action.value };
+    case "serverStatusChanged":
+      return { ...state, serverStatus: action.value };
+    case "serverDetailsChanged":
+      return { ...state, serverDetails: action.value };
+    case "serverDetailsLoadingChanged":
+      return { ...state, serverDetailsLoading: action.value };
+    case "serverStatusAnchorChanged":
+      return { ...state, serverStatusAnchorEl: action.value };
+    default:
+      return state;
+  }
 };
 
 const getServerStatusLabel = (status: ServerStatus) => {
@@ -192,13 +278,510 @@ const getAlertPriorityStyles = (prioridad?: string, leida?: boolean) => {
   return { backgroundColor: "action.selected", borderLeft: "5px solid transparent" };
 };
 
+interface ServerStatusWidgetProps {
+  isDarkMode: boolean;
+  isAdmin: boolean;
+  serverStatus: ServerStatus;
+  serverStatusLabel: string;
+  serverStatusColor: string;
+  serverStatusTooltip: string;
+  serverStatusAnchorEl: HTMLElement | null;
+  serverDetails: ServerDetails | null;
+  serverDetailsLoading: boolean;
+  onOpen: (event: React.MouseEvent<HTMLElement>) => void;
+  onClose: () => void;
+  onRefresh: () => void;
+}
+
+function ServerStatusWidget({
+  isDarkMode,
+  isAdmin,
+  serverStatus,
+  serverStatusLabel,
+  serverStatusColor,
+  serverStatusTooltip,
+  serverStatusAnchorEl,
+  serverDetails,
+  serverDetailsLoading,
+  onOpen,
+  onClose,
+  onRefresh,
+}: ServerStatusWidgetProps) {
+  return (
+    <>
+      <Tooltip title={serverStatusTooltip}>
+        <Box
+          component="button"
+          type="button"
+          aria-label={serverStatusTooltip}
+          onClick={onOpen}
+          sx={{
+            height: 36,
+            px: { xs: 1, sm: 1.25 },
+            border: "1px solid",
+            borderColor: isDarkMode ? "rgba(255,255,255,0.18)" : "#e5e7eb",
+            borderRadius: 999,
+            backgroundColor: isDarkMode ? "rgba(255,255,255,0.06)" : "#f8fafc",
+            color: "inherit",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 1,
+            cursor: isAdmin ? "pointer" : "default",
+            flexShrink: 0,
+            transition: "border-color 160ms ease, background-color 160ms ease",
+            "&:hover": {
+              borderColor: isAdmin ? serverStatusColor : isDarkMode ? "rgba(255,255,255,0.18)" : "#e5e7eb",
+              backgroundColor: isAdmin
+                ? isDarkMode
+                  ? "rgba(255,255,255,0.1)"
+                  : "#eef2ff"
+                : isDarkMode
+                  ? "rgba(255,255,255,0.06)"
+                  : "#f8fafc",
+            },
+            "&:focus-visible": {
+              outline: "3px solid",
+              outlineColor: serverStatusColor,
+              outlineOffset: 2,
+            },
+          }}
+        >
+          <Box
+            sx={{
+              width: 10,
+              height: 10,
+              borderRadius: "50%",
+              backgroundColor: serverStatusColor,
+              boxShadow: serverStatus.status === "checking" ? "none" : `0 0 0 4px ${serverStatusColor}22`,
+            }}
+          />
+          <Typography
+            variant="caption"
+            sx={{ display: { xs: "none", md: "block" }, fontWeight: 700, lineHeight: 1, whiteSpace: "nowrap" }}
+          >
+            {serverStatus.status === "checking" ? "Servidor" : serverStatus.status === "online" ? "Online" : "Alerta"}
+          </Typography>
+        </Box>
+      </Tooltip>
+
+      <Menu
+        anchorEl={serverStatusAnchorEl}
+        open={Boolean(serverStatusAnchorEl)}
+        onClose={onClose}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+        transformOrigin={{ vertical: "top", horizontal: "right" }}
+        PaperProps={{ sx: { width: 430, maxWidth: "calc(100vw - 32px)" } }}
+      >
+        <Box sx={{ px: 2, py: 1.5 }}>
+          <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
+            <Stack direction="row" alignItems="center" spacing={1}>
+              <Box
+                sx={{
+                  width: 12,
+                  height: 12,
+                  borderRadius: "50%",
+                  backgroundColor: serverStatusColor,
+                  boxShadow: `0 0 0 4px ${serverStatusColor}22`,
+                }}
+              />
+              <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+                {serverStatusLabel}
+              </Typography>
+            </Stack>
+            <Button size="small" onClick={onRefresh}>
+              Revisar
+            </Button>
+          </Stack>
+          <Typography variant="caption" color="text.secondary">
+            {serverStatus.checkedAt
+              ? `Ultima revision: ${new Date(serverStatus.checkedAt).toLocaleString("es-GT")}`
+              : "Sin revision registrada"}
+          </Typography>
+        </Box>
+        <Divider />
+        <Box sx={{ px: 2, py: 1.5 }}>
+          <Stack spacing={1.25}>
+            <Stack direction="row" justifyContent="space-between" spacing={2}>
+              <Typography variant="body2" color="text.secondary">
+                API
+              </Typography>
+              <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                {serverStatus.api?.state || (serverStatus.status === "offline" ? "offline" : "N/D")}
+              </Typography>
+            </Stack>
+            <Stack direction="row" justifyContent="space-between" spacing={2}>
+              <Typography variant="body2" color="text.secondary">
+                Base de datos
+              </Typography>
+              <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                {serverStatus.database?.state || "N/D"}
+                {serverStatus.database?.latencyMs != null ? ` (${serverStatus.database.latencyMs} ms)` : ""}
+              </Typography>
+            </Stack>
+            <Stack direction="row" justifyContent="space-between" spacing={2}>
+              <Typography variant="body2" color="text.secondary">
+                Railway
+              </Typography>
+              <Typography variant="body2" sx={{ fontWeight: 700, textAlign: "right" }}>
+                {serverStatus.railway?.label || "N/D"}
+              </Typography>
+            </Stack>
+            <Stack direction="row" justifyContent="space-between" spacing={2}>
+              <Typography variant="body2" color="text.secondary">
+                Uptime backend
+              </Typography>
+              <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                {formatUptime(serverStatus.api?.uptimeSeconds)}
+              </Typography>
+            </Stack>
+          </Stack>
+          {(serverStatus.message || serverStatus.database?.message || serverStatus.railway?.message) && (
+            <Box sx={{ mt: 1.5, p: 1.25, borderRadius: 1, backgroundColor: "action.hover" }}>
+              <Typography variant="caption" color="text.secondary">
+                {serverStatus.message || serverStatus.database?.message || serverStatus.railway?.message}
+              </Typography>
+            </Box>
+          )}
+        </Box>
+        <Divider />
+        <Box sx={{ px: 2, py: 1.5 }}>
+          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+              Detalle MySQL
+            </Typography>
+            {serverDetailsLoading && <CircularProgress size={16} />}
+          </Stack>
+          <Stack spacing={1}>
+            <Stack direction="row" justifyContent="space-between" spacing={2}>
+              <Typography variant="body2" color="text.secondary">
+                Conexiones
+              </Typography>
+              <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                {metricValue(readMetric(serverDetails?.mysql?.status, "Threads_connected"))}
+                {" / "}
+                {metricValue(readMetric(serverDetails?.mysql?.variables, "max_connections"))}
+              </Typography>
+            </Stack>
+            <Stack direction="row" justifyContent="space-between" spacing={2}>
+              <Typography variant="body2" color="text.secondary">
+                Max. usado
+              </Typography>
+              <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                {metricValue(readMetric(serverDetails?.mysql?.status, "Max_used_connections"))}
+              </Typography>
+            </Stack>
+            <Stack direction="row" justifyContent="space-between" spacing={2}>
+              <Typography variant="body2" color="text.secondary">
+                Buffer pool
+              </Typography>
+              <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                {formatBytes(Number(readMetric(serverDetails?.mysql?.variables, "innodb_buffer_pool_size") || 0))}
+              </Typography>
+            </Stack>
+            <Stack direction="row" justifyContent="space-between" spacing={2}>
+              <Typography variant="body2" color="text.secondary">
+                Base de datos
+              </Typography>
+              <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                {formatBytes(serverDetails?.mysql?.databaseBytes)}
+              </Typography>
+            </Stack>
+            <Stack direction="row" justifyContent="space-between" spacing={2}>
+              <Typography variant="body2" color="text.secondary">
+                Temporales en disco
+              </Typography>
+              <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                {metricValue(readMetric(serverDetails?.mysql?.status, "Created_tmp_disk_tables"))}
+              </Typography>
+            </Stack>
+          </Stack>
+          {!!serverDetails?.mysql?.processlist?.length && (
+            <Box sx={{ mt: 1.5, p: 1.25, borderRadius: 1, backgroundColor: "action.hover" }}>
+              <Typography variant="caption" sx={{ display: "block", fontWeight: 800, mb: 0.75 }}>
+                Procesos recientes
+              </Typography>
+              <Stack spacing={0.5}>
+                {serverDetails.mysql.processlist.slice(0, 4).map((process) => (
+                  <Typography key={process.id} variant="caption" color="text.secondary" noWrap>
+                    #{process.id} {process.command || "N/D"} - {process.timeSeconds || 0}s - {process.user || "N/D"}
+                  </Typography>
+                ))}
+              </Stack>
+            </Box>
+          )}
+        </Box>
+        <Divider />
+        <Box sx={{ px: 2, py: 1.25, display: "flex", justifyContent: "flex-end", gap: 1 }}>
+          <Button size="small" onClick={() => window.open(serverStatus.railway?.statusPageUrl || "https://status.railway.com", "_blank")}>
+            Abrir Railway
+          </Button>
+        </Box>
+      </Menu>
+    </>
+  );
+}
+
+interface ThemeModeToggleProps {
+  isDarkMode: boolean;
+  onToggle: () => void;
+}
+
+function ThemeModeToggle({ isDarkMode, onToggle }: ThemeModeToggleProps) {
+  return (
+    <Tooltip title={isDarkMode ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}>
+      <Box
+        component="button"
+        type="button"
+        aria-label={isDarkMode ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
+        aria-pressed={isDarkMode}
+        onClick={onToggle}
+        sx={{
+          width: { xs: 48, sm: 76 },
+          height: { xs: 32, sm: 38 },
+          border: "1px solid",
+          borderColor: isDarkMode ? "#ffffff" : "#d6d6d6",
+          borderRadius: 999,
+          p: "4px",
+          cursor: "pointer",
+          position: "relative",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "flex-start",
+          backgroundColor: isDarkMode ? "#ffffff" : "#d9d9d9",
+          boxShadow: isDarkMode ? "0 1px 2px rgba(0, 0, 0, 0.18)" : "inset 0 0 0 1px #d6d6d6",
+          transition: "background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease",
+          flexShrink: 0,
+          "&:focus-visible": { outline: "3px solid", outlineColor: "primary.main", outlineOffset: 2 },
+        }}
+      >
+        <Box
+          sx={{
+            width: { xs: 24, sm: 30 },
+            height: { xs: 24, sm: 30 },
+            borderRadius: "50%",
+            display: "grid",
+            placeItems: "center",
+            backgroundColor: isDarkMode ? "#2d2d30" : "#ffffff",
+            color: isDarkMode ? "#ffffff" : "#f7d64a",
+            transform: isDarkMode ? { xs: "translateX(16px)", sm: "translateX(36px)" } : "translateX(0)",
+            transition: "transform 180ms ease, background-color 180ms ease, color 180ms ease",
+            position: "relative",
+            zIndex: 1,
+            boxShadow: isDarkMode ? "none" : "0 1px 4px rgba(15, 23, 42, 0.14)",
+          }}
+        >
+          {isDarkMode ? <DarkModeRoundedIcon fontSize="small" /> : <WbSunnyRoundedIcon fontSize="small" />}
+        </Box>
+      </Box>
+    </Tooltip>
+  );
+}
+
+interface UserIdentityProps {
+  isDarkMode: boolean;
+  displayName: string;
+  bodegaNombre?: string | null;
+  profileImageUrl: string;
+  initials: string;
+}
+
+function UserIdentity({ isDarkMode, displayName, bodegaNombre, profileImageUrl, initials }: UserIdentityProps) {
+  return (
+    <>
+      <Box textAlign="right" sx={{ display: { xs: "none", sm: "block" }, minWidth: 0, maxWidth: { sm: 180, md: 260 } }}>
+        <Typography variant="body1" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
+          {displayName}
+        </Typography>
+        <Typography variant="body2" noWrap sx={{ color: isDarkMode ? "#d1d5db" : "#6b7280" }}>
+          {bodegaNombre || "Sin bodega"}
+        </Typography>
+      </Box>
+      <Avatar
+        src={profileImageUrl}
+        sx={{
+          bgcolor: isDarkMode ? "#334155" : "#1B2852",
+          color: "#fff",
+          width: { xs: 34, sm: 40 },
+          height: { xs: 34, sm: 40 },
+          fontWeight: 700,
+          fontSize: 14,
+        }}
+      >
+        {!profileImageUrl ? initials : null}
+      </Avatar>
+    </>
+  );
+}
+
+interface AlertsMenuProps {
+  alertAnchorEl: HTMLElement | null;
+  alertas: AlertaInterna[];
+  alertasNoLeidas: number;
+  alertPanelTab: AlertPanelTab;
+  logs: ActivityLog[];
+  logsLoading: boolean;
+  displayName: string;
+  onOpen: (event: React.MouseEvent<HTMLElement>) => void;
+  onClose: () => void;
+  onMarkAllRead: () => void;
+  onReloadLogs: () => void;
+  onTabChange: (value: AlertPanelTab) => void;
+  onOpenAlert: (alerta: AlertaInterna) => void;
+}
+
+function AlertsMenu({
+  alertAnchorEl,
+  alertas,
+  alertasNoLeidas,
+  alertPanelTab,
+  logs,
+  logsLoading,
+  displayName,
+  onOpen,
+  onClose,
+  onMarkAllRead,
+  onReloadLogs,
+  onTabChange,
+  onOpenAlert,
+}: AlertsMenuProps) {
+  return (
+    <>
+      <Tooltip title="Alertas">
+        <IconButton color="inherit" onClick={onOpen}>
+          <Badge badgeContent={alertasNoLeidas} color="error">
+            <NotificationsOutlinedIcon />
+          </Badge>
+        </IconButton>
+      </Tooltip>
+
+      <Menu
+        anchorEl={alertAnchorEl}
+        open={Boolean(alertAnchorEl)}
+        onClose={onClose}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+        transformOrigin={{ vertical: "top", horizontal: "right" }}
+        PaperProps={{ sx: { width: 360, maxWidth: "calc(100vw - 32px)" } }}
+      >
+        <Box sx={{ px: 2, py: 1.5 }}>
+          <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+              {alertPanelTab === "alertas" ? "Alertas" : "Log de actividad"}
+            </Typography>
+            {alertPanelTab === "alertas" ? (
+              <Button size="small" onClick={onMarkAllRead} disabled={!alertasNoLeidas}>
+                Marcar todas
+              </Button>
+            ) : (
+              <Button size="small" onClick={onReloadLogs} disabled={logsLoading}>
+                Recargar
+              </Button>
+            )}
+          </Stack>
+        </Box>
+        <Tabs
+          value={alertPanelTab}
+          onChange={(_, value: AlertPanelTab) => onTabChange(value)}
+          variant="fullWidth"
+          sx={{ minHeight: 38, borderTop: 1, borderColor: "divider" }}
+        >
+          <Tab label="Alertas" value="alertas" sx={{ minHeight: 38 }} />
+          <Tab label="LOG" value="log" sx={{ minHeight: 38 }} />
+        </Tabs>
+        <Divider />
+        {alertPanelTab === "alertas" ? (
+          <List sx={{ py: 0, maxHeight: 420, overflowY: "auto" }}>
+            {alertas.length ? (
+              alertas.map((alerta) => (
+                <ListItemButton
+                  key={alerta.id}
+                  onClick={() => onOpenAlert(alerta)}
+                  sx={{
+                    alignItems: "flex-start",
+                    backgroundColor: alerta.leida ? "background.paper" : "action.selected",
+                    ...getAlertPriorityStyles(alerta.payload?.prioridad, alerta.leida),
+                  }}
+                >
+                  <ListItemText
+                    primary={
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <Typography component="span" variant="body2" sx={{ fontWeight: alerta.leida ? 500 : 800 }}>
+                          {alerta.titulo}
+                        </Typography>
+                        {alerta.payload?.prioridad && alerta.payload.prioridad !== "normal" && (
+                          <Typography component="span" variant="caption" sx={{ textTransform: "uppercase", fontWeight: 800 }}>
+                            {alerta.payload.prioridad}
+                          </Typography>
+                        )}
+                      </Stack>
+                    }
+                    secondary={
+                      <>
+                        <Typography component="span" variant="body2" color="text.primary" sx={{ display: "block", mb: 0.5 }}>
+                          {alerta.mensaje}
+                        </Typography>
+                        <Typography component="span" variant="caption" color="text.secondary">
+                          {new Date(alerta.creadaEn).toLocaleString("es-GT")}
+                        </Typography>
+                      </>
+                    }
+                    primaryTypographyProps={{ fontWeight: alerta.leida ? 500 : 700 }}
+                  />
+                </ListItemButton>
+              ))
+            ) : (
+              <Box sx={{ px: 2, py: 3 }}>
+                <Typography variant="body2" color="text.secondary">
+                  No hay alertas pendientes.
+                </Typography>
+              </Box>
+            )}
+          </List>
+        ) : (
+          <List sx={{ py: 0, maxHeight: 420, overflowY: "auto" }}>
+            {logsLoading ? (
+              <Box sx={{ px: 2, py: 3, display: "flex", justifyContent: "center" }}>
+                <CircularProgress size={24} />
+              </Box>
+            ) : logs.length ? (
+              logs.map((log) => (
+                <ListItemButton key={log.id} sx={{ alignItems: "flex-start" }}>
+                  <ListItemText
+                    primary={`${getActivityLogActionLabel(log)}: ${log.endpoint}`}
+                    secondary={
+                      <>
+                        <Typography component="span" variant="body2" color="text.primary" sx={{ display: "block", mb: 0.5 }}>
+                          Usuario: {log.usuario || displayName} | Resultado: {log.resultado || "N/D"}
+                        </Typography>
+                        <Typography component="span" variant="caption" color="text.secondary">
+                          {new Date(log.fecha).toLocaleString("es-GT")}
+                          {log.ip ? ` | IP: ${log.ip}` : ""}
+                        </Typography>
+                      </>
+                    }
+                  />
+                </ListItemButton>
+              ))
+            ) : (
+              <Box sx={{ px: 2, py: 3 }}>
+                <Typography variant="body2" color="text.secondary">
+                  No hay actividad registrada para este usuario.
+                </Typography>
+              </Box>
+            )}
+          </List>
+        )}
+      </Menu>
+    </>
+  );
+}
+
 interface NavbarProps {
   sidebarWidth?: number;
   showMenuButton?: boolean;
   onMenuClick?: () => void;
 }
 
-export default function Navbar({ sidebarWidth = 0, showMenuButton = false, onMenuClick }: NavbarProps) {
+function useNavbarController() {
   const { isDarkMode, toggleMode } = useThemeMode();
   const {
     usuario,
@@ -214,28 +797,26 @@ export default function Navbar({ sidebarWidth = 0, showMenuButton = false, onMen
     syncSession,
   } = useAuthStore();
   const navigate = useNavigate();
-  const [perfil, setPerfil] = useState<{
-    usuario?: string | null;
-    nombre?: string | null;
-    primerNombre?: string | null;
-    primerApellido?: string | null;
-    segundoApellido?: string | null;
-    fotoUrl?: string | null;
-    bodegaNombre?: string | null;
-  } | null>(null);
-  const [alertAnchorEl, setAlertAnchorEl] = useState<null | HTMLElement>(null);
-  const [alertas, setAlertas] = useState<AlertaInterna[]>([]);
-  const [alertPanelTab, setAlertPanelTab] = useState<"alertas" | "log">("alertas");
-  const [logs, setLogs] = useState<ActivityLog[]>([]);
-  const [logsLoading, setLogsLoading] = useState(false);
-  const [serverStatus, setServerStatus] = useState<ServerStatus>(initialServerStatus);
-  const [serverDetails, setServerDetails] = useState<ServerDetails | null>(null);
-  const [serverDetailsLoading, setServerDetailsLoading] = useState(false);
-  const [serverStatusAnchorEl, setServerStatusAnchorEl] = useState<null | HTMLElement>(null);
+  const [state, dispatch] = useReducer(navbarReducer, initialNavbarState);
+  const {
+    perfil,
+    alertAnchorEl,
+    alertas,
+    alertPanelTab,
+    logs,
+    logsLoading,
+    serverStatus,
+    serverDetails,
+    serverDetailsLoading,
+    serverStatusAnchorEl,
+  } = state;
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastUnreadCountRef = useRef<number | null>(null);
   const alertasSocketRef = useRef<Socket | null>(null);
-  const seenAlertIdsRef = useRef<Set<number>>(new Set());
+  const seenAlertIdsRef = useRef<Set<number> | null>(null);
+  if (seenAlertIdsRef.current === null) {
+    seenAlertIdsRef.current = new Set<number>();
+  }
   const canAuthorizePedidos =
     `${rol || ""}`.toUpperCase() === "ADMIN" || (Array.isArray(permisos) && permisos.includes("produccion.autorizar-pedidos"));
 
@@ -302,15 +883,21 @@ export default function Navbar({ sidebarWidth = 0, showMenuButton = false, onMen
 
     try {
       const { data } = await api.get("/status", { signal: controller.signal });
-      setServerStatus({
+      dispatch({
+        type: "serverStatusChanged",
+        value: {
         ...data,
         status: data?.status || "online",
+        },
       });
     } catch (error) {
-      setServerStatus({
-        status: "offline",
-        checkedAt: new Date().toISOString(),
-        message: error instanceof Error ? error.message : "No se pudo contactar el backend",
+      dispatch({
+        type: "serverStatusChanged",
+        value: {
+          status: "offline",
+          checkedAt: new Date().toISOString(),
+          message: error instanceof Error ? error.message : "No se pudo contactar el backend",
+        },
       });
     } finally {
       window.clearTimeout(timeoutId);
@@ -318,14 +905,14 @@ export default function Navbar({ sidebarWidth = 0, showMenuButton = false, onMen
   }, []);
 
   const cargarServerDetails = useCallback(async () => {
-    setServerDetailsLoading(true);
+    dispatch({ type: "serverDetailsLoadingChanged", value: true });
     try {
       const { data } = await api.get("/status/details");
-      setServerDetails(data || null);
+      dispatch({ type: "serverDetailsChanged", value: data || null });
     } catch {
-      setServerDetails(null);
+      dispatch({ type: "serverDetailsChanged", value: null });
     } finally {
-      setServerDetailsLoading(false);
+      dispatch({ type: "serverDetailsLoadingChanged", value: false });
     }
   }, []);
 
@@ -348,7 +935,7 @@ export default function Navbar({ sidebarWidth = 0, showMenuButton = false, onMen
         const { data } = await api.get("/auth/me");
         if (active) {
           syncSession(data);
-          setPerfil(data);
+          dispatch({ type: "perfilChanged", value: data });
         }
       } catch {
         try {
@@ -361,11 +948,11 @@ export default function Navbar({ sidebarWidth = 0, showMenuButton = false, onMen
               item.usuario.trim().toUpperCase() === usuario.trim().toUpperCase(),
           );
           if (active) {
-            setPerfil(encontrado || null);
+            dispatch({ type: "perfilChanged", value: encontrado || null });
           }
         } catch {
           if (active) {
-            setPerfil(null);
+            dispatch({ type: "perfilChanged", value: null });
           }
         }
       }
@@ -523,7 +1110,7 @@ export default function Navbar({ sidebarWidth = 0, showMenuButton = false, onMen
     if (result.isConfirmed) {
       try {
         await api.post(`/alertas/${alerta.id}/leida`);
-        setAlertas((prev) => prev.map((item) => (item.id === alerta.id ? { ...item, leida: true } : item)));
+        dispatch({ type: "alertRead", id: alerta.id });
       } catch {
         // La alerta queda disponible en la campana si no se pudo marcar.
       }
@@ -534,34 +1121,42 @@ export default function Navbar({ sidebarWidth = 0, showMenuButton = false, onMen
     try {
       const { data } = await api.get("/alertas");
       const nextAlertas = Array.isArray(data) ? data : [];
-      const nuevas = nextAlertas.filter((alerta) => !alerta.leida && !seenAlertIdsRef.current.has(Number(alerta.id)));
-      nextAlertas.forEach((alerta) => seenAlertIdsRef.current.add(Number(alerta.id)));
-      setAlertas(nextAlertas);
+      const nuevas: AlertaInterna[] = [];
+
+      for (const alerta of nextAlertas) {
+        const alertaId = Number(alerta.id);
+        if (!alerta.leida && !seenAlertIdsRef.current!.has(alertaId)) {
+          nuevas.push(alerta);
+        }
+        seenAlertIdsRef.current!.add(alertaId);
+      }
+
+      dispatch({ type: "alertasChanged", value: nextAlertas });
 
       if (options?.emergente && nuevas.length) {
         const prioridadOrden: Record<string, number> = { urgente: 4, alta: 3, normal: 2, baja: 1 };
-        const alertaPrincipal = [...nuevas].sort(
-          (a, b) =>
-            (prioridadOrden[b.payload?.prioridad || "normal"] || 2) -
-              (prioridadOrden[a.payload?.prioridad || "normal"] || 2) ||
-            new Date(b.creadaEn).getTime() - new Date(a.creadaEn).getTime(),
-        )[0];
+        const alertaPrincipal = nuevas.reduce((selected, alerta) => {
+          const selectedPriority = prioridadOrden[selected.payload?.prioridad || "normal"] || 2;
+          const alertPriority = prioridadOrden[alerta.payload?.prioridad || "normal"] || 2;
+          if (alertPriority !== selectedPriority) return alertPriority > selectedPriority ? alerta : selected;
+          return new Date(alerta.creadaEn).getTime() > new Date(selected.creadaEn).getTime() ? alerta : selected;
+        }, nuevas[0]);
         void mostrarAlertaEmergente(alertaPrincipal);
       }
     } catch {
-      setAlertas([]);
+      dispatch({ type: "alertasChanged", value: [] });
     }
   }, [mostrarAlertaEmergente]);
 
   const cargarLogs = async () => {
     try {
-      setLogsLoading(true);
+      dispatch({ type: "logsLoadingChanged", value: true });
       const { data } = await api.get("/logs/me");
-      setLogs(Array.isArray(data) ? data : []);
+      dispatch({ type: "logsChanged", value: Array.isArray(data) ? data : [] });
     } catch {
-      setLogs([]);
+      dispatch({ type: "logsChanged", value: [] });
     } finally {
-      setLogsLoading(false);
+      dispatch({ type: "logsLoadingChanged", value: false });
     }
   };
 
@@ -577,6 +1172,15 @@ export default function Navbar({ sidebarWidth = 0, showMenuButton = false, onMen
     };
   }, [cargarAlertas]);
 
+  const refrescarAlertasSocket = useEffectEvent((options?: { emergente?: boolean }) => {
+    void cargarAlertas(options);
+  });
+
+  const cerrarSesionPorActualizacion = useEffectEvent(() => {
+    logout();
+    window.location.href = "/login";
+  });
+
   useEffect(() => {
     const socket = io(api.defaults.baseURL || window.location.origin, {
       withCredentials: true,
@@ -587,10 +1191,10 @@ export default function Navbar({ sidebarWidth = 0, showMenuButton = false, onMen
     alertasSocketRef.current = socket;
 
     const refrescarAlertas = () => {
-      void cargarAlertas();
+      refrescarAlertasSocket();
     };
     const refrescarAlertasEmergente = () => {
-      void cargarAlertas({ emergente: true });
+      refrescarAlertasSocket({ emergente: true });
     };
     const manejarActualizacionSistema = (payload: { titulo?: string; mensaje?: string }) => {
       void Swal.fire({
@@ -601,8 +1205,7 @@ export default function Navbar({ sidebarWidth = 0, showMenuButton = false, onMen
         allowOutsideClick: false,
         allowEscapeKey: false,
       }).then(() => {
-        logout();
-        window.location.href = "/login";
+        cerrarSesionPorActualizacion();
       });
     };
 
@@ -617,7 +1220,9 @@ export default function Navbar({ sidebarWidth = 0, showMenuButton = false, onMen
       socket.disconnect();
       alertasSocketRef.current = null;
     };
-  }, [cargarAlertas, logout]);
+    // Effect Events always read the latest values without becoming reactive deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const unreadCount = alertas.filter((alerta) => !alerta.leida).length;
@@ -677,37 +1282,28 @@ export default function Navbar({ sidebarWidth = 0, showMenuButton = false, onMen
     : serverStatusLabel;
 
   const abrirAlertas = (event: React.MouseEvent<HTMLElement>) => {
-    setAlertAnchorEl(event.currentTarget);
+    dispatch({ type: "alertAnchorChanged", value: event.currentTarget });
     void cargarLogs();
   };
 
   const cerrarAlertas = () => {
-    setAlertAnchorEl(null);
+    dispatch({ type: "alertAnchorChanged", value: null });
   };
 
   const abrirServerStatus = (event: React.MouseEvent<HTMLElement>) => {
     if (!isAdmin) return;
-    setServerStatusAnchorEl(event.currentTarget);
+    dispatch({ type: "serverStatusAnchorChanged", value: event.currentTarget });
     void cargarServerDetails();
   };
 
   const cerrarServerStatus = () => {
-    setServerStatusAnchorEl(null);
+    dispatch({ type: "serverStatusAnchorChanged", value: null });
   };
 
   const marcarLeida = async (alertaId: number) => {
     try {
       await api.post(`/alertas/${alertaId}/leida`);
-      setAlertas((prev) =>
-        prev.map((alerta) =>
-          alerta.id === alertaId
-            ? {
-                ...alerta,
-                leida: true,
-              }
-            : alerta,
-        ),
-      );
+      dispatch({ type: "alertRead", id: alertaId });
     } catch {
       // No bloquear la UI por un error de marcado.
     }
@@ -716,7 +1312,7 @@ export default function Navbar({ sidebarWidth = 0, showMenuButton = false, onMen
   const marcarTodasLeidas = async () => {
     try {
       await api.post("/alertas/marcar-todas-leidas");
-      setAlertas((prev) => prev.map((alerta) => ({ ...alerta, leida: true })));
+      dispatch({ type: "allAlertsRead" });
     } catch {
       // No bloquear la UI por un error de marcado.
     }
@@ -737,6 +1333,90 @@ export default function Navbar({ sidebarWidth = 0, showMenuButton = false, onMen
       navigate(`/produccion/${pedidoId}`);
     }
   };
+
+  const cambiarAlertPanelTab = (value: AlertPanelTab) => {
+    dispatch({ type: "alertPanelTabChanged", value });
+    if (value === "log") void cargarLogs();
+  };
+
+  const refrescarServerDetails = () => {
+    void cargarServerStatus();
+    void cargarServerDetails();
+  };
+
+  const abrirConfiguracion = () => {
+    navigate("/admin");
+  };
+
+  return {
+    isDarkMode,
+    toggleMode,
+    alertAnchorEl,
+    alertas,
+    alertasNoLeidas,
+    alertPanelTab,
+    logs,
+    logsLoading,
+    serverStatus,
+    serverStatusLabel,
+    serverStatusColor,
+    serverStatusTooltip,
+    serverStatusAnchorEl,
+    serverDetails,
+    serverDetailsLoading,
+    isAdmin,
+    displayName,
+    sourceBodegaNombre,
+    profileImageUrl,
+    initials,
+    abrirAlertas,
+    cerrarAlertas,
+    abrirDetalleAlerta,
+    cambiarAlertPanelTab,
+    marcarTodasLeidas,
+    cargarLogs,
+    abrirServerStatus,
+    cerrarServerStatus,
+    refrescarServerDetails,
+    abrirConfiguracion,
+    handleLogout,
+  };
+}
+
+export default function Navbar({ sidebarWidth = 0, showMenuButton = false, onMenuClick }: NavbarProps) {
+  const {
+    isDarkMode,
+    toggleMode,
+    alertAnchorEl,
+    alertas,
+    alertasNoLeidas,
+    alertPanelTab,
+    logs,
+    logsLoading,
+    serverStatus,
+    serverStatusLabel,
+    serverStatusColor,
+    serverStatusTooltip,
+    serverStatusAnchorEl,
+    serverDetails,
+    serverDetailsLoading,
+    isAdmin,
+    displayName,
+    sourceBodegaNombre,
+    profileImageUrl,
+    initials,
+    abrirAlertas,
+    cerrarAlertas,
+    abrirDetalleAlerta,
+    cambiarAlertPanelTab,
+    marcarTodasLeidas,
+    cargarLogs,
+    abrirServerStatus,
+    cerrarServerStatus,
+    refrescarServerDetails,
+    abrirConfiguracion,
+    handleLogout,
+  } = useNavbarController();
 
   return (
     <AppBar
@@ -761,449 +1441,47 @@ export default function Navbar({ sidebarWidth = 0, showMenuButton = false, onMen
         <Box sx={{ flexGrow: 1, minWidth: 0 }} />
 
         <Stack direction="row" spacing={{ xs: 0.5, sm: 1.25, md: 2 }} alignItems="center" sx={{ minWidth: 0 }}>
-          <Tooltip title={serverStatusTooltip}>
-            <Box
-              component="button"
-              type="button"
-              aria-label={serverStatusTooltip}
-              onClick={abrirServerStatus}
-              sx={{
-                height: 36,
-                px: { xs: 1, sm: 1.25 },
-                border: "1px solid",
-                borderColor: isDarkMode ? "rgba(255,255,255,0.18)" : "#e5e7eb",
-                borderRadius: 999,
-                backgroundColor: isDarkMode ? "rgba(255,255,255,0.06)" : "#f8fafc",
-                color: "inherit",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 1,
-                cursor: isAdmin ? "pointer" : "default",
-                flexShrink: 0,
-                transition: "border-color 160ms ease, background-color 160ms ease",
-                "&:hover": {
-                  borderColor: isAdmin ? serverStatusColor : isDarkMode ? "rgba(255,255,255,0.18)" : "#e5e7eb",
-                  backgroundColor: isAdmin
-                    ? isDarkMode
-                      ? "rgba(255,255,255,0.1)"
-                      : "#eef2ff"
-                    : isDarkMode
-                      ? "rgba(255,255,255,0.06)"
-                      : "#f8fafc",
-                },
-                "&:focus-visible": {
-                  outline: "3px solid",
-                  outlineColor: serverStatusColor,
-                  outlineOffset: 2,
-                },
-              }}
-            >
-              <Box
-                sx={{
-                  width: 10,
-                  height: 10,
-                  borderRadius: "50%",
-                  backgroundColor: serverStatusColor,
-                  boxShadow:
-                    serverStatus.status === "checking"
-                      ? "none"
-                      : `0 0 0 4px ${serverStatusColor}22`,
-                }}
-              />
-              <Typography
-                variant="caption"
-                sx={{
-                  display: { xs: "none", md: "block" },
-                  fontWeight: 700,
-                  lineHeight: 1,
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {serverStatus.status === "checking" ? "Servidor" : serverStatus.status === "online" ? "Online" : "Alerta"}
-              </Typography>
-            </Box>
-          </Tooltip>
-
-          <Menu
-            anchorEl={serverStatusAnchorEl}
-            open={Boolean(serverStatusAnchorEl)}
+          <ServerStatusWidget
+            isDarkMode={isDarkMode}
+            isAdmin={isAdmin}
+            serverStatus={serverStatus}
+            serverStatusLabel={serverStatusLabel}
+            serverStatusColor={serverStatusColor}
+            serverStatusTooltip={serverStatusTooltip}
+            serverStatusAnchorEl={serverStatusAnchorEl}
+            serverDetails={serverDetails}
+            serverDetailsLoading={serverDetailsLoading}
+            onOpen={abrirServerStatus}
             onClose={cerrarServerStatus}
-            anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-            transformOrigin={{ vertical: "top", horizontal: "right" }}
-            PaperProps={{ sx: { width: 430, maxWidth: "calc(100vw - 32px)" } }}
-          >
-            <Box sx={{ px: 2, py: 1.5 }}>
-              <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
-                <Stack direction="row" alignItems="center" spacing={1}>
-                  <Box
-                    sx={{
-                      width: 12,
-                      height: 12,
-                      borderRadius: "50%",
-                      backgroundColor: serverStatusColor,
-                      boxShadow: `0 0 0 4px ${serverStatusColor}22`,
-                    }}
-                  />
-                  <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
-                    {serverStatusLabel}
-                  </Typography>
-                </Stack>
-                <Button
-                  size="small"
-                  onClick={() => {
-                    void cargarServerStatus();
-                    void cargarServerDetails();
-                  }}
-                >
-                  Revisar
-                </Button>
-              </Stack>
-              <Typography variant="caption" color="text.secondary">
-                {serverStatus.checkedAt
-                  ? `Ultima revision: ${new Date(serverStatus.checkedAt).toLocaleString("es-GT")}`
-                  : "Sin revision registrada"}
-              </Typography>
-            </Box>
-            <Divider />
-            <Box sx={{ px: 2, py: 1.5 }}>
-              <Stack spacing={1.25}>
-                <Stack direction="row" justifyContent="space-between" spacing={2}>
-                  <Typography variant="body2" color="text.secondary">
-                    API
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                    {serverStatus.api?.state || (serverStatus.status === "offline" ? "offline" : "N/D")}
-                  </Typography>
-                </Stack>
-                <Stack direction="row" justifyContent="space-between" spacing={2}>
-                  <Typography variant="body2" color="text.secondary">
-                    Base de datos
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                    {serverStatus.database?.state || "N/D"}
-                    {serverStatus.database?.latencyMs != null ? ` (${serverStatus.database.latencyMs} ms)` : ""}
-                  </Typography>
-                </Stack>
-                <Stack direction="row" justifyContent="space-between" spacing={2}>
-                  <Typography variant="body2" color="text.secondary">
-                    Railway
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 700, textAlign: "right" }}>
-                    {serverStatus.railway?.label || "N/D"}
-                  </Typography>
-                </Stack>
-                <Stack direction="row" justifyContent="space-between" spacing={2}>
-                  <Typography variant="body2" color="text.secondary">
-                    Uptime backend
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                    {formatUptime(serverStatus.api?.uptimeSeconds)}
-                  </Typography>
-                </Stack>
-              </Stack>
-              {(serverStatus.message || serverStatus.database?.message || serverStatus.railway?.message) && (
-                <Box
-                  sx={{
-                    mt: 1.5,
-                    p: 1.25,
-                    borderRadius: 1,
-                    backgroundColor: "action.hover",
-                  }}
-                >
-                  <Typography variant="caption" color="text.secondary">
-                    {serverStatus.message || serverStatus.database?.message || serverStatus.railway?.message}
-                  </Typography>
-                </Box>
-              )}
-            </Box>
-            <Divider />
-            <Box sx={{ px: 2, py: 1.5 }}>
-              <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
-                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                  Detalle MySQL
-                </Typography>
-                {serverDetailsLoading && <CircularProgress size={16} />}
-              </Stack>
-              <Stack spacing={1}>
-                <Stack direction="row" justifyContent="space-between" spacing={2}>
-                  <Typography variant="body2" color="text.secondary">
-                    Conexiones
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                    {metricValue(readMetric(serverDetails?.mysql?.status, "Threads_connected"))}
-                    {" / "}
-                    {metricValue(readMetric(serverDetails?.mysql?.variables, "max_connections"))}
-                  </Typography>
-                </Stack>
-                <Stack direction="row" justifyContent="space-between" spacing={2}>
-                  <Typography variant="body2" color="text.secondary">
-                    Max. usado
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                    {metricValue(readMetric(serverDetails?.mysql?.status, "Max_used_connections"))}
-                  </Typography>
-                </Stack>
-                <Stack direction="row" justifyContent="space-between" spacing={2}>
-                  <Typography variant="body2" color="text.secondary">
-                    Buffer pool
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                    {formatBytes(Number(readMetric(serverDetails?.mysql?.variables, "innodb_buffer_pool_size") || 0))}
-                  </Typography>
-                </Stack>
-                <Stack direction="row" justifyContent="space-between" spacing={2}>
-                  <Typography variant="body2" color="text.secondary">
-                    Base de datos
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                    {formatBytes(serverDetails?.mysql?.databaseBytes)}
-                  </Typography>
-                </Stack>
-                <Stack direction="row" justifyContent="space-between" spacing={2}>
-                  <Typography variant="body2" color="text.secondary">
-                    Temporales en disco
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                    {metricValue(readMetric(serverDetails?.mysql?.status, "Created_tmp_disk_tables"))}
-                  </Typography>
-                </Stack>
-              </Stack>
-              {!!serverDetails?.mysql?.processlist?.length && (
-                <Box sx={{ mt: 1.5, p: 1.25, borderRadius: 1, backgroundColor: "action.hover" }}>
-                  <Typography variant="caption" sx={{ display: "block", fontWeight: 800, mb: 0.75 }}>
-                    Procesos recientes
-                  </Typography>
-                  <Stack spacing={0.5}>
-                    {serverDetails.mysql.processlist.slice(0, 4).map((process) => (
-                      <Typography key={process.id} variant="caption" color="text.secondary" noWrap>
-                        #{process.id} {process.command || "N/D"} · {process.timeSeconds || 0}s · {process.user || "N/D"}
-                      </Typography>
-                    ))}
-                  </Stack>
-                </Box>
-              )}
-            </Box>
-            <Divider />
-            <Box sx={{ px: 2, py: 1.25, display: "flex", justifyContent: "flex-end", gap: 1 }}>
-              <Button
-                size="small"
-                onClick={() => window.open(serverStatus.railway?.statusPageUrl || "https://status.railway.com", "_blank")}
-              >
-                Abrir Railway
-              </Button>
-            </Box>
-          </Menu>
+            onRefresh={refrescarServerDetails}
+          />
 
-          <Tooltip title={isDarkMode ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}>
-            <Box
-              component="button"
-              type="button"
-              aria-label={isDarkMode ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
-              aria-pressed={isDarkMode}
-              onClick={toggleMode}
-              sx={{
-                width: { xs: 48, sm: 76 },
-                height: { xs: 32, sm: 38 },
-                border: "1px solid",
-                borderColor: isDarkMode ? "#ffffff" : "#d6d6d6",
-                borderRadius: 999,
-                p: "4px",
-                cursor: "pointer",
-                position: "relative",
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "flex-start",
-                backgroundColor: isDarkMode ? "#ffffff" : "#d9d9d9",
-                boxShadow: isDarkMode ? "0 1px 2px rgba(0, 0, 0, 0.18)" : "inset 0 0 0 1px #d6d6d6",
-                transition: "background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease",
-                flexShrink: 0,
-                "&:focus-visible": {
-                  outline: "3px solid",
-                  outlineColor: "primary.main",
-                  outlineOffset: 2,
-                },
-              }}
-            >
-              <Box
-                sx={{
-                  width: { xs: 24, sm: 30 },
-                  height: { xs: 24, sm: 30 },
-                  borderRadius: "50%",
-                  display: "grid",
-                  placeItems: "center",
-                  backgroundColor: isDarkMode ? "#2d2d30" : "#ffffff",
-                  color: isDarkMode ? "#ffffff" : "#f7d64a",
-                  transform: isDarkMode ? { xs: "translateX(16px)", sm: "translateX(36px)" } : "translateX(0)",
-                  transition: "transform 180ms ease, background-color 180ms ease, color 180ms ease",
-                  position: "relative",
-                  zIndex: 1,
-                  boxShadow: isDarkMode ? "none" : "0 1px 4px rgba(15, 23, 42, 0.14)",
-                }}
-              >
-                {isDarkMode ? <DarkModeRoundedIcon fontSize="small" /> : <WbSunnyRoundedIcon fontSize="small" />}
-              </Box>
-            </Box>
-          </Tooltip>
-
-          <Box textAlign="right" sx={{ display: { xs: "none", sm: "block" }, minWidth: 0, maxWidth: { sm: 180, md: 260 } }}>
-            <Typography variant="body1" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
-              {displayName}
-            </Typography>
-            <Typography variant="body2" noWrap sx={{ color: isDarkMode ? "#d1d5db" : "#6b7280" }}>
-              {sourceBodegaNombre || "Sin bodega"}
-            </Typography>
-          </Box>
-
-          <Avatar
-            src={profileImageUrl}
-            sx={{
-              bgcolor: isDarkMode ? "#334155" : "#1B2852",
-              color: "#fff",
-              width: { xs: 34, sm: 40 },
-              height: { xs: 34, sm: 40 },
-              fontWeight: 700,
-              fontSize: 14,
-            }}
-          >
-            {!profileImageUrl ? initials : null}
-          </Avatar>
-
-          <Tooltip title="Alertas">
-            <IconButton color="inherit" onClick={abrirAlertas}>
-              <Badge badgeContent={alertasNoLeidas} color="error">
-                <NotificationsOutlinedIcon />
-              </Badge>
-            </IconButton>
-          </Tooltip>
-
-          <Menu
-            anchorEl={alertAnchorEl}
-            open={Boolean(alertAnchorEl)}
+          <ThemeModeToggle isDarkMode={isDarkMode} onToggle={toggleMode} />
+          <UserIdentity
+            isDarkMode={isDarkMode}
+            displayName={displayName}
+            bodegaNombre={sourceBodegaNombre}
+            profileImageUrl={profileImageUrl}
+            initials={initials}
+          />
+          <AlertsMenu
+            alertAnchorEl={alertAnchorEl}
+            alertas={alertas}
+            alertasNoLeidas={alertasNoLeidas}
+            alertPanelTab={alertPanelTab}
+            logs={logs}
+            logsLoading={logsLoading}
+            displayName={displayName}
+            onOpen={abrirAlertas}
             onClose={cerrarAlertas}
-            anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-            transformOrigin={{ vertical: "top", horizontal: "right" }}
-            PaperProps={{ sx: { width: 360, maxWidth: "calc(100vw - 32px)" } }}
-          >
-            <Box sx={{ px: 2, py: 1.5 }}>
-              <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                  {alertPanelTab === "alertas" ? "Alertas" : "Log de actividad"}
-                </Typography>
-                {alertPanelTab === "alertas" ? (
-                  <Button size="small" onClick={() => void marcarTodasLeidas()} disabled={!alertasNoLeidas}>
-                    Marcar todas
-                  </Button>
-                ) : (
-                  <Button size="small" onClick={() => void cargarLogs()} disabled={logsLoading}>
-                    Recargar
-                  </Button>
-                )}
-              </Stack>
-            </Box>
-            <Tabs
-              value={alertPanelTab}
-              onChange={(_, value) => {
-                setAlertPanelTab(value);
-                if (value === "log") void cargarLogs();
-              }}
-              variant="fullWidth"
-              sx={{ minHeight: 38, borderTop: 1, borderColor: "divider" }}
-            >
-              <Tab label="Alertas" value="alertas" sx={{ minHeight: 38 }} />
-              <Tab label="LOG" value="log" sx={{ minHeight: 38 }} />
-            </Tabs>
-            <Divider />
-            {alertPanelTab === "alertas" ? (
-              <List sx={{ py: 0, maxHeight: 420, overflowY: "auto" }}>
-                {alertas.length ? (
-                  alertas.map((alerta) => (
-                    <ListItemButton
-                      key={alerta.id}
-                      onClick={() => void abrirDetalleAlerta(alerta)}
-                      sx={{
-                        alignItems: "flex-start",
-                        backgroundColor: alerta.leida ? "background.paper" : "action.selected",
-                        ...getAlertPriorityStyles(alerta.payload?.prioridad, alerta.leida),
-                      }}
-                    >
-                      <ListItemText
-                        primary={
-                          <Stack direction="row" spacing={1} alignItems="center">
-                            <Typography component="span" variant="body2" sx={{ fontWeight: alerta.leida ? 500 : 800 }}>
-                              {alerta.titulo}
-                            </Typography>
-                            {alerta.payload?.prioridad && alerta.payload.prioridad !== "normal" && (
-                              <Typography component="span" variant="caption" sx={{ textTransform: "uppercase", fontWeight: 800 }}>
-                                {alerta.payload.prioridad}
-                              </Typography>
-                            )}
-                          </Stack>
-                        }
-                        secondary={
-                          <>
-                            <Typography
-                              component="span"
-                              variant="body2"
-                              color="text.primary"
-                              sx={{ display: "block", mb: 0.5 }}
-                            >
-                              {alerta.mensaje}
-                            </Typography>
-                            <Typography component="span" variant="caption" color="text.secondary">
-                              {new Date(alerta.creadaEn).toLocaleString("es-GT")}
-                            </Typography>
-                          </>
-                        }
-                        primaryTypographyProps={{ fontWeight: alerta.leida ? 500 : 700 }}
-                      />
-                    </ListItemButton>
-                  ))
-                ) : (
-                  <Box sx={{ px: 2, py: 3 }}>
-                    <Typography variant="body2" color="text.secondary">
-                      No hay alertas pendientes.
-                    </Typography>
-                  </Box>
-                )}
-              </List>
-            ) : (
-              <List sx={{ py: 0, maxHeight: 420, overflowY: "auto" }}>
-                {logsLoading ? (
-                  <Box sx={{ px: 2, py: 3, display: "flex", justifyContent: "center" }}>
-                    <CircularProgress size={24} />
-                  </Box>
-                ) : logs.length ? (
-                  logs.map((log) => (
-                    <ListItemButton key={log.id} sx={{ alignItems: "flex-start" }}>
-                      <ListItemText
-                        primary={`${getActivityLogActionLabel(log)}: ${log.endpoint}`}
-                        secondary={
-                          <>
-                            <Typography component="span" variant="body2" color="text.primary" sx={{ display: "block", mb: 0.5 }}>
-                              Usuario: {log.usuario || displayName} | Resultado: {log.resultado || "N/D"}
-                            </Typography>
-                            <Typography component="span" variant="caption" color="text.secondary">
-                              {new Date(log.fecha).toLocaleString("es-GT")}
-                              {log.ip ? ` | IP: ${log.ip}` : ""}
-                            </Typography>
-                          </>
-                        }
-                      />
-                    </ListItemButton>
-                  ))
-                ) : (
-                  <Box sx={{ px: 2, py: 3 }}>
-                    <Typography variant="body2" color="text.secondary">
-                      No hay actividad registrada para este usuario.
-                    </Typography>
-                  </Box>
-                )}
-              </List>
-            )}
-          </Menu>
+            onMarkAllRead={() => void marcarTodasLeidas()}
+            onReloadLogs={() => void cargarLogs()}
+            onTabChange={cambiarAlertPanelTab}
+            onOpenAlert={(alerta) => void abrirDetalleAlerta(alerta)}
+          />
 
           <Tooltip title="Configuracion">
-            <IconButton color="inherit" onClick={() => navigate("/admin")}>
+            <IconButton color="inherit" onClick={abrirConfiguracion}>
               <SettingsIcon />
             </IconButton>
           </Tooltip>

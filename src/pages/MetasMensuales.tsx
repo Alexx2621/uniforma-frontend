@@ -86,15 +86,16 @@ const countBusinessDays = (year: number, month: number) => {
 };
 
 const roundMoney = (value: number) => Math.round(value * 100) / 100;
+const getCurrentYear = () => new Date().getFullYear();
+const getCurrentMonth = () => new Date().getMonth() + 1;
 
 export default function MetasMensuales() {
-  const currentDate = useMemo(() => new Date(), []);
   const [metas, setMetas] = useState<MetaMensual[]>([]);
   const [bodegas, setBodegas] = useState<Bodega[]>([]);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [loading, setLoading] = useState(false);
-  const [year, setYear] = useState(currentDate.getFullYear());
-  const [month, setMonth] = useState(currentDate.getMonth() + 1);
+  const [year, setYear] = useState(getCurrentYear);
+  const [month, setMonth] = useState(getCurrentMonth);
   const [bodegaId, setBodegaId] = useState<number | "">("");
   const [usuarioId, setUsuarioId] = useState<number | "">("");
   const [metaMes, setMetaMes] = useState("");
@@ -257,7 +258,7 @@ export default function MetasMensuales() {
           type="number"
           size="small"
           value={year}
-          onChange={(e) => setYear(Number(e.target.value) || currentDate.getFullYear())}
+          onChange={(e) => setYear(Number(e.target.value) || getCurrentYear())}
           sx={{ width: 110 }}
         />
         <FormControl size="small" sx={{ minWidth: 190 }}>
