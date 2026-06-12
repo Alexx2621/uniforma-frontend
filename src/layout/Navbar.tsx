@@ -23,6 +23,7 @@ import {
 import LogoutIcon from "@mui/icons-material/Logout";
 import SettingsIcon from "@mui/icons-material/Settings";
 import NotificationsOutlinedIcon from "@mui/icons-material/NotificationsOutlined";
+import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import DarkModeRoundedIcon from "@mui/icons-material/DarkModeRounded";
 import WbSunnyRoundedIcon from "@mui/icons-material/WbSunnyRounded";
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
@@ -148,6 +149,7 @@ interface NavbarState {
   serverDetails: ServerDetails | null;
   serverDetailsLoading: boolean;
   serverStatusAnchorEl: HTMLElement | null;
+  draftCount: number;
 }
 
 type NavbarAction =
@@ -162,7 +164,8 @@ type NavbarAction =
   | { type: "serverStatusChanged"; value: ServerStatus }
   | { type: "serverDetailsChanged"; value: ServerDetails | null }
   | { type: "serverDetailsLoadingChanged"; value: boolean }
-  | { type: "serverStatusAnchorChanged"; value: HTMLElement | null };
+  | { type: "serverStatusAnchorChanged"; value: HTMLElement | null }
+  | { type: "draftCountChanged"; value: number };
 
 const initialServerStatus: ServerStatus = {
   status: "checking",
@@ -180,6 +183,7 @@ const initialNavbarState: NavbarState = {
   serverDetails: null,
   serverDetailsLoading: false,
   serverStatusAnchorEl: null,
+  draftCount: 0,
 };
 
 const navbarReducer = (state: NavbarState, action: NavbarAction): NavbarState => {
@@ -211,6 +215,8 @@ const navbarReducer = (state: NavbarState, action: NavbarAction): NavbarState =>
       return { ...state, serverDetailsLoading: action.value };
     case "serverStatusAnchorChanged":
       return { ...state, serverStatusAnchorEl: action.value };
+    case "draftCountChanged":
+      return { ...state, draftCount: action.value };
     default:
       return state;
   }
@@ -809,6 +815,7 @@ function useNavbarController() {
     serverDetails,
     serverDetailsLoading,
     serverStatusAnchorEl,
+    draftCount,
   } = state;
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastUnreadCountRef = useRef<number | null>(null);
@@ -819,6 +826,8 @@ function useNavbarController() {
   }
   const canAuthorizePedidos =
     `${rol || ""}`.toUpperCase() === "ADMIN" || (Array.isArray(permisos) && permisos.includes("produccion.autorizar-pedidos"));
+  const canViewDrafts =
+    `${rol || ""}`.toUpperCase() === "ADMIN" || (Array.isArray(permisos) && permisos.includes("documentos-borradores.view"));
 
   const reproducirTonoNotificacion = async () => {
     if (typeof window === "undefined") return;
@@ -916,6 +925,19 @@ function useNavbarController() {
     }
   }, []);
 
+  const cargarDraftCount = useCallback(async () => {
+    if (!canViewDrafts) {
+      dispatch({ type: "draftCountChanged", value: 0 });
+      return;
+    }
+    try {
+      const { data } = await api.get("/documentos-borradores/contador");
+      dispatch({ type: "draftCountChanged", value: Number(data?.count || 0) });
+    } catch {
+      dispatch({ type: "draftCountChanged", value: 0 });
+    }
+  }, [canViewDrafts]);
+
   useEffect(() => {
     void cargarServerStatus();
     const intervalId = window.setInterval(() => {
@@ -926,6 +948,17 @@ function useNavbarController() {
       window.clearInterval(intervalId);
     };
   }, [cargarServerStatus]);
+
+  useEffect(() => {
+    void cargarDraftCount();
+    const intervalId = window.setInterval(() => {
+      void cargarDraftCount();
+    }, 45000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [cargarDraftCount]);
 
   useEffect(() => {
     let active = true;
@@ -1348,6 +1381,10 @@ function useNavbarController() {
     navigate("/admin");
   };
 
+  const abrirBorradores = () => {
+    navigate("/documentos-borradores");
+  };
+
   return {
     isDarkMode,
     toggleMode,
@@ -1365,6 +1402,8 @@ function useNavbarController() {
     serverDetails,
     serverDetailsLoading,
     isAdmin,
+    canViewDrafts,
+    draftCount,
     displayName,
     sourceBodegaNombre,
     profileImageUrl,
@@ -1379,6 +1418,7 @@ function useNavbarController() {
     cerrarServerStatus,
     refrescarServerDetails,
     abrirConfiguracion,
+    abrirBorradores,
     handleLogout,
   };
 }
@@ -1415,7 +1455,10 @@ export default function Navbar({ sidebarWidth = 0, showMenuButton = false, onMen
     cerrarServerStatus,
     refrescarServerDetails,
     abrirConfiguracion,
+    abrirBorradores,
     handleLogout,
+    canViewDrafts,
+    draftCount,
   } = useNavbarController();
 
   return (
@@ -1464,6 +1507,15 @@ export default function Navbar({ sidebarWidth = 0, showMenuButton = false, onMen
             profileImageUrl={profileImageUrl}
             initials={initials}
           />
+          {canViewDrafts && (
+            <Tooltip title="Documentos preliminares">
+              <IconButton color="inherit" onClick={abrirBorradores}>
+                <Badge badgeContent={draftCount} color="warning">
+                  <DescriptionOutlinedIcon />
+                </Badge>
+              </IconButton>
+            </Tooltip>
+          )}
           <AlertsMenu
             alertAnchorEl={alertAnchorEl}
             alertas={alertas}

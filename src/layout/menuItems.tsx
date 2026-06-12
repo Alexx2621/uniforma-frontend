@@ -33,6 +33,8 @@ import LocalShippingOutlined from "@mui/icons-material/LocalShippingOutlined";
 import BusinessOutlined from "@mui/icons-material/BusinessOutlined";
 import NotificationsActiveOutlined from "@mui/icons-material/NotificationsActiveOutlined";
 import ApprovalOutlined from "@mui/icons-material/ApprovalOutlined";
+import DescriptionOutlined from "@mui/icons-material/DescriptionOutlined";
+import HealthAndSafetyOutlined from "@mui/icons-material/HealthAndSafetyOutlined";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import { whatsappFeatureEnabled } from "../config/features";
 
@@ -138,6 +140,8 @@ export const menuSections: MenuSection[] = [
       { label: "Auditoria", icon: <ManageSearchOutlined />, path: "/auditoria" },
       { label: "Correcciones", icon: <FactCheckOutlined />, path: "/correcciones" },
       { label: "Autorizaciones", icon: <ApprovalOutlined />, path: "/autorizaciones" },
+      { label: "Preliminares", icon: <DescriptionOutlined />, path: "/documentos-borradores" },
+      { label: "Salud operativa", icon: <HealthAndSafetyOutlined />, path: "/salud-operativa" },
       { label: "Alertas", icon: <NotificationsActiveOutlined />, path: "/alertas" },
       { label: "Metas mensuales", icon: <TrendingUpOutlined />, path: "/metas-mensuales" },
     ],

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Autocomplete,
@@ -29,7 +29,7 @@ import SaveOutlined from "@mui/icons-material/SaveOutlined";
 import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import CallSplitOutlined from "@mui/icons-material/CallSplitOutlined";
 import Swal from "sweetalert2";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
 import { formatCurrency } from "../utils/currency";
@@ -82,6 +82,9 @@ const lineBase: Omit<Linea, "key"> = {
   controlaInventario: false,
 };
 
+const ORDEN_MIXTA_BORRADOR_TIPO = "orden-mixta";
+const ORDEN_MIXTA_BORRADOR_LOCAL_KEY = "orden-mixta:borrador-local:v1";
+
 const uniqueSorted = (values: string[]) =>
   Array.from(new Set(values.map((value) => `${value || ""}`.trim()).filter(Boolean))).sort((a, b) =>
     a.localeCompare(b),
@@ -115,7 +118,9 @@ const calcularSubtotal = (linea: Pick<Linea, "cantidad" | "precioUnit" | "bordad
 
 export default function OrdenMixtaNueva() {
   const navigate = useNavigate();
+  const location = useLocation();
   const auth = useAuthStore();
+  const returnState = location.state as { borradorId?: number } | null;
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [bodegas, setBodegas] = useState<Bodega[]>([]);
@@ -141,6 +146,13 @@ export default function OrdenMixtaNueva() {
   const [filtroTela, setFiltroTela] = useState("");
   const [filtroTalla, setFiltroTalla] = useState("");
   const [filtroColor, setFiltroColor] = useState("");
+  const [documentoBorradorId, setDocumentoBorradorId] = useState<number | null>(null);
+  const [borradorGuardadoEn, setBorradorGuardadoEn] = useState("");
+  const [borradorEstado, setBorradorEstado] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const borradorInicializadoRef = useRef(false);
+  const restaurandoBorradorRef = useRef(false);
+  const autoguardadoBorradorBloqueadoRef = useRef(false);
+  const ultimoBorradorJsonRef = useRef("");
 
   useEffect(() => {
     const cargar = async () => {
@@ -161,6 +173,147 @@ export default function OrdenMixtaNueva() {
     };
     void cargar();
   }, []);
+
+  const limpiarFormularioOrdenMixta = useCallback(() => {
+    const defaultBodegaId = auth.bodegaId ? Number(auth.bodegaId) : "";
+    setCliente(null);
+    setClienteNombre("CF");
+    setClienteTelefono("");
+    setBodegaId(defaultBodegaId);
+    setUbicacion("TIENDA");
+    setMetodoPago("efectivo");
+    setReferenciaPago("");
+    setBancoPago("");
+    setEnvio(0);
+    setAnticipoTotal(0);
+    setLinea({ ...lineBase, key: Date.now(), bodegaId: defaultBodegaId });
+    setLineas([]);
+    setEditingKey(null);
+    setFiltroTipo("");
+    setFiltroGenero("");
+    setFiltroTela("");
+    setFiltroTalla("");
+    setFiltroColor("");
+  }, [auth.bodegaId]);
+
+  const restaurarBorradorOrdenMixta = useCallback(
+    (rawData: any) => {
+      const data = rawData?.data ? rawData.data : rawData;
+      const encabezado = data?.encabezado || {};
+      const filtros = data?.filtros || {};
+      const nextClienteId = Number(encabezado.clienteId || 0);
+      const clienteEncontrado = nextClienteId ? clientes.find((item) => Number(item.id) === nextClienteId) || null : null;
+
+      restaurandoBorradorRef.current = true;
+      setCliente(clienteEncontrado);
+      setClienteNombre(`${encabezado.clienteNombre || clienteEncontrado?.nombre || "CF"}`);
+      setClienteTelefono(`${encabezado.clienteTelefono || clienteEncontrado?.telefono || ""}`);
+      setBodegaId(encabezado.bodegaId ? Number(encabezado.bodegaId) : auth.bodegaId ? Number(auth.bodegaId) : "");
+      setUbicacion(`${encabezado.ubicacion || "TIENDA"}`);
+      setMetodoPago(`${encabezado.metodoPago || "efectivo"}`);
+      setReferenciaPago(`${encabezado.referenciaPago || ""}`);
+      setBancoPago(`${encabezado.bancoPago || ""}`);
+      setEnvio(Number(encabezado.envio || 0));
+      setAnticipoTotal(Number(encabezado.anticipoTotal || 0));
+      setLinea({
+        ...lineBase,
+        ...(data?.capturaLinea || {}),
+        key: Number(data?.capturaLinea?.key || Date.now()),
+        bodegaId: data?.capturaLinea?.bodegaId || encabezado.bodegaId || (auth.bodegaId ? Number(auth.bodegaId) : ""),
+      });
+      setLineas(Array.isArray(data?.lineas) ? data.lineas : []);
+      setEditingKey(data?.editingKey ?? null);
+      setFiltroTipo(`${filtros.tipo || ""}`);
+      setFiltroGenero(`${filtros.genero || ""}`);
+      setFiltroTela(`${filtros.tela || ""}`);
+      setFiltroTalla(`${filtros.talla || ""}`);
+      setFiltroColor(`${filtros.color || ""}`);
+      window.setTimeout(() => {
+        restaurandoBorradorRef.current = false;
+      }, 0);
+    },
+    [auth.bodegaId, clientes],
+  );
+
+  const finalizarBorradorActual = useCallback(async (documentoFinal?: { tipo?: string; id?: number | null; folio?: string | null }) => {
+    autoguardadoBorradorBloqueadoRef.current = true;
+    if (!documentoBorradorId) return;
+    const id = documentoBorradorId;
+    setDocumentoBorradorId(null);
+    setBorradorGuardadoEn("");
+    setBorradorEstado("idle");
+    ultimoBorradorJsonRef.current = "";
+    localStorage.removeItem(ORDEN_MIXTA_BORRADOR_LOCAL_KEY);
+    try {
+      await api.post(`/documentos-borradores/${id}/finalizar`, {
+        documentoFinalTipo: documentoFinal?.tipo || "orden-mixta",
+        documentoFinalId: documentoFinal?.id || null,
+        documentoFinalFolio: documentoFinal?.folio || null,
+      });
+    } catch {
+      // El documento ya se creo; no bloqueamos al usuario por el cierre del borrador.
+    }
+  }, [documentoBorradorId]);
+
+  const descartarBorradorActual = useCallback(async () => {
+    if (documentoBorradorId) {
+      try {
+        await api.delete(`/documentos-borradores/${documentoBorradorId}`);
+      } catch {
+        // Si falla el descarte remoto, al menos limpiamos la pantalla y el respaldo local.
+      }
+    }
+    localStorage.removeItem(ORDEN_MIXTA_BORRADOR_LOCAL_KEY);
+    setDocumentoBorradorId(null);
+    setBorradorGuardadoEn("");
+    setBorradorEstado("idle");
+    ultimoBorradorJsonRef.current = "";
+    limpiarFormularioOrdenMixta();
+  }, [documentoBorradorId, limpiarFormularioOrdenMixta]);
+
+  useEffect(() => {
+    if (borradorInicializadoRef.current) return;
+    borradorInicializadoRef.current = true;
+
+    const cargarBorrador = async () => {
+      const restoreLocal = () => {
+        try {
+          const localRaw = localStorage.getItem(ORDEN_MIXTA_BORRADOR_LOCAL_KEY);
+          if (!localRaw) return false;
+          const parsed = JSON.parse(localRaw);
+          restaurarBorradorOrdenMixta(parsed);
+          setBorradorEstado("saved");
+          setBorradorGuardadoEn(parsed?.actualizadoEn || "");
+          ultimoBorradorJsonRef.current = JSON.stringify(parsed?.data || {});
+          return true;
+        } catch {
+          localStorage.removeItem(ORDEN_MIXTA_BORRADOR_LOCAL_KEY);
+          return false;
+        }
+      };
+
+      try {
+        const borradorId = Number(returnState?.borradorId || 0);
+        const { data } = borradorId
+          ? await api.get(`/documentos-borradores/${borradorId}`)
+          : await api.get("/documentos-borradores/activo", { params: { tipoDocumento: ORDEN_MIXTA_BORRADOR_TIPO } });
+
+        if (data?.id && data?.estado === "abierto") {
+          setDocumentoBorradorId(Number(data.id));
+          setBorradorGuardadoEn(data.actualizadoEn || "");
+          setBorradorEstado("saved");
+          restaurarBorradorOrdenMixta(data.data || {});
+          ultimoBorradorJsonRef.current = JSON.stringify(data.data || {});
+          return;
+        }
+        restoreLocal();
+      } catch {
+        restoreLocal();
+      }
+    };
+
+    void cargarBorrador();
+  }, [restaurarBorradorOrdenMixta, returnState?.borradorId]);
 
   const productoMap = useMemo(() => new Map(productos.map((producto) => [producto.id, producto])), [productos]);
   const bodegaMap = useMemo(() => new Map(bodegas.map((bodega) => [bodega.id, bodega])), [bodegas]);
@@ -191,6 +344,114 @@ export default function OrdenMixtaNueva() {
   const pedidoSinAnticipo = subtotalPedido > 0 && anticipoPedido <= 0 && metodoPago !== "orden_compra";
   const stockRestanteEstimado =
     controlaInventarioLinea && linea.stock != null ? Math.max(linea.stock - (Number(linea.cantidad) || 0), 0) : null;
+
+  useEffect(() => {
+    if (
+      !auth?.id ||
+      !borradorInicializadoRef.current ||
+      restaurandoBorradorRef.current ||
+      autoguardadoBorradorBloqueadoRef.current
+    ) {
+      return;
+    }
+
+    const hasContenido =
+      lineas.length > 0 ||
+      Boolean(linea.productoId) ||
+      clienteNombre.trim().toUpperCase() !== "CF" ||
+      Boolean(clienteTelefono.trim()) ||
+      Boolean(referenciaPago.trim()) ||
+      Boolean(bancoPago.trim()) ||
+      Number(envio || 0) > 0 ||
+      Number(anticipoTotal || 0) > 0 ||
+      Boolean(filtroTipo || filtroGenero || filtroTela || filtroTalla || filtroColor);
+
+    if (!hasContenido) return;
+
+    const data = {
+      version: 1,
+      encabezado: {
+        clienteId: cliente?.id || null,
+        clienteNombre,
+        clienteTelefono,
+        bodegaId: bodegaId === "" ? null : Number(bodegaId),
+        ubicacion,
+        metodoPago,
+        referenciaPago,
+        bancoPago,
+        envio,
+        anticipoTotal,
+      },
+      lineas,
+      capturaLinea: linea,
+      editingKey,
+      filtros: {
+        tipo: filtroTipo,
+        genero: filtroGenero,
+        tela: filtroTela,
+        talla: filtroTalla,
+        color: filtroColor,
+      },
+    };
+
+    const serialized = JSON.stringify(data);
+    if (serialized === ultimoBorradorJsonRef.current) return;
+
+    try {
+      localStorage.setItem(
+        ORDEN_MIXTA_BORRADOR_LOCAL_KEY,
+        JSON.stringify({ tipoDocumento: ORDEN_MIXTA_BORRADOR_TIPO, actualizadoEn: new Date().toISOString(), data }),
+      );
+    } catch {
+      // El respaldo local es secundario; el backend sigue siendo la fuente principal.
+    }
+
+    const timer = window.setTimeout(async () => {
+      try {
+        if (autoguardadoBorradorBloqueadoRef.current) return;
+        setBorradorEstado("saving");
+        const { data: saved } = await api.post("/documentos-borradores/autoguardar", {
+          id: documentoBorradorId,
+          tipoDocumento: ORDEN_MIXTA_BORRADOR_TIPO,
+          titulo: clienteNombre && clienteNombre.trim().toUpperCase() !== "CF" ? clienteNombre : "Orden mixta preliminar",
+          bodegaId: bodegaId === "" ? null : Number(bodegaId),
+          clienteId: cliente?.id || null,
+          totalEstimado: total,
+          data,
+        });
+        ultimoBorradorJsonRef.current = serialized;
+        setDocumentoBorradorId(Number(saved?.id || documentoBorradorId || 0) || null);
+        setBorradorGuardadoEn(saved?.actualizadoEn || new Date().toISOString());
+        setBorradorEstado("saved");
+      } catch {
+        setBorradorEstado("error");
+      }
+    }, 900);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    anticipoTotal,
+    auth?.id,
+    bancoPago,
+    bodegaId,
+    cliente,
+    clienteNombre,
+    clienteTelefono,
+    documentoBorradorId,
+    editingKey,
+    envio,
+    filtroColor,
+    filtroGenero,
+    filtroTalla,
+    filtroTela,
+    filtroTipo,
+    linea,
+    lineas,
+    metodoPago,
+    referenciaPago,
+    total,
+    ubicacion,
+  ]);
 
   const fetchStock = useCallback(async (bodega: number, producto: number) => {
     try {
@@ -392,6 +653,7 @@ export default function OrdenMixtaNueva() {
   };
 
   const guardar = async () => {
+    if (saving) return;
     if (!lineas.length) {
       void Swal.fire("Sin detalle", "Agrega al menos una linea a la orden mixta.", "warning");
       return;
@@ -439,6 +701,12 @@ export default function OrdenMixtaNueva() {
         vendedor: auth.nombre || auth.usuario,
         detalle: lineas,
       });
+      autoguardadoBorradorBloqueadoRef.current = true;
+      await finalizarBorradorActual({
+        tipo: "orden-mixta",
+        id: Number(data?.id || 0) || null,
+        folio: data?.folio || null,
+      });
       await Swal.fire(
         "Orden generada",
         `Orden ${data?.folio || ""}${data?.venta?.folio ? ` | Venta ${data.venta.folio}` : ""}${data?.pedido?.folio ? ` | Pedido ${data.pedido.folio}` : ""}`,
@@ -467,6 +735,24 @@ export default function OrdenMixtaNueva() {
           Volver
         </Button>
       </Stack>
+
+      {documentoBorradorId && (
+        <Alert
+          severity={borradorEstado === "error" ? "warning" : "info"}
+          action={
+            <Button color="inherit" size="small" onClick={() => void descartarBorradorActual()} disabled={saving}>
+              Descartar
+            </Button>
+          }
+        >
+          Orden mixta preliminar PRE-{String(documentoBorradorId).padStart(6, "0")}
+          {borradorEstado === "saving"
+            ? " guardandose..."
+            : borradorGuardadoEn
+              ? ` guardada ${new Date(borradorGuardadoEn).toLocaleString("es-GT")}`
+              : ""}
+        </Alert>
+      )}
 
       <Paper sx={{ p: 2 }}>
         <Typography variant="h6" sx={{ mb: 2 }}>Datos del documento</Typography>
@@ -805,9 +1091,9 @@ export default function OrdenMixtaNueva() {
         </Grid>
         <Divider sx={{ my: 2 }} />
         <Stack direction="row" justifyContent="flex-end" spacing={1}>
-          <Button variant="outlined" onClick={() => navigate("/orden-mixta")}>Cancelar</Button>
+          <Button variant="outlined" onClick={() => navigate("/orden-mixta")} disabled={saving}>Cancelar</Button>
           <Button variant="contained" startIcon={<SaveOutlined />} onClick={guardar} disabled={saving || pedidoSinAnticipo}>
-            Generar orden
+            {saving ? "Generando..." : "Generar orden"}
           </Button>
         </Stack>
       </Paper>

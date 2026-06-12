@@ -208,6 +208,8 @@ const escapeHtml = (value?: string | number | null) =>
 
 const BORDADO_OBSERVACION_RE = /^(BORDADO\b.*?\.)\s*(.*)$/i;
 const PEDIDO_AUTORIZACION_MONTO_MINIMO = 3000;
+const PEDIDO_BORRADOR_TIPO = "pedido-produccion";
+const PEDIDO_BORRADOR_LOCAL_KEY = "pedido-produccion:borrador-local:v1";
 
 const buildBordadoObservacionPrefix = (bordados: Array<Pick<BordadoArticulo, "posicion">>) => {
   const posiciones = Array.from(
@@ -569,7 +571,14 @@ export default function PedidoNuevo() {
   const [bordadosModalOpen, setBordadosModalOpen] = useState(false);
   const [pedidoEditFolio, setPedidoEditFolio] = useState("");
   const [loadingPedidoEdit, setLoadingPedidoEdit] = useState(false);
+  const [documentoBorradorId, setDocumentoBorradorId] = useState<number | null>(null);
+  const [borradorGuardadoEn, setBorradorGuardadoEn] = useState("");
+  const [borradorEstado, setBorradorEstado] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const autorizacionSocketRef = useRef<Socket | null>(null);
+  const borradorInicializadoRef = useRef(false);
+  const restaurandoBorradorRef = useRef(false);
+  const autoguardadoBorradorBloqueadoRef = useRef(false);
+  const ultimoBorradorJsonRef = useRef("");
   const autorizacionPendienteRef = useRef<{
     id: number;
     clienteParaPedido: ClientePedido;
@@ -597,7 +606,7 @@ export default function PedidoNuevo() {
   const { fetchConfig, reportesConfig } = useSystemConfigStore();
   const navigate = useNavigate();
   const location = useLocation();
-  const returnState = location.state as { returnTo?: string; returnLabel?: string; pedidosState?: any } | null;
+  const returnState = location.state as { returnTo?: string; returnLabel?: string; pedidosState?: any; borradorId?: number } | null;
   const canAccessAllBodegas = hasPermission(rol, permisos, "sistema.multi-tienda");
   const canCrearPedidoSinAutorizacion =
     hasPermission(rol, permisos, "produccion.autorizar-pedidos") ||
@@ -631,6 +640,93 @@ export default function PedidoNuevo() {
     });
   };
 
+  const limpiarFormularioPedido = useCallback(() => {
+    setPedidoParaStock(false);
+    setClienteId("");
+    setClienteTelefono("");
+    setClienteCorreo("");
+    setClienteNombre("Mostrador");
+    setBodegaId(userBodegaId && !canAccessAllBodegas ? Number(userBodegaId) || "" : "");
+    setUbicacion("TIENDA");
+    setMetodoPago("efectivo");
+    setPorcentajeRecargo(0);
+    setReferenciaPago("");
+    setBancoPago("");
+    setAnticipo(0);
+    setEnvio(0);
+    setPostventaId("");
+    setPostventaCobro("normal");
+    setPostventaSectionOpen(false);
+    setDetalle([]);
+    setArticuloActual(detalleInicial);
+    setCantidadInput("1");
+    setEditingDetalleKey(null);
+    setFiltroTipo("");
+    setFiltroGenero("");
+    setFiltroTela("");
+    setFiltroTalla("");
+    setFiltroColor("");
+    setCantidadAdvertida(null);
+  }, [canAccessAllBodegas, userBodegaId]);
+
+  const restaurarBorradorPedido = useCallback(
+    (data: any) => {
+      restaurandoBorradorRef.current = true;
+      const encabezado = data?.encabezado || {};
+      const captura = data?.capturaArticulo || {};
+      setPedidoParaStock(Boolean(encabezado.pedidoParaStock));
+      setClienteId(encabezado.clienteId ? Number(encabezado.clienteId) : "");
+      setClienteNombre(encabezado.clienteNombre || (encabezado.pedidoParaStock ? "Pedido para stock" : "Mostrador"));
+      setClienteTelefono(formatTelefono(encabezado.clienteTelefono || ""));
+      setClienteCorreo(`${encabezado.clienteCorreo || ""}`.trim().toLowerCase());
+      setBodegaId(encabezado.bodegaId ? Number(encabezado.bodegaId) : "");
+      setUbicacion(encabezado.ubicacion || "TIENDA");
+      setMetodoPago(encabezado.metodoPago || "efectivo");
+      setPorcentajeRecargo(Number(encabezado.porcentajeRecargo || 0));
+      setReferenciaPago(`${encabezado.referenciaPago || ""}`);
+      setBancoPago(`${encabezado.bancoPago || ""}`);
+      setAnticipo(Number(encabezado.anticipo || 0));
+      setEnvio(Number(encabezado.envio || 0));
+      setPostventaId(encabezado.postventaId ? Number(encabezado.postventaId) : "");
+      setPostventaCobro(encabezado.postventaCobro === "sin_cobro" ? "sin_cobro" : "normal");
+      setPostventaSectionOpen(Boolean(encabezado.postventaSectionOpen));
+      setDetalle(
+        (Array.isArray(data?.detalle) ? data.detalle : []).map((item: any, index: number) => ({
+          ...item,
+          key: Number(item?.key || 0) || Date.now() + index,
+          productoId: Number(item?.productoId || 0),
+          cantidad: Number(item?.cantidad || 0),
+          precioUnit: Number(item?.precioUnit || 0),
+          bordado: Number(item?.bordado || 0),
+          estiloEspecialMonto: Number(item?.estiloEspecialMonto || 0),
+          descuento: Number(item?.descuento || 0),
+          bordados: Array.isArray(item?.bordados) ? item.bordados : [],
+        })),
+      );
+      setArticuloActual({
+        ...detalleInicial,
+        ...captura,
+        productoId: captura?.productoId ? Number(captura.productoId) : "",
+        cantidad: Number(captura?.cantidad || 1),
+        precioUnit: Number(captura?.precioUnit || 0),
+        bordado: Number(captura?.bordado || 0),
+        estiloEspecialMonto: Number(captura?.estiloEspecialMonto || 0),
+        descuento: Number(captura?.descuento || 0),
+        bordados: Array.isArray(captura?.bordados) ? captura.bordados : [],
+      });
+      setCantidadInput(`${captura?.cantidad || data?.cantidadInput || "1"}`);
+      setFiltroTipo(data?.filtros?.tipo || "");
+      setFiltroGenero(data?.filtros?.genero || "");
+      setFiltroTela(data?.filtros?.tela || "");
+      setFiltroTalla(data?.filtros?.talla || "");
+      setFiltroColor(data?.filtros?.color || "");
+      setTimeout(() => {
+        restaurandoBorradorRef.current = false;
+      }, 0);
+    },
+    [],
+  );
+
   const cargarCatalogos = async () => {
     try {
       const [respCli, respProd, respBod, respTelas, respTallas, respColores, respPostventa] = await Promise.all([
@@ -662,6 +758,134 @@ export default function PedidoNuevo() {
     cargarCatalogos();
     void fetchConfig();
   }, [fetchConfig]);
+
+  const finalizarBorradorActual = useCallback(async (documentoFinal?: { tipo?: string; id?: number | null; folio?: string | null }) => {
+    autoguardadoBorradorBloqueadoRef.current = true;
+    if (!documentoBorradorId) return;
+    const id = documentoBorradorId;
+    setDocumentoBorradorId(null);
+    setBorradorGuardadoEn("");
+    setBorradorEstado("idle");
+    ultimoBorradorJsonRef.current = "";
+    localStorage.removeItem(PEDIDO_BORRADOR_LOCAL_KEY);
+    try {
+      await api.post(`/documentos-borradores/${id}/finalizar`, {
+        documentoFinalTipo: documentoFinal?.tipo || "pedido",
+        documentoFinalId: documentoFinal?.id || null,
+        documentoFinalFolio: documentoFinal?.folio || null,
+      });
+    } catch {
+      // El pedido ya se genero; si la limpieza del borrador falla, no debe bloquear el flujo principal.
+    }
+  }, [documentoBorradorId]);
+
+  const descartarBorradorActual = useCallback(async () => {
+    const id = documentoBorradorId;
+    if (!id) return;
+    const result = await Swal.fire({
+      title: "Descartar borrador",
+      text: "Se eliminara el documento preliminar y se limpiara esta pantalla.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Descartar",
+      cancelButtonText: "Cancelar",
+      confirmButtonColor: "#d32f2f",
+    });
+    if (!result.isConfirmed) return;
+
+    try {
+      await api.delete(`/documentos-borradores/${id}`);
+    } catch {
+      // Si ya fue eliminado en otra sesion, igual limpiamos la captura local.
+    }
+    setDocumentoBorradorId(null);
+    setBorradorGuardadoEn("");
+    setBorradorEstado("idle");
+    ultimoBorradorJsonRef.current = "";
+    localStorage.removeItem(PEDIDO_BORRADOR_LOCAL_KEY);
+    limpiarFormularioPedido();
+    autoguardadoBorradorBloqueadoRef.current = false;
+  }, [documentoBorradorId, limpiarFormularioPedido]);
+
+  useEffect(() => {
+    if (isEditingPedido || !userId) {
+      borradorInicializadoRef.current = true;
+      return;
+    }
+
+    let cancelled = false;
+    const cargarBorrador = async () => {
+      try {
+        const { data } = returnState?.borradorId
+          ? await api.get(`/documentos-borradores/${returnState.borradorId}`)
+          : await api.get("/documentos-borradores/activo", {
+              params: { tipoDocumento: PEDIDO_BORRADOR_TIPO },
+            });
+        if (cancelled) return;
+        if (!data?.id) {
+          borradorInicializadoRef.current = true;
+          return;
+        }
+
+        const result = await Swal.fire({
+          title: "Pedido preliminar encontrado",
+          text: "Tienes un pedido que no fue finalizado. Puedes continuar donde lo dejaste o descartarlo.",
+          icon: "info",
+          showDenyButton: true,
+          showCancelButton: true,
+          confirmButtonText: "Continuar",
+          denyButtonText: "Descartar",
+          cancelButtonText: "Ahora no",
+          confirmButtonColor: "#1f3f87",
+        });
+
+        if (cancelled) return;
+        if (result.isConfirmed) {
+          autoguardadoBorradorBloqueadoRef.current = false;
+          setDocumentoBorradorId(Number(data.id));
+          setBorradorGuardadoEn(data.actualizadoEn || "");
+          restaurarBorradorPedido(data.data || {});
+          ultimoBorradorJsonRef.current = JSON.stringify(data.data || {});
+        } else if (result.isDenied) {
+          await api.delete(`/documentos-borradores/${data.id}`).catch(() => undefined);
+          localStorage.removeItem(PEDIDO_BORRADOR_LOCAL_KEY);
+        }
+      } catch {
+        try {
+          const localRaw = localStorage.getItem(PEDIDO_BORRADOR_LOCAL_KEY);
+          const localData = localRaw ? JSON.parse(localRaw) : null;
+          if (!cancelled && localData?.data) {
+            const result = await Swal.fire({
+              title: "Respaldo local encontrado",
+              text: "No se pudo consultar el preliminar del servidor, pero hay una copia local en este navegador.",
+              icon: "info",
+              showDenyButton: true,
+              showCancelButton: true,
+              confirmButtonText: "Recuperar",
+              denyButtonText: "Descartar",
+              cancelButtonText: "Ahora no",
+              confirmButtonColor: "#1f3f87",
+            });
+            if (result.isConfirmed) {
+              restaurarBorradorPedido(localData.data);
+              ultimoBorradorJsonRef.current = JSON.stringify(localData.data);
+            } else if (result.isDenied) {
+              localStorage.removeItem(PEDIDO_BORRADOR_LOCAL_KEY);
+            }
+          }
+        } catch {
+          // No bloqueamos la pantalla de pedido si el respaldo local no puede leerse.
+        }
+      } finally {
+        if (!cancelled) borradorInicializadoRef.current = true;
+      }
+    };
+
+    void cargarBorrador();
+    return () => {
+      cancelled = true;
+    };
+  }, [isEditingPedido, restaurarBorradorPedido, returnState?.borradorId, userId]);
 
   useEffect(() => {
     if (!pedidoEditId) return;
@@ -883,6 +1107,133 @@ export default function PedidoNuevo() {
       ),
     [detalle],
   );
+
+  useEffect(() => {
+    if (
+      isEditingPedido ||
+      !userId ||
+      !borradorInicializadoRef.current ||
+      restaurandoBorradorRef.current ||
+      autoguardadoBorradorBloqueadoRef.current
+    ) {
+      return;
+    }
+
+    const hasContenido =
+      detalle.length > 0 ||
+      Boolean(articuloActual.productoId) ||
+      clienteId !== "" ||
+      clienteNombre.trim().toLowerCase() !== "mostrador" ||
+      Boolean(clienteTelefono.trim()) ||
+      Boolean(clienteCorreo.trim()) ||
+      pedidoParaStock ||
+      Boolean(postventaId) ||
+      Boolean(referenciaPago.trim()) ||
+      Boolean(bancoPago.trim()) ||
+      Number(envio || 0) > 0 ||
+      Boolean(filtroTipo || filtroGenero || filtroTela || filtroTalla || filtroColor);
+
+    if (!hasContenido) return;
+
+    const data = {
+      version: 1,
+      encabezado: {
+        clienteId: clienteId === "" ? null : Number(clienteId),
+        clienteNombre,
+        clienteTelefono,
+        clienteCorreo,
+        bodegaId: bodegaId === "" ? null : Number(bodegaId),
+        ubicacion,
+        metodoPago,
+        pedidoParaStock,
+        porcentajeRecargo,
+        referenciaPago,
+        bancoPago,
+        anticipo,
+        envio,
+        postventaId: postventaId === "" ? null : Number(postventaId),
+        postventaCobro,
+        postventaSectionOpen,
+      },
+      detalle,
+      capturaArticulo: articuloActual,
+      cantidadInput,
+      filtros: {
+        tipo: filtroTipo,
+        genero: filtroGenero,
+        tela: filtroTela,
+        talla: filtroTalla,
+        color: filtroColor,
+      },
+    };
+    const serialized = JSON.stringify(data);
+    if (serialized === ultimoBorradorJsonRef.current) return;
+    try {
+      localStorage.setItem(
+        PEDIDO_BORRADOR_LOCAL_KEY,
+        JSON.stringify({
+          tipoDocumento: PEDIDO_BORRADOR_TIPO,
+          actualizadoEn: new Date().toISOString(),
+          data,
+        }),
+      );
+    } catch {
+      // Si el navegador no permite guardar localmente, seguimos con el autoguardado en servidor.
+    }
+
+    const timer = window.setTimeout(async () => {
+      try {
+        if (autoguardadoBorradorBloqueadoRef.current) return;
+        setBorradorEstado("saving");
+        const { data: saved } = await api.post("/documentos-borradores/autoguardar", {
+          id: documentoBorradorId,
+          tipoDocumento: PEDIDO_BORRADOR_TIPO,
+          titulo: clienteNombre && clienteNombre.trim().toLowerCase() !== "mostrador" ? clienteNombre : "Pedido preliminar",
+          bodegaId: bodegaId === "" ? null : Number(bodegaId),
+          clienteId: clienteId === "" ? null : Number(clienteId),
+          totalEstimado: totalsPedido.total,
+          data,
+        });
+        ultimoBorradorJsonRef.current = serialized;
+        setDocumentoBorradorId(Number(saved?.id || documentoBorradorId || 0) || null);
+        setBorradorGuardadoEn(saved?.actualizadoEn || new Date().toISOString());
+        setBorradorEstado("saved");
+      } catch {
+        setBorradorEstado("error");
+      }
+    }, 900);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    articuloActual,
+    bancoPago,
+    bodegaId,
+    cantidadInput,
+    clienteCorreo,
+    clienteId,
+    clienteNombre,
+    clienteTelefono,
+    detalle,
+    documentoBorradorId,
+    envio,
+    filtroColor,
+    filtroGenero,
+    filtroTalla,
+    filtroTela,
+    filtroTipo,
+    isEditingPedido,
+    metodoPago,
+    pedidoParaStock,
+    porcentajeRecargo,
+    postventaCobro,
+    postventaId,
+    postventaSectionOpen,
+    referenciaPago,
+    totalsPedido.total,
+    ubicacion,
+    userId,
+    anticipo,
+  ]);
 
   useEffect(() => {
     if (pedidoSinValor || metodoPermiteSinAnticipo) {
@@ -1643,7 +1994,13 @@ export default function PedidoNuevo() {
       })),
     };
 
-    const manejarPedidoCreado = (pedidoData: any) => {
+  const manejarPedidoCreado = (pedidoData: any) => {
+      autoguardadoBorradorBloqueadoRef.current = true;
+      void finalizarBorradorActual({
+        tipo: "pedido",
+        id: Number(pedidoData?.id || 0) || null,
+        folio: pedidoData?.folio || null,
+      });
       Swal.fire("Guardado", "Pedido creado", "success");
       const folioPedido = pedidoData?.folio || (pedidoData?.id ? `P-${pedidoData.id}` : "PEND");
       const fechaPedido = pedidoData?.fecha ? new Date(pedidoData.fecha) : new Date();
@@ -2080,6 +2437,12 @@ export default function PedidoNuevo() {
       Swal.close();
 
       if (payload?.estado === "aprobado") {
+        autoguardadoBorradorBloqueadoRef.current = true;
+        void finalizarBorradorActual({
+          tipo: "pedido",
+          id: Number(payload?.pedido?.id || payload?.pedidoId || 0) || null,
+          folio: payload?.pedido?.folio || null,
+        });
         const pedido = payload?.pedido || {};
         const folioPedido = pedido?.folio || (pedido?.id ? `P-${pedido.id}` : "PEND");
         const fechaPedido = pedido?.fecha ? new Date(pedido.fecha) : new Date();
@@ -2149,6 +2512,23 @@ export default function PedidoNuevo() {
           {rol === "ADMIN"
             ? "Como administrador puedes guardar cambios directamente."
             : "Los cambios que realices se enviaran a autorizacion antes de aplicarse al pedido."}
+        </Alert>
+      )}
+      {!isEditingPedido && documentoBorradorId && (
+        <Alert
+          severity={borradorEstado === "error" ? "warning" : "info"}
+          sx={{ mb: 2 }}
+          action={
+            <Button color="inherit" size="small" onClick={descartarBorradorActual}>
+              DESCARTAR
+            </Button>
+          }
+        >
+          {borradorEstado === "saving"
+            ? `Guardando pedido preliminar PRE-${String(documentoBorradorId).padStart(6, "0")}...`
+            : borradorEstado === "error"
+              ? "No se pudo autoguardar el pedido preliminar. Revisa tu conexion."
+              : `Pedido preliminar PRE-${String(documentoBorradorId).padStart(6, "0")} guardado${borradorGuardadoEn ? ` (${new Date(borradorGuardadoEn).toLocaleTimeString("es-GT", { hour: "2-digit", minute: "2-digit" })})` : ""}.`}
         </Alert>
       )}
       <Divider sx={{ mb: 2 }} />

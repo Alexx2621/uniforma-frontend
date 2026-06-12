@@ -7,6 +7,13 @@ import {
   TextField,
   MenuItem,
   Grid,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
 } from "@mui/material";
 import { useState, useEffect } from "react";
 import Swal from "sweetalert2";
@@ -22,7 +29,6 @@ interface Props {
 
 export default function ModalVenta({ open, onClose, onSaved }: Props) {
   const [clientes, setClientes] = useState<any[]>([]);
-  const [productos, setProductos] = useState<any[]>([]);
   const [detalle, setDetalle] = useState<any[]>([]);
 
   const [form, setForm] = useState({
@@ -189,44 +195,50 @@ export default function ModalVenta({ open, onClose, onSaved }: Props) {
           </Grid>
         </Grid>
 
-        {/* Tabla productos */}
-        <table className="table" style={{ marginTop: 15 }}>
-          <thead>
-            <tr>
-              <th>Producto</th>
-              <th>Precio</th>
-              <th>Cant</th>
-              <th>Subtotal</th>
-              <th aria-label="Acciones"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {detalle.map((r) => (
-              <tr key={r.productoId}>
-                <td>{r.nombre}</td>
-                <td>{formatCurrency(r.precio)}</td>
-                <td>
-                  <input
-                    type="number"
-                    aria-label={`Cantidad de ${r.nombre}`}
-                    value={emptyWhenZero(r.cantidad)}
-                    min={1}
-                    onChange={(e) =>
-                      actualizarCantidad(r.productoId, parseNumberInput(e.target.value))
-                    }
-                    style={{ width: 60 }}
-                  />
-                </td>
-                <td>{formatCurrency(r.subtotal)}</td>
-                <td>
-                  <Button color="error" onClick={() => eliminarItem(r.productoId)}>
-                    X
-                  </Button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <TableContainer component={Paper} variant="outlined" sx={{ mt: 2 }}>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Producto</TableCell>
+                <TableCell align="right">Precio</TableCell>
+                <TableCell align="center" sx={{ width: 120 }}>Cant.</TableCell>
+                <TableCell align="right">Subtotal</TableCell>
+                <TableCell align="right">Acciones</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {detalle.map((r) => (
+                <TableRow key={r.productoId} hover>
+                  <TableCell>{r.nombre}</TableCell>
+                  <TableCell align="right">{formatCurrency(r.precio)}</TableCell>
+                  <TableCell align="center">
+                    <TextField
+                      type="number"
+                      size="small"
+                      aria-label={`Cantidad de ${r.nombre}`}
+                      value={emptyWhenZero(r.cantidad)}
+                      inputProps={{ min: 1, style: { textAlign: "center" } }}
+                      onChange={(e) => actualizarCantidad(r.productoId, parseNumberInput(e.target.value))}
+                    />
+                  </TableCell>
+                  <TableCell align="right">{formatCurrency(r.subtotal)}</TableCell>
+                  <TableCell align="right">
+                    <Button color="error" onClick={() => eliminarItem(r.productoId)}>
+                      Eliminar
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {!detalle.length && (
+                <TableRow>
+                  <TableCell colSpan={5} align="center">
+                    Aun no has agregado productos.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
 
         {/* Total */}
         <h3 style={{ textAlign: "right" }}>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Paper,
   Typography,
@@ -34,7 +34,7 @@ import PaymentIcon from "@mui/icons-material/Payment";
 import Autocomplete from "@mui/material/Autocomplete";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../auth/useAuthStore";
 import LOGO_URL from "../assets/3-logos.png";
 import { buildVentaPdfHtml } from "../utils/ventaPdf";
@@ -54,6 +54,8 @@ const CLIENTE_CF_OPTION: Cliente = {
   id: CLIENTE_CF_ID,
   nombre: "CF",
 };
+const VENTA_BORRADOR_TIPO = "venta";
+const VENTA_BORRADOR_LOCAL_KEY = "venta:borrador-local:v1";
 
 const formatClienteOption = (cliente: Cliente) => {
   const telefono = `${cliente.telefono || ""}`.trim();
@@ -360,8 +362,18 @@ export default function VentaNueva() {
   const [filtroColor, setFiltroColor] = useState("");
   const [bordadosModalOpen, setBordadosModalOpen] = useState(false);
   const [bordadoPreviewOpen, setBordadoPreviewOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [documentoBorradorId, setDocumentoBorradorId] = useState<number | null>(null);
+  const [borradorGuardadoEn, setBorradorGuardadoEn] = useState("");
+  const [borradorEstado, setBorradorEstado] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const borradorInicializadoRef = useRef(false);
+  const restaurandoBorradorRef = useRef(false);
+  const autoguardadoBorradorBloqueadoRef = useRef(false);
+  const ultimoBorradorJsonRef = useRef("");
 
   const navigate = useNavigate();
+  const location = useLocation();
+  const returnState = location.state as { borradorId?: number } | null;
   const { usuario, rol, bodegaId: userBodegaId, bodegaNombre: authBodegaNombre, id: userId } = useAuthStore();
   const isAdmin = `${rol || ""}`.trim().toUpperCase() === "ADMIN";
   const parsedUserBodegaId = Number(userBodegaId || 0);
@@ -406,6 +418,195 @@ export default function VentaNueva() {
   useEffect(() => {
     void cargarCatalogos();
   }, []);
+
+  const limpiarFormularioVenta = useCallback(() => {
+    setClienteId(CLIENTE_CF_ID);
+    setClienteTelefono("");
+    setClienteNombre("CF");
+    setBodegaId(documentBodegaLocked ? parsedUserBodegaId || "" : "");
+    setMetodoPago("efectivo");
+    setUbicacion("TIENDA");
+    setPorcentajeRecargo(0);
+    setReferenciaPago("");
+    setBancoPago("");
+    setEnvio(0);
+    setDetalle([]);
+    setArticuloActual(detalleInicial);
+    setCantidadInput("1");
+    setEditingDetalleKey(null);
+    setFiltroTipo("");
+    setFiltroGenero("");
+    setFiltroTela("");
+    setFiltroTalla("");
+    setFiltroColor("");
+  }, [documentBodegaLocked, parsedUserBodegaId]);
+
+  const restaurarBorradorVenta = useCallback((data: any) => {
+    restaurandoBorradorRef.current = true;
+    const encabezado = data?.encabezado || {};
+    const captura = data?.capturaArticulo || {};
+    setClienteId(encabezado.clienteId ? Number(encabezado.clienteId) : CLIENTE_CF_ID);
+    setClienteNombre(encabezado.clienteNombre || "CF");
+    setClienteTelefono(`${encabezado.clienteTelefono || ""}`);
+    setBodegaId(encabezado.bodegaId ? Number(encabezado.bodegaId) : "");
+    setMetodoPago(encabezado.metodoPago || "efectivo");
+    setUbicacion(encabezado.ubicacion || "TIENDA");
+    setPorcentajeRecargo(Number(encabezado.porcentajeRecargo || 0));
+    setReferenciaPago(`${encabezado.referenciaPago || ""}`);
+    setBancoPago(`${encabezado.bancoPago || ""}`);
+    setEnvio(Number(encabezado.envio || 0));
+    setDetalle(
+      (Array.isArray(data?.detalle) ? data.detalle : []).map((item: any, index: number) => ({
+        ...item,
+        key: Number(item?.key || 0) || Date.now() + index,
+        productoId: Number(item?.productoId || 0),
+        bodegaId: item?.bodegaId ? Number(item.bodegaId) : "",
+        cantidad: Number(item?.cantidad || 0),
+        precio: Number(item?.precio || 0),
+        bordado: Number(item?.bordado || 0),
+        estiloEspecialMonto: Number(item?.estiloEspecialMonto || 0),
+        descuento: Number(item?.descuento || 0),
+        bordados: Array.isArray(item?.bordados) ? item.bordados : [],
+      })),
+    );
+    setArticuloActual({
+      ...detalleInicial,
+      ...captura,
+      productoId: captura?.productoId ? Number(captura.productoId) : "",
+      bodegaId: captura?.bodegaId ? Number(captura.bodegaId) : "",
+      cantidad: Number(captura?.cantidad || 1),
+      precio: Number(captura?.precio || 0),
+      bordado: Number(captura?.bordado || 0),
+      estiloEspecialMonto: Number(captura?.estiloEspecialMonto || 0),
+      descuento: Number(captura?.descuento || 0),
+      bordados: Array.isArray(captura?.bordados) ? captura.bordados : [],
+    });
+    setCantidadInput(`${captura?.cantidad || data?.cantidadInput || "1"}`);
+    setFiltroTipo(data?.filtros?.tipo || "");
+    setFiltroGenero(data?.filtros?.genero || "");
+    setFiltroTela(data?.filtros?.tela || "");
+    setFiltroTalla(data?.filtros?.talla || "");
+    setFiltroColor(data?.filtros?.color || "");
+    setTimeout(() => {
+      restaurandoBorradorRef.current = false;
+    }, 0);
+  }, []);
+
+  const finalizarBorradorActual = useCallback(async (documentoFinal?: { tipo?: string; id?: number | null; folio?: string | null }) => {
+    autoguardadoBorradorBloqueadoRef.current = true;
+    if (!documentoBorradorId) return;
+    const id = documentoBorradorId;
+    setDocumentoBorradorId(null);
+    setBorradorGuardadoEn("");
+    setBorradorEstado("idle");
+    ultimoBorradorJsonRef.current = "";
+    localStorage.removeItem(VENTA_BORRADOR_LOCAL_KEY);
+    try {
+      await api.post(`/documentos-borradores/${id}/finalizar`, {
+        documentoFinalTipo: documentoFinal?.tipo || "venta",
+        documentoFinalId: documentoFinal?.id || null,
+        documentoFinalFolio: documentoFinal?.folio || null,
+      });
+    } catch {
+      // La venta ya fue generada; no bloqueamos por limpieza de preliminar.
+    }
+  }, [documentoBorradorId]);
+
+  const descartarBorradorActual = useCallback(async () => {
+    if (!documentoBorradorId) return;
+    const result = await Swal.fire({
+      title: "Descartar preliminar",
+      text: "Se eliminara la venta preliminar y se limpiara esta pantalla.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Descartar",
+      cancelButtonText: "Cancelar",
+      confirmButtonColor: "#d32f2f",
+    });
+    if (!result.isConfirmed) return;
+    try {
+      await api.delete(`/documentos-borradores/${documentoBorradorId}`);
+    } catch {
+      // Si ya no existe, limpiamos localmente.
+    }
+    setDocumentoBorradorId(null);
+    setBorradorGuardadoEn("");
+    setBorradorEstado("idle");
+    ultimoBorradorJsonRef.current = "";
+    localStorage.removeItem(VENTA_BORRADOR_LOCAL_KEY);
+    limpiarFormularioVenta();
+    autoguardadoBorradorBloqueadoRef.current = false;
+  }, [documentoBorradorId, limpiarFormularioVenta]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const cargarBorrador = async () => {
+      try {
+        const { data } = returnState?.borradorId
+          ? await api.get(`/documentos-borradores/${returnState.borradorId}`)
+          : await api.get("/documentos-borradores/activo", { params: { tipoDocumento: VENTA_BORRADOR_TIPO } });
+        if (cancelled) return;
+        if (!data?.id) {
+          borradorInicializadoRef.current = true;
+          return;
+        }
+        const result = await Swal.fire({
+          title: "Venta preliminar encontrada",
+          text: "Tienes una venta que no fue finalizada. Puedes continuarla o descartarla.",
+          icon: "info",
+          showDenyButton: true,
+          showCancelButton: true,
+          confirmButtonText: "Continuar",
+          denyButtonText: "Descartar",
+          cancelButtonText: "Ahora no",
+          confirmButtonColor: "#1f3f87",
+        });
+        if (cancelled) return;
+        if (result.isConfirmed) {
+          autoguardadoBorradorBloqueadoRef.current = false;
+          setDocumentoBorradorId(Number(data.id));
+          setBorradorGuardadoEn(data.actualizadoEn || "");
+          restaurarBorradorVenta(data.data || {});
+          ultimoBorradorJsonRef.current = JSON.stringify(data.data || {});
+        } else if (result.isDenied) {
+          await api.delete(`/documentos-borradores/${data.id}`).catch(() => undefined);
+          localStorage.removeItem(VENTA_BORRADOR_LOCAL_KEY);
+        }
+      } catch {
+        try {
+          const localRaw = localStorage.getItem(VENTA_BORRADOR_LOCAL_KEY);
+          const localData = localRaw ? JSON.parse(localRaw) : null;
+          if (!cancelled && localData?.data) {
+            const result = await Swal.fire({
+              title: "Respaldo local encontrado",
+              text: "No se pudo consultar el preliminar del servidor, pero hay una copia local en este navegador.",
+              icon: "info",
+              showDenyButton: true,
+              showCancelButton: true,
+              confirmButtonText: "Recuperar",
+              denyButtonText: "Descartar",
+              cancelButtonText: "Ahora no",
+              confirmButtonColor: "#1f3f87",
+            });
+            if (result.isConfirmed) {
+              restaurarBorradorVenta(localData.data);
+              ultimoBorradorJsonRef.current = JSON.stringify(localData.data);
+            } else if (result.isDenied) {
+              localStorage.removeItem(VENTA_BORRADOR_LOCAL_KEY);
+            }
+          }
+        } catch {
+          // Sin respaldo local legible.
+        }
+      } finally {
+        if (!cancelled) borradorInicializadoRef.current = true;
+      }
+    };
+    void cargarBorrador();
+    return () => {
+      cancelled = true;
+    };
+  }, [restaurarBorradorVenta, returnState?.borradorId]);
 
   useEffect(() => {
     if (clienteId !== CLIENTE_CF_ID || clienteNombre !== "CF" || clienteTelefono) return;
@@ -941,6 +1142,109 @@ export default function VentaNueva() {
     [detalle],
   );
 
+  useEffect(() => {
+    if (!userId || !borradorInicializadoRef.current || restaurandoBorradorRef.current || autoguardadoBorradorBloqueadoRef.current) {
+      return;
+    }
+
+    const hasContenido =
+      detalle.length > 0 ||
+      Boolean(articuloActual.productoId) ||
+      clienteId !== CLIENTE_CF_ID ||
+      clienteNombre.trim().toUpperCase() !== "CF" ||
+      Boolean(clienteTelefono.trim()) ||
+      Boolean(referenciaPago.trim()) ||
+      Boolean(bancoPago.trim()) ||
+      Number(envio || 0) > 0 ||
+      Boolean(filtroTipo || filtroGenero || filtroTela || filtroTalla || filtroColor);
+
+    if (!hasContenido) return;
+
+    const data = {
+      version: 1,
+      encabezado: {
+        clienteId: clienteId === "" || clienteId === CLIENTE_CF_ID ? null : Number(clienteId),
+        clienteNombre,
+        clienteTelefono,
+        bodegaId: bodegaId === "" ? null : Number(bodegaId),
+        metodoPago,
+        ubicacion,
+        porcentajeRecargo,
+        referenciaPago,
+        bancoPago,
+        envio,
+      },
+      detalle,
+      capturaArticulo: articuloActual,
+      cantidadInput,
+      filtros: {
+        tipo: filtroTipo,
+        genero: filtroGenero,
+        tela: filtroTela,
+        talla: filtroTalla,
+        color: filtroColor,
+      },
+    };
+
+    const serialized = JSON.stringify(data);
+    if (serialized === ultimoBorradorJsonRef.current) return;
+
+    try {
+      localStorage.setItem(
+        VENTA_BORRADOR_LOCAL_KEY,
+        JSON.stringify({ tipoDocumento: VENTA_BORRADOR_TIPO, actualizadoEn: new Date().toISOString(), data }),
+      );
+    } catch {
+      // El respaldo local es secundario; seguimos con backend.
+    }
+
+    const timer = window.setTimeout(async () => {
+      try {
+        if (autoguardadoBorradorBloqueadoRef.current) return;
+        setBorradorEstado("saving");
+        const { data: saved } = await api.post("/documentos-borradores/autoguardar", {
+          id: documentoBorradorId,
+          tipoDocumento: VENTA_BORRADOR_TIPO,
+          titulo: clienteNombre && clienteNombre.trim().toUpperCase() !== "CF" ? clienteNombre : "Venta preliminar",
+          bodegaId: bodegaId === "" ? null : Number(bodegaId),
+          clienteId: clienteId === "" || clienteId === CLIENTE_CF_ID ? null : Number(clienteId),
+          totalEstimado: totals.total,
+          data,
+        });
+        ultimoBorradorJsonRef.current = serialized;
+        setDocumentoBorradorId(Number(saved?.id || documentoBorradorId || 0) || null);
+        setBorradorGuardadoEn(saved?.actualizadoEn || new Date().toISOString());
+        setBorradorEstado("saved");
+      } catch {
+        setBorradorEstado("error");
+      }
+    }, 900);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    articuloActual,
+    bancoPago,
+    bodegaId,
+    cantidadInput,
+    clienteId,
+    clienteNombre,
+    clienteTelefono,
+    detalle,
+    documentoBorradorId,
+    envio,
+    filtroColor,
+    filtroGenero,
+    filtroTalla,
+    filtroTela,
+    filtroTipo,
+    metodoPago,
+    porcentajeRecargo,
+    referenciaPago,
+    totals.total,
+    ubicacion,
+    userId,
+  ]);
+
   const calcularTotalesDesdeDetalle = (detalleActual: DetalleRow[]) => {
     const subtotal = detalleActual.reduce((sum, item) => sum + calcularSubtotal(item), 0);
     const recargoCalculado = metodoUsaRecargo ? subtotal * ((porcentajeRecargo || 0) / 100) : 0;
@@ -1123,6 +1427,7 @@ export default function VentaNueva() {
   };
 
   const guardar = async () => {
+    if (saving) return;
     if (!bodegaId) {
       Swal.fire("Validacion", "Selecciona una bodega", "warning");
       return;
@@ -1197,14 +1502,23 @@ export default function VentaNueva() {
         })),
       };
 
+    setSaving(true);
     try {
       const resp = await api.post("/ventas", payload);
+      autoguardadoBorradorBloqueadoRef.current = true;
+      await finalizarBorradorActual({
+        tipo: "venta",
+        id: Number(resp.data?.id || 0) || null,
+        folio: resp.data?.folio || null,
+      });
       Swal.fire("Guardado", "Venta registrada", "success");
       abrirPdfVenta(resp.data, detalle);
       navigate("/ventas");
     } catch (error: any) {
       const msg = error?.response?.data?.message || error?.message || "No se pudo guardar";
       Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -1214,6 +1528,24 @@ export default function VentaNueva() {
         <PaymentIcon color="primary" />
         <Typography variant="h4">Nueva venta</Typography>
       </Stack>
+      {documentoBorradorId && (
+        <Alert
+          severity={borradorEstado === "error" ? "warning" : "info"}
+          sx={{ mb: 2 }}
+          action={
+            <Button color="inherit" size="small" onClick={() => void descartarBorradorActual()} disabled={saving}>
+              Descartar
+            </Button>
+          }
+        >
+          Venta preliminar PRE-{String(documentoBorradorId).padStart(6, "0")}
+          {borradorEstado === "saving"
+            ? " guardandose..."
+            : borradorGuardadoEn
+              ? ` guardada ${new Date(borradorGuardadoEn).toLocaleString("es-GT")}`
+              : ""}
+        </Alert>
+      )}
       <Divider sx={{ mb: 2 }} />
 
       <Grid container spacing={2}>
@@ -1828,11 +2160,11 @@ export default function VentaNueva() {
       </Grid>
 
       <Stack direction="row" justifyContent="flex-end" spacing={2} sx={{ mt: 3 }}>
-        <Button variant="outlined" onClick={() => navigate("/ventas")}>
+        <Button variant="outlined" onClick={() => navigate("/ventas")} disabled={saving}>
           Cancelar
         </Button>
-        <Button variant="contained" color="success" onClick={guardar}>
-          Guardar venta
+        <Button variant="contained" color="success" onClick={guardar} disabled={saving}>
+          {saving ? "Guardando..." : "Guardar venta"}
         </Button>
       </Stack>
 

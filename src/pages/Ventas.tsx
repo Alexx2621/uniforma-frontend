@@ -71,6 +71,8 @@ export default function Ventas() {
   const [fechaDesde, setFechaDesde] = useState(() => toDateOnly(new Date().toISOString()));
   const [fechaHasta, setFechaHasta] = useState(() => toDateOnly(new Date().toISOString()));
   const [cierreFecha, setCierreFecha] = useState(() => toDateOnly(new Date().toISOString()));
+  const [paginationModel, setPaginationModel] = useState({ page: 0, pageSize: 10 });
+  const [rowCount, setRowCount] = useState(0);
   const [contextMenuAnchor, setContextMenuAnchor] = useState<{ mouseX: number; mouseY: number } | null>(null);
   const [contextMenuVenta, setContextMenuVenta] = useState<VentaRow | null>(null);
   const [relationModalOpen, setRelationModalOpen] = useState(false);
@@ -89,70 +91,94 @@ export default function Ventas() {
     [productos]
   );
 
+  const normalizarVentas = (rows: any[], clientesData: any[] = []) => {
+    const localClienteMap = new Map<number, string>(
+      clientesData.map((c: any) => [Number(c.id), c.nombre]),
+    );
+    return rows.map((v: any, idx: number) => {
+      const rawId =
+        v?.id ??
+        v?.ventaId ??
+        v?.venta_id ??
+        v?.folioId ??
+        (typeof v?.folio === "number" ? v.folio : undefined) ??
+        (typeof v?.folio === "string" ? Number(v.folio.replace(/\D/g, "")) : undefined);
+      const numericId = Number(rawId);
+      const id = Number.isFinite(numericId) && numericId > 0 ? numericId : idx + 1;
+      const folioNormalizado =
+        v?.folio && `${v.folio}`.trim() !== ""
+          ? `${v.folio}`.startsWith("V-")
+            ? `${v.folio}`
+            : `V-${v.folio}`
+          : `V-${id}`;
+      const clienteNombreNormalizado =
+        v?.cliente?.nombre ||
+        v?.clienteNombre ||
+        v?.cliente_name ||
+        v?.clienteNombreCompleto ||
+        v?.nombreCliente ||
+        v?.nombre_cliente ||
+        (localClienteMap.get(Number(v?.clienteId ?? v?.cliente_id ?? v?.clienteid)) as
+          | string
+          | undefined) ||
+        (typeof v?.cliente === "string" ? v.cliente : "") ||
+        "CF";
+      return {
+        ...v,
+        id,
+        clienteId: v?.clienteId ?? v?.cliente_id ?? v?.clienteid ?? null,
+        folio: folioNormalizado,
+        displayFolio: folioNormalizado,
+        clienteNombre: clienteNombreNormalizado,
+        clienteDisplay: clienteNombreNormalizado,
+        referenciaPago:
+          v?.referenciaPago ||
+          v?.referencia_pago ||
+          v?.pagos?.[0]?.referencia ||
+          null,
+      };
+    });
+  };
+
   useEffect(() => {
-    cargarVentas();
+    const cargarCatalogos = async () => {
+      const [respClientes, respProductos] = await Promise.all([
+        api.get("/clientes").catch(() => ({ data: [] })),
+        api.get("/productos").catch(() => ({ data: [] })),
+      ]);
+      setClientes(respClientes.data || []);
+      setProductos(respProductos.data || []);
+    };
+    void cargarCatalogos();
     void fetchConfig();
   }, [fetchConfig]);
+
+  useEffect(() => {
+    void cargarVentas();
+  }, [fechaDesde, fechaHasta, filterCliente, filterCodigo, paginationModel.page, paginationModel.pageSize]);
+
+  useEffect(() => {
+    setPaginationModel((prev) => ({ ...prev, page: 0 }));
+  }, [fechaDesde, fechaHasta, filterCliente, filterCodigo]);
 
   const cargarVentas = async () => {
     setLoading(true);
     try {
-      const [respVentas, respClientes, respProductos] = await Promise.all([
-        api.get("/ventas"),
-        api.get("/clientes").catch(() => ({ data: [] })),
-        api.get("/productos").catch(() => ({ data: [] })),
-      ]);
-      const clientesData = respClientes.data || [];
-      const localClienteMap = new Map<number, string>(
-        clientesData.map((c: any) => [Number(c.id), c.nombre]),
-      );
-      setClientes(clientesData);
-      setProductos(respProductos.data || []);
-
-      const data = (respVentas.data || []).map((v: any, idx: number) => {
-        const rawId =
-          v?.id ??
-          v?.ventaId ??
-          v?.venta_id ??
-          v?.folioId ??
-          (typeof v?.folio === "number" ? v.folio : undefined) ??
-          (typeof v?.folio === "string" ? Number(v.folio.replace(/\D/g, "")) : undefined);
-        const numericId = Number(rawId);
-        const id = Number.isFinite(numericId) && numericId > 0 ? numericId : idx + 1;
-        const folioNormalizado =
-          v?.folio && `${v.folio}`.trim() !== ""
-            ? `${v.folio}`.startsWith("V-")
-              ? `${v.folio}`
-              : `V-${v.folio}`
-            : `V-${id}`;
-        const clienteNombreNormalizado =
-          v?.cliente?.nombre ||
-          v?.clienteNombre ||
-          v?.cliente_name ||
-          v?.clienteNombreCompleto ||
-          v?.nombreCliente ||
-          v?.nombre_cliente ||
-          (localClienteMap.get(Number(v?.clienteId ?? v?.cliente_id ?? v?.clienteid)) as
-            | string
-            | undefined) ||
-          (typeof v?.cliente === "string" ? v.cliente : "") ||
-          "CF";
-        return {
-          ...v,
-          id,
-          clienteId: v?.clienteId ?? v?.cliente_id ?? v?.clienteid ?? null,
-          folio: folioNormalizado,
-          displayFolio: folioNormalizado,
-          clienteNombre: clienteNombreNormalizado,
-          clienteDisplay: clienteNombreNormalizado,
-          referenciaPago:
-            v?.referenciaPago ||
-            v?.referencia_pago ||
-            v?.pagos?.[0]?.referencia ||
-            null,
-        };
+      const respVentas = await api.get("/ventas", {
+        params: {
+          paginated: 1,
+          page: paginationModel.page,
+          pageSize: paginationModel.pageSize,
+          desde: fechaDesde,
+          hasta: fechaHasta,
+          cliente: filterCliente || undefined,
+          folio: filterCodigo || undefined,
+        },
       });
-      setVentas(data);
+      const payload = respVentas.data || {};
+      const rows = Array.isArray(payload) ? payload : payload.data || [];
+      setVentas(normalizarVentas(rows, clientes));
+      setRowCount(Number(payload.total ?? rows.length));
     } catch (error) {
       Swal.fire("Error", "No se pudo cargar ventas", "error");
     } finally {
@@ -160,41 +186,36 @@ export default function Ventas() {
     }
   };
 
-  const filtered = useMemo(
-    () =>
-      ventas.filter((v) => {
-        const cliente = (
-          v.clienteDisplay ||
-          v.clienteNombre ||
-          v.cliente?.nombre ||
-          ""
-        ).toLowerCase();
-        const codigo = (v.folio || `V-${v.id || ""}`).toLowerCase();
-        const fechaVenta = toDateOnly(v.fecha);
-        const dentroRango =
-          (!fechaDesde || fechaVenta >= fechaDesde) && (!fechaHasta || fechaVenta <= fechaHasta);
-        const bodegaVisible =
-          canAccessAllBodegas || !userBodegaId ? true : Number(v.bodegaId) === Number(userBodegaId);
-        return (
-          dentroRango &&
-          bodegaVisible &&
-          cliente.includes(filterCliente.toLowerCase()) &&
-          codigo.includes(filterCodigo.toLowerCase())
-        );
-      }),
-    [ventas, filterCliente, filterCodigo, fechaDesde, fechaHasta, canAccessAllBodegas, userBodegaId]
-  );
+  const filtered = ventas;
 
-  const ventasDelDia = useMemo(
-    () =>
-      ventas.filter((v) => {
-        const mismaFecha = toDateOnly(v.fecha) === cierreFecha;
-        const bodegaVisible =
-          canAccessAllBodegas || !userBodegaId ? true : Number(v.bodegaId) === Number(userBodegaId);
-        return mismaFecha && bodegaVisible;
-      }),
-    [ventas, cierreFecha, canAccessAllBodegas, userBodegaId]
-  );
+  const cargarVentasParaCierre = async () => {
+    const acumuladas: VentaRow[] = [];
+    let page = 0;
+    let total = 0;
+    const pageSize = 100;
+    do {
+      const resp = await api.get("/ventas", {
+        params: {
+          paginated: 1,
+          page,
+          pageSize,
+          desde: cierreFecha,
+          hasta: cierreFecha,
+        },
+      });
+      const payload = resp.data || {};
+      const rows = Array.isArray(payload) ? payload : payload.data || [];
+      acumuladas.push(...normalizarVentas(rows, clientes));
+      total = Number(payload.total ?? acumuladas.length);
+      page += 1;
+    } while (acumuladas.length < total && page < 50);
+
+    return acumuladas.filter((v) => {
+      const bodegaVisible =
+        canAccessAllBodegas || !userBodegaId ? true : Number(v.bodegaId) === Number(userBodegaId);
+      return bodegaVisible;
+    });
+  };
 
   const formatter = formatCurrency;
 
@@ -397,11 +418,12 @@ export default function Ventas() {
     );
   };
 
-  const exportCierreVendedor = () => {
+  const exportCierreVendedor = async () => {
     if (!usuario) {
       Swal.fire("Aviso", "No se puede generar cierre sin usuario activo", "warning");
       return;
     }
+    const ventasDelDia = await cargarVentasParaCierre();
     const filtradas = ventasDelDia.filter((v) => {
       const mismoVendedor = (v.vendedor || "").trim() === usuario.trim();
       const mismaBodega = canAccessAllBodegas || !userBodegaId || Number(v.bodegaId) === Number(userBodegaId);
@@ -527,11 +549,12 @@ export default function Ventas() {
     win.document.close();
   };
 
-  const exportCierreTienda = () => {
+  const exportCierreTienda = async () => {
     if (!canAccessAllBodegas && !userBodegaId) {
       Swal.fire("Aviso", "Asigna una bodega al usuario para generar el cierre por tienda", "warning");
       return;
     }
+    const ventasDelDia = await cargarVentasParaCierre();
     const filtradas = canAccessAllBodegas
       ? ventasDelDia
       : ventasDelDia.filter((v) => Number(v.bodegaId) === Number(userBodegaId));
@@ -743,14 +766,14 @@ export default function Ventas() {
           <Button
             variant="outlined"
             startIcon={<PictureAsPdfOutlined />}
-            onClick={exportCierreVendedor}
+            onClick={() => void exportCierreVendedor()}
           >
             Cierre vendedor
           </Button>
           <Button
             variant="outlined"
             startIcon={<PictureAsPdfOutlined />}
-            onClick={exportCierreTienda}
+            onClick={() => void exportCierreTienda()}
           >
             Cierre tienda
           </Button>
@@ -814,7 +837,10 @@ export default function Ventas() {
           columns={columns}
           getRowId={getVentaRowId}
           pageSizeOptions={[10, 25, 50]}
-          initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
+          paginationMode="server"
+          paginationModel={paginationModel}
+          onPaginationModelChange={setPaginationModel}
+          rowCount={rowCount}
         />
       </div>
 

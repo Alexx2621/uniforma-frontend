@@ -35,6 +35,8 @@ import Auditoria from "./pages/Auditoria";
 import Correcciones from "./pages/Correcciones";
 import Alertas from "./pages/Alertas";
 import Autorizaciones from "./pages/Autorizaciones";
+import DocumentosBorradores from "./pages/DocumentosBorradores";
+import SaludOperativa from "./pages/SaludOperativa";
 import Correlativos from "./pages/Correlativos";
 import WhatsappConfig from "./pages/WhatsappConfig";
 import Roles from "./pages/Roles";
@@ -110,6 +112,8 @@ export default function App() {
           <Route path="/correcciones" element={<Correcciones />} />
           <Route path="/alertas" element={<Alertas />} />
           <Route path="/autorizaciones" element={<Autorizaciones />} />
+          <Route path="/documentos-borradores" element={<DocumentosBorradores />} />
+          <Route path="/salud-operativa" element={<SaludOperativa />} />
           <Route path="/metas-mensuales" element={<MetasMensuales />} />
           {whatsappFeatureEnabled && <Route path="/whatsapp/config" element={<WhatsappConfig />} />}
           <Route path="/correlativos" element={<Correlativos />} />

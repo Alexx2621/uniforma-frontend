@@ -361,6 +361,7 @@ export default function Pedidos() {
     page: Math.max(0, Number(restoredPedidosState?.pagination?.page || 0)),
     pageSize: Number(restoredPedidosState?.pagination?.pageSize || 10),
   }));
+  const [rowCount, setRowCount] = useState(0);
   const [selectedPedidoId, setSelectedPedidoId] = useState<number | null>(() => {
     const value = Number(restoredPedidosState?.selectedId);
     return Number.isFinite(value) && value > 0 ? value : null;
@@ -371,6 +372,7 @@ export default function Pedidos() {
   const cargandoPedidosRef = useRef(false);
   const pedidosSocketRef = useRef<Socket | null>(null);
   const skipInitialPaginationResetRef = useRef(Boolean(restoredPedidosState));
+  const pendingRestoreSelectionRef = useRef(Boolean(restoredPedidosState?.selectedId));
   const { rol, permisos, bodegaId: userBodegaId, id: userId } = useAuthStore();
   const { fetchConfig, reportesConfig } = useSystemConfigStore();
   const canAccessAllBodegas = hasPermission(rol, permisos, "sistema.multi-tienda");
@@ -572,7 +574,18 @@ export default function Pedidos() {
 
     try {
       const [resp, respClientes, respBodegas, respProductos, respTelas, respTallas, respColores] = await Promise.all([
-        api.get("/produccion"),
+        api.get("/produccion", {
+          params: {
+            paginated: 1,
+            page: paginationModel.page,
+            pageSize: paginationModel.pageSize,
+            cliente: filterCliente || undefined,
+            fechaInicio: filterFechaInicio || undefined,
+            fechaFin: filterFechaFin || undefined,
+            bodegaId: filterBodega === "all" ? undefined : filterBodega,
+            tipoPedido: filterTipoPedido,
+          },
+        }),
         api.get("/clientes").catch(() => ({ data: [] })),
         api.get("/bodegas").catch(() => ({ data: [] })),
         api.get("/productos").catch(() => ({ data: [] })),
@@ -589,7 +602,9 @@ export default function Pedidos() {
       const clienteMap = new Map<number, string>(clientes.map((c: any) => [Number(c.id), c.nombre]));
       const bodegaMap = new Map<number, string>(bodegas.map((b: any) => [Number(b.id), b.nombre]));
 
-      const normalizados = (resp.data || []).map((p: any, idx: number) => {
+      const payload = resp.data || {};
+      const pedidoRows = Array.isArray(payload) ? payload : payload.data || [];
+      const normalizados = pedidoRows.map((p: any, idx: number) => {
         const rawId =
           p?.id ??
           p?.pedidoId ??
@@ -643,6 +658,7 @@ export default function Pedidos() {
       setTallas(tallas);
       setColores(colores);
       setRows(normalizados);
+      setRowCount(Number(payload.total ?? normalizados.length));
     } catch {
       if (!silent) {
         Swal.fire("Error", "No se pudieron cargar pedidos", "error");
@@ -656,7 +672,16 @@ export default function Pedidos() {
   useEffect(() => {
     void cargar();
     void fetchConfig();
-  }, [fetchConfig]);
+  }, [
+    fetchConfig,
+    paginationModel.page,
+    paginationModel.pageSize,
+    filterCliente,
+    filterFechaInicio,
+    filterFechaFin,
+    filterBodega,
+    filterTipoPedido,
+  ]);
 
   useEffect(() => {
     const refrescarSilencioso = () => {
@@ -767,20 +792,18 @@ export default function Pedidos() {
   }, [rows, filterCliente, filterBodega, filterFechaInicio, filterFechaFin, filterTipoPedido, canAccessAllBodegas, userBodegaId]);
 
   useEffect(() => {
-    if (!selectedPedidoId || !filtered.length) return;
+    if (!pendingRestoreSelectionRef.current || !selectedPedidoId || !filtered.length) return;
 
     const rowIndex = filtered.findIndex((row) => Number(row.id) === Number(selectedPedidoId));
-    if (rowIndex < 0) return;
-
-    const nextPage = Math.floor(rowIndex / Math.max(1, paginationModel.pageSize));
-    if (paginationModel.page !== nextPage) {
-      setPaginationModel((prev) => ({ ...prev, page: nextPage }));
+    if (rowIndex < 0) {
+      pendingRestoreSelectionRef.current = false;
       return;
     }
 
     window.requestAnimationFrame(() => {
       pedidosGridApiRef.current.selectRow(selectedPedidoId, true, true);
       pedidosGridApiRef.current.scrollToIndexes({ rowIndex });
+      pendingRestoreSelectionRef.current = false;
     });
   }, [filtered, paginationModel.page, paginationModel.pageSize, pedidosGridApiRef, selectedPedidoId]);
 
@@ -1319,8 +1342,13 @@ export default function Pedidos() {
           columns={columns}
           getRowId={(row) => row.id}
           pageSizeOptions={[10, 25, 50]}
+          paginationMode="server"
           paginationModel={paginationModel}
-          onPaginationModelChange={setPaginationModel}
+          rowCount={rowCount}
+          onPaginationModelChange={(model) => {
+            pendingRestoreSelectionRef.current = false;
+            setPaginationModel(model);
+          }}
           keepNonExistentRowsSelected
           rowSelectionModel={selectedPedidoId ? [selectedPedidoId] : []}
           onRowSelectionModelChange={(model) => {
