@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import {
   Paper,
   Typography,
@@ -142,6 +142,8 @@ interface CatalogoItem {
 
 interface ArticuloUnificado {
   key: string;
+  orden?: string;
+  usuario?: string;
   codigo: string;
   nombre: string;
   tipo: string;
@@ -151,13 +153,11 @@ interface ArticuloUnificado {
   color: string;
   descripcion: string;
   cantidad: number;
-  compactadoPor?: "talla" | "color" | "tela" | "genero" | "descripcion";
   fuentes: {
     pedidoId: number;
     folio: string;
     solicitadoPor: string;
     cantidad: number;
-    valorAgrupado?: string;
   }[];
 }
 
@@ -184,107 +184,6 @@ const PEDIDOS_AUTO_REFRESH_MS = 30000;
 
 const compareText = (a?: string | null, b?: string | null) =>
   `${a || ""}`.localeCompare(`${b || ""}`, "es", { numeric: true, sensitivity: "base" });
-
-const compareArticuloUnificadoPorPedido = (a: ArticuloUnificado, b: ArticuloUnificado) => {
-  const porPedido = compareText(a.tipo, b.tipo);
-  if (porPedido !== 0) return porPedido;
-  const porTela = compareText(a.tela, b.tela);
-  if (porTela !== 0) return porTela;
-  const porColor = compareText(a.color, b.color);
-  if (porColor !== 0) return porColor;
-  const porTalla = compareText(a.talla, b.talla);
-  if (porTalla !== 0) return porTalla;
-  const porSexo = compareText(a.genero, b.genero);
-  if (porSexo !== 0) return porSexo;
-  return compareText(a.descripcion, b.descripcion);
-};
-
-const COMPACTABLE_FIELDS = ["talla", "color", "tela", "genero", "descripcion"] as const;
-
-type CompactableField = (typeof COMPACTABLE_FIELDS)[number];
-
-const getArticuloField = (articulo: ArticuloUnificado, field: CompactableField) => `${articulo[field] || "N/D"}`;
-
-const buildArticuloKey = (articulo: Pick<ArticuloUnificado, "tipo" | "genero" | "tela" | "talla" | "color" | "descripcion">) =>
-  [articulo.tipo, articulo.genero, articulo.tela, articulo.talla, articulo.color, articulo.descripcion].join("|");
-
-const buildArticuloKeyWithoutField = (articulo: ArticuloUnificado, field: CompactableField) =>
-  [
-    articulo.tipo,
-    field === "genero" ? "*" : articulo.genero,
-    field === "tela" ? "*" : articulo.tela,
-    field === "talla" ? "*" : articulo.talla,
-    field === "color" ? "*" : articulo.color,
-    field === "descripcion" ? "*" : articulo.descripcion,
-  ].join("|");
-
-const formatCantidadValor = (cantidad: number, value: string) => `${Number(cantidad || 0)}. ${value}`;
-
-const mergeValueBreakdown = (items: ArticuloUnificado[], field: CompactableField) => {
-  const quantities = new Map<string, number>();
-
-  items.forEach((item) => {
-    const value = getArticuloField(item, field);
-    quantities.set(value, (quantities.get(value) || 0) + Number(item.cantidad || 0));
-  });
-
-  return Array.from(quantities.entries())
-    .sort(([a], [b]) => compareText(a, b))
-    .map(([value, quantity]) => formatCantidadValor(quantity, value))
-    .join("\n");
-};
-
-const compactArticulosUnificados = (articulos: ArticuloUnificado[]) => {
-  const pending = [...articulos];
-  const compactados: ArticuloUnificado[] = [];
-
-  for (const field of COMPACTABLE_FIELDS) {
-    const buckets = new Map<string, ArticuloUnificado[]>();
-
-    pending.forEach((item) => {
-      if (item.compactadoPor) return;
-      const key = buildArticuloKeyWithoutField(item, field);
-      const bucket = buckets.get(key) || [];
-      bucket.push(item);
-      buckets.set(key, bucket);
-    });
-
-    const used = new Set<string>();
-
-    buckets.forEach((bucket) => {
-      if (bucket.length < 2) return;
-      const distinctValues = new Set(bucket.map((item) => getArticuloField(item, field)));
-      if (distinctValues.size < 2) return;
-
-      const [base] = bucket;
-      const merged: ArticuloUnificado = {
-        ...base,
-        key: `${field}|${buildArticuloKeyWithoutField(base, field)}`,
-        cantidad: bucket.reduce((sum, item) => sum + Number(item.cantidad || 0), 0),
-        compactadoPor: field,
-        fuentes: bucket.flatMap((item) =>
-          item.fuentes.map((fuente) => ({
-            ...fuente,
-            valorAgrupado: getArticuloField(item, field),
-          })),
-        ),
-      };
-      merged[field] = mergeValueBreakdown(bucket, field) as never;
-      compactados.push(merged);
-      bucket.forEach((item) => used.add(item.key));
-    });
-
-    if (used.size) {
-      for (let index = pending.length - 1; index >= 0; index -= 1) {
-        if (used.has(pending[index].key)) {
-          pending.splice(index, 1);
-        }
-      }
-    }
-  }
-
-  return [...pending, ...compactados].sort(compareArticuloUnificadoPorPedido);
-};
 
 const buildResumenUnificacion = (
   articulos: ArticuloUnificado[],
@@ -369,7 +268,8 @@ export default function Pedidos() {
   const [generandoUnificado, setGenerandoUnificado] = useState(false);
   const [generandoDetallePedidos, setGenerandoDetallePedidos] = useState(false);
   const [loadingPedidos, setLoadingPedidos] = useState(false);
-  const cargandoPedidosRef = useRef(false);
+  const pedidosRequestSeqRef = useRef(0);
+  const cargarPedidosRef = useRef<((silent?: boolean) => Promise<void>) | null>(null);
   const pedidosSocketRef = useRef<Socket | null>(null);
   const skipInitialPaginationResetRef = useRef(Boolean(restoredPedidosState));
   const pendingRestoreSelectionRef = useRef(Boolean(restoredPedidosState?.selectedId));
@@ -567,9 +467,9 @@ export default function Pedidos() {
     return normalizarTexto(found);
   };
 
-  const cargar = async (silent = false) => {
-    if (cargandoPedidosRef.current) return;
-    cargandoPedidosRef.current = true;
+  const cargar = useCallback(async (silent = false) => {
+    const requestSeq = pedidosRequestSeqRef.current + 1;
+    pedidosRequestSeqRef.current = requestSeq;
     if (!silent) setLoadingPedidos(true);
 
     try {
@@ -652,6 +552,8 @@ export default function Pedidos() {
           bodegaDisplay: bodegaNombre,
         };
       });
+      if (requestSeq !== pedidosRequestSeqRef.current) return;
+
       setBodegas(bodegas);
       setProductos(productos);
       setTelas(telas);
@@ -660,33 +562,27 @@ export default function Pedidos() {
       setRows(normalizados);
       setRowCount(Number(payload.total ?? normalizados.length));
     } catch {
-      if (!silent) {
+      if (requestSeq === pedidosRequestSeqRef.current && !silent) {
         Swal.fire("Error", "No se pudieron cargar pedidos", "error");
       }
     } finally {
-      cargandoPedidosRef.current = false;
-      if (!silent) setLoadingPedidos(false);
+      if (requestSeq === pedidosRequestSeqRef.current && !silent) setLoadingPedidos(false);
     }
-  };
+  }, [paginationModel.page, paginationModel.pageSize, filterCliente, filterFechaInicio, filterFechaFin, filterBodega, filterTipoPedido]);
+
+  useEffect(() => {
+    cargarPedidosRef.current = cargar;
+  }, [cargar]);
 
   useEffect(() => {
     void cargar();
     void fetchConfig();
-  }, [
-    fetchConfig,
-    paginationModel.page,
-    paginationModel.pageSize,
-    filterCliente,
-    filterFechaInicio,
-    filterFechaFin,
-    filterBodega,
-    filterTipoPedido,
-  ]);
+  }, [cargar, fetchConfig]);
 
   useEffect(() => {
     const refrescarSilencioso = () => {
       if (document.visibilityState !== "visible") return;
-      void cargar(true);
+      void cargarPedidosRef.current?.(true);
     };
 
     const intervalId = window.setInterval(refrescarSilencioso, PEDIDOS_AUTO_REFRESH_MS);
@@ -710,11 +606,11 @@ export default function Pedidos() {
     pedidosSocketRef.current = socket;
 
     const manejarPedidosActualizados = () => {
-      void cargar(true);
+      void cargarPedidosRef.current?.(true);
     };
 
     const manejarConexion = () => {
-      void cargar(true);
+      void cargarPedidosRef.current?.(true);
     };
 
     socket.on("connect", manejarConexion);
@@ -886,59 +782,50 @@ export default function Pedidos() {
     setGenerandoUnificado(true);
 
     try {
-      const agrupados = new Map<string, ArticuloUnificado>();
+      const articulos: ArticuloUnificado[] = [...pedidosUnificables]
+        .sort((a, b) => {
+          const porUsuario = compareText(obtenerUsuarioPedido(a), obtenerUsuarioPedido(b));
+          if (porUsuario !== 0) return porUsuario;
+          const porFecha = toDateOnly(a.fecha).localeCompare(toDateOnly(b.fecha));
+          if (porFecha !== 0) return porFecha;
+          return Number(a.id || 0) - Number(b.id || 0);
+        })
+        .flatMap((pedido) =>
+          (pedido.detalle || []).map((detalle, index) => {
+            const producto = detalle.producto || productosMap.get(Number(detalle.productoId));
+            const folio = pedido.displayFolio || pedido.folio || `P-${pedido.id}`;
+            const usuarioPedido = normalizarTexto(obtenerUsuarioPedido(pedido));
+            const cantidad = Number(detalle.cantidad) || 0;
+            return {
+              key: `${pedido.id}-${index}-${detalle.productoId}`,
+              orden: folio,
+              usuario: usuarioPedido,
+              codigo: normalizarTexto(producto?.codigo),
+              nombre: normalizarTexto(producto?.nombre),
+              tipo: normalizarTexto(producto?.tipo),
+              genero: normalizarTexto(producto?.genero),
+              tela: buscarNombreCatalogo(producto, "tela"),
+              talla: buscarNombreCatalogo(producto, "talla"),
+              color: buscarNombreCatalogo(producto, "color"),
+              descripcion: normalizarTexto(detalle.descripcion),
+              cantidad,
+              fuentes: [
+                {
+                  pedidoId: pedido.id,
+                  folio,
+                  solicitadoPor: usuarioPedido,
+                  cantidad,
+                },
+              ],
+            };
+          }),
+        )
+        .filter((articulo) => Number(articulo.cantidad || 0) > 0);
 
-      pedidosUnificables.forEach((pedido) => {
-        (pedido.detalle || []).forEach((detalle) => {
-          const producto = detalle.producto || productosMap.get(Number(detalle.productoId));
-          const codigo = normalizarTexto(producto?.codigo);
-          const nombre = normalizarTexto(producto?.nombre);
-          const tipo = normalizarTexto(producto?.tipo);
-          const genero = normalizarTexto(producto?.genero);
-          const tela = buscarNombreCatalogo(producto, "tela");
-          const talla = buscarNombreCatalogo(producto, "talla");
-          const color = buscarNombreCatalogo(producto, "color");
-          const descripcion = normalizarTexto(detalle.descripcion);
-          const key = buildArticuloKey({
-            tipo,
-            genero,
-            tela,
-            talla,
-            color,
-            descripcion,
-          });
-
-          const fuente = {
-            pedidoId: pedido.id,
-            folio: pedido.displayFolio || `P-${pedido.id}`,
-            solicitadoPor: normalizarTexto(pedido.solicitadoPor),
-            cantidad: Number(detalle.cantidad) || 0,
-          };
-
-          const existente = agrupados.get(key);
-          if (existente) {
-            existente.cantidad += Number(detalle.cantidad) || 0;
-            existente.fuentes.push(fuente);
-            return;
-          }
-
-          agrupados.set(key, {
-            key,
-            codigo,
-            nombre,
-            tipo,
-            genero,
-            tela,
-            talla,
-            color,
-            descripcion,
-            cantidad: Number(detalle.cantidad) || 0,
-            fuentes: [fuente],
-          });
-        });
-      });
-
-      const articulos = compactArticulosUnificados(Array.from(agrupados.values()));
+      if (!articulos.length) {
+        Swal.fire("Sin detalle", "Los pedidos nuevos sin unificar no tienen lineas de detalle para imprimir.", "info");
+        return;
+      }
 
       const bodegaCorrelativo = filterBodega === "all" ? null : Number(filterBodega);
       const filtroTienda =
@@ -964,31 +851,11 @@ export default function Pedidos() {
         fechaGeneracion.getDate()
       ).padStart(2, "0")}`;
       const fileName = `${sanitizeFilename(pedidoNo)}_${fechaArchivo}.pdf`;
-      const articulosUnificados = articulos.filter((articulo) => articulo.fuentes.length > 1);
-
-      const pedidosHtml = articulosUnificados.length
-        ? `<div style="text-align:left;max-height:260px;overflow:auto;">
-          <p style="margin:0 0 10px 0;">Se detectaron ${articulosUnificados.length} articulo(s) unificados:</p>
-          <ul style="margin:0;padding-left:18px;">
-            ${articulosUnificados
-              .map((articulo) => {
-                const usuarios = Array.from(new Set(articulo.fuentes.map((fuente) => fuente.solicitadoPor))).join(", ");
-                const pedidos = Array.from(new Set(articulo.fuentes.map((fuente) => fuente.folio))).join(", ");
-                const nombreArticulo = [articulo.tipo, articulo.tela, articulo.color, articulo.talla, articulo.genero]
-                  .filter((value) => value && value !== "N/D")
-                  .join(" / ");
-                const descripcion = articulo.descripcion !== "N/D" ? ` | ${articulo.descripcion}` : "";
-                return `<li><strong>${nombreArticulo || articulo.nombre}</strong>${descripcion}<br/>Usuarios: ${usuarios}<br/>Pedidos: ${pedidos}</li>`;
-              })
-              .join("")}
-          </ul>
-        </div>`
-        : `<p style="margin:0;">Los pedidos se unificaron, pero no hubieron articulos unificados. Se descargara el PDF igualmente.</p>`;
 
       await Swal.fire({
-        title: articulosUnificados.length ? "Articulos unificados" : "Sin articulos unificados",
-        html: pedidosHtml,
-        icon: articulosUnificados.length ? "success" : "info",
+        title: "Pedidos unificados",
+        text: `Se generara el PDF ${pedidoNo} con ${pedidosUnificables.length} pedido(s) y ${articulos.length} linea(s), sin consolidar articulos repetidos.`,
+        icon: "success",
         confirmButtonText: "Descargar PDF",
         width: 640,
       });

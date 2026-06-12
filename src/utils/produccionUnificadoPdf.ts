@@ -3,6 +3,10 @@ import autoTable from "jspdf-autotable";
 import uniformaLogo from "../assets/3-logos.png";
 
 export interface ProduccionArticuloUnificadoPdf {
+  orden?: string;
+  usuario?: string;
+  codigo?: string;
+  nombre?: string;
   tipo: string;
   genero: string;
   tela: string;
@@ -144,10 +148,12 @@ export const descargarProduccionUnificadoPdf = async ({
   autoTable(doc, {
     startY: 61,
     theme: "grid",
-    head: [["CANT", "PEDIDO", "TELA", "COLOR", "TALLA", "SEXO", "OBSERVACIONES"]],
+    head: [["CANT", "ORDEN", "USUARIO", "PRENDA", "TELA", "COLOR", "TALLA", "SEXO", "OBSERVACIONES"]],
     body: articulos.length
       ? articulos.map((item) => [
           item.cantidad,
+          item.orden || "",
+          item.usuario || "",
           item.tipo,
           item.tela,
           item.color,
@@ -155,7 +161,7 @@ export const descargarProduccionUnificadoPdf = async ({
           item.genero,
           item.descripcion === "N/D" ? "" : item.descripcion,
         ])
-      : [["-", "No hay articulos detallados en los pedidos seleccionados", "", "", "", "", ""]],
+      : [["-", "No hay articulos detallados en los pedidos seleccionados", "", "", "", "", "", "", ""]],
     styles: {
       fontSize: 8.7,
       cellPadding: { top: 2.8, right: 2.4, bottom: 2.8, left: 2.4 },
@@ -188,13 +194,15 @@ export const descargarProduccionUnificadoPdf = async ({
       textColor: [0, 0, 0],
     },
     columnStyles: {
-      0: { cellWidth: 16 },
-      1: { cellWidth: 39 },
-      2: { cellWidth: 24 },
-      3: { cellWidth: 31, overflow: "linebreak" },
-      4: { cellWidth: 42, overflow: "linebreak" },
-      5: { cellWidth: 25, overflow: "linebreak" },
-      6: { cellWidth: "auto", halign: "left", overflow: "linebreak" },
+      0: { cellWidth: 13 },
+      1: { cellWidth: 27 },
+      2: { cellWidth: 34, overflow: "linebreak" },
+      3: { cellWidth: 25, overflow: "linebreak" },
+      4: { cellWidth: 23 },
+      5: { cellWidth: 30, overflow: "linebreak" },
+      6: { cellWidth: 22, overflow: "linebreak" },
+      7: { cellWidth: 22, overflow: "linebreak" },
+      8: { cellWidth: "auto", halign: "left", overflow: "linebreak" },
     },
     margin: { left: 4, right: 4 },
   });
