@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Button,
@@ -98,6 +98,8 @@ export default function ConteosFisicos() {
   const [bodegas, setBodegas] = useState<Bodega[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [loading, setLoading] = useState(false);
+  const [guardandoConteo, setGuardandoConteo] = useState(false);
+  const guardandoConteoRef = useRef(false);
   const [filtroDesde, setFiltroDesde] = useState(today);
   const [filtroHasta, setFiltroHasta] = useState(today);
   const [filtroBodega, setFiltroBodega] = useState<number | "">("");
@@ -226,6 +228,7 @@ export default function ConteosFisicos() {
   };
 
   const guardarConteo = async () => {
+    if (guardandoConteoRef.current) return;
     if (!bodegaId) {
       Swal.fire("Validacion", "Selecciona la bodega del conteo", "warning");
       return;
@@ -244,8 +247,11 @@ export default function ConteosFisicos() {
       cancelButtonText: "Cancelar",
     });
     if (!confirmar.isConfirmed) return;
+    if (guardandoConteoRef.current) return;
 
     try {
+      guardandoConteoRef.current = true;
+      setGuardandoConteo(true);
       await api.post("/inventario/conteos", {
         bodegaId,
         responsable: usuario || null,
@@ -264,6 +270,9 @@ export default function ConteosFisicos() {
       setVista("listado");
     } catch (error: any) {
       Swal.fire("Error", error?.response?.data?.message || "No se pudo guardar el conteo", "error");
+    } finally {
+      guardandoConteoRef.current = false;
+      setGuardandoConteo(false);
     }
   };
 
@@ -431,8 +440,8 @@ export default function ConteosFisicos() {
             <Typography>
               Lineas: {detalle.length} | Diferencias: {detalle.filter((row) => row.stockFisico !== row.stockSistema).length}
             </Typography>
-            <Button variant="contained" color="success" onClick={guardarConteo}>
-              Aplicar conteo
+            <Button variant="contained" color="success" onClick={guardarConteo} disabled={guardandoConteo}>
+              {guardandoConteo ? "Aplicando..." : "Aplicar conteo"}
             </Button>
           </Stack>
         </Stack>

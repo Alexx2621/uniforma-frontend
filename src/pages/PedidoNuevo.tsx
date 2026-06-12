@@ -571,6 +571,7 @@ export default function PedidoNuevo() {
   const [bordadosModalOpen, setBordadosModalOpen] = useState(false);
   const [pedidoEditFolio, setPedidoEditFolio] = useState("");
   const [loadingPedidoEdit, setLoadingPedidoEdit] = useState(false);
+  const [guardandoPedido, setGuardandoPedido] = useState(false);
   const [documentoBorradorId, setDocumentoBorradorId] = useState<number | null>(null);
   const [borradorGuardadoEn, setBorradorGuardadoEn] = useState("");
   const [borradorEstado, setBorradorEstado] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -579,6 +580,7 @@ export default function PedidoNuevo() {
   const restaurandoBorradorRef = useRef(false);
   const autoguardadoBorradorBloqueadoRef = useRef(false);
   const ultimoBorradorJsonRef = useRef("");
+  const guardandoPedidoRef = useRef(false);
   const autorizacionPendienteRef = useRef<{
     id: number;
     clienteParaPedido: ClientePedido;
@@ -1896,51 +1898,70 @@ export default function PedidoNuevo() {
   };
 
   const guardar = async () => {
+    if (guardandoPedidoRef.current) return;
+    const liberarGuardadoPedido = () => {
+      guardandoPedidoRef.current = false;
+      setGuardandoPedido(false);
+    };
+    guardandoPedidoRef.current = true;
+    setGuardandoPedido(true);
     if (!isEditingPedido && !pedidoScheduleOpen) {
       Swal.fire(
         "Horario no habilitado",
         `La creacion de pedidos esta habilitada en este horario: ${formatReportScheduleForDay(pedidoSchedule)}.`,
         "info"
       );
+      liberarGuardadoPedido();
       return;
     }
     if (!bodegaId) {
       Swal.fire("Validacion", "Selecciona una bodega", "warning");
+      liberarGuardadoPedido();
       return;
     }
     if (!pedidoParaStock && !ubicacion) {
       Swal.fire("Validacion", "Selecciona ubicacion del pedido", "warning");
+      liberarGuardadoPedido();
       return;
     }
     if (!pedidoParaStock && postventaCobro === "sin_cobro" && !postventaSeleccionada) {
       Swal.fire("Validacion", "Selecciona el documento de cambio/devolucion para crear un pedido sin valor monetario", "warning");
+      liberarGuardadoPedido();
       return;
     }
     if (!pedidoSinValor && !metodoPermiteSinAnticipo && (Number(anticipo) || 0) <= 0) {
       Swal.fire("Validacion", "Ingresa un anticipo mayor a 0", "warning");
+      liberarGuardadoPedido();
       return;
     }
     if (!detalle.length) {
       Swal.fire("Validacion", "Agrega al menos un producto", "warning");
+      liberarGuardadoPedido();
       return;
     }
     if ((Number(anticipo) || 0) > totalsPedido.total) {
       Swal.fire("Validacion", "El anticipo no puede ser mayor al total del pedido", "warning");
+      liberarGuardadoPedido();
       return;
     }
     if (!pedidoSinValor && metodoRequiereReferencia && !referenciaPago.trim()) {
       Swal.fire("Validacion", "Ingresa la referencia o numero de transaccion del pago", "warning");
+      liberarGuardadoPedido();
       return;
     }
     if (!pedidoSinValor && metodoRequiereBanco && !bancoPago.trim()) {
       Swal.fire("Validacion", "Ingresa el banco del deposito", "warning");
+      liberarGuardadoPedido();
       return;
     }
 
     const clienteParaPedido = pedidoParaStock
       ? { id: null, nombre: "Pedido para stock", telefono: null, correo: null }
       : await resolverClientePedido();
-    if (clienteParaPedido === false) return;
+    if (clienteParaPedido === false) {
+      liberarGuardadoPedido();
+      return;
+    }
 
     const solicitadoPor = usuarioSolicitante;
 
@@ -2170,6 +2191,9 @@ export default function PedidoNuevo() {
       }
     } catch (error: any) {
       Swal.fire("Error", getApiErrorMessage(error, "No se pudo guardar"), "error");
+    } finally {
+      guardandoPedidoRef.current = false;
+      setGuardandoPedido(false);
     }
   };
 
@@ -3419,9 +3443,15 @@ export default function PedidoNuevo() {
               backgroundColor: "#232148",
             },
           }}
-          disabled={loadingPedidoEdit || (!isEditingPedido && !pedidoScheduleOpen)}
+          disabled={loadingPedidoEdit || guardandoPedido || (!isEditingPedido && !pedidoScheduleOpen)}
         >
-          {isEditingPedido ? (rol === "ADMIN" ? "Guardar cambios" : "Solicitar autorizacion") : "Guardar pedido"}
+          {guardandoPedido
+            ? "Procesando..."
+            : isEditingPedido
+              ? rol === "ADMIN"
+                ? "Guardar cambios"
+                : "Solicitar autorizacion"
+              : "Guardar pedido"}
         </Button>
       </Stack>
 

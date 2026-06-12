@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Paper,
   Typography,
@@ -160,6 +160,13 @@ const fileToBase64 = (file: File) =>
     reader.readAsDataURL(file);
   });
 
+const createIngresoRequestId = () => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+};
+
 export default function IngresoInventario() {
   const today = useMemo(() => toInputDate(new Date()), []);
   const [vista, setVista] = useState<"listado" | "nuevo">("listado");
@@ -188,6 +195,11 @@ export default function IngresoInventario() {
   const [filtroTela, setFiltroTela] = useState("");
   const [filtroTalla, setFiltroTalla] = useState("");
   const [filtroColor, setFiltroColor] = useState("");
+  const [guardandoIngreso, setGuardandoIngreso] = useState(false);
+  const [importandoIngreso, setImportandoIngreso] = useState(false);
+  const [ingresoRequestId, setIngresoRequestId] = useState(() => createIngresoRequestId());
+  const guardandoIngresoRef = useRef(false);
+  const importandoIngresoRef = useRef(false);
 
   const { usuario, rol, permisos, bodegaId: userBodegaId } = useAuthStore();
   const { fetchConfig } = useSystemConfigStore();
@@ -624,6 +636,7 @@ export default function IngresoInventario() {
   const totalItems = useMemo(() => detalle.reduce((sum, r) => sum + (Number(r.cantidad) || 0), 0), [detalle]);
 
   const guardar = async () => {
+    if (guardandoIngresoRef.current) return;
     if (!bodegaId) {
       Swal.fire("Validacion", "Selecciona una bodega", "warning");
       return;
@@ -648,6 +661,7 @@ export default function IngresoInventario() {
     }
 
     const payload = {
+      requestId: ingresoRequestId,
       bodegaId: Number(bodegaId),
       observaciones: observaciones || null,
       responsable: usuario || null,
@@ -658,21 +672,30 @@ export default function IngresoInventario() {
     };
 
     try {
+      guardandoIngresoRef.current = true;
+      setGuardandoIngreso(true);
       const resp = await api.post("/ingresos", payload);
       Swal.fire("Guardado", "Ingreso registrado", "success");
       abrirPdfIngreso(resp.data, detalle);
       setObservaciones("");
       setDetalle([]);
+      setIngresoRequestId(createIngresoRequestId());
       limpiarArticulo();
       await cargarIngresos();
       setVista("listado");
     } catch (error: any) {
       const msg = error?.response?.data?.message || error?.message || "No se pudo guardar";
       Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
+    } finally {
+      guardandoIngresoRef.current = false;
+      setGuardandoIngreso(false);
     }
   };
 
   const importarMasivo = async () => {
+    if (importandoIngresoRef.current) return;
+    importandoIngresoRef.current = true;
+    setImportandoIngreso(true);
     const bodegaOptions = bodegas
       .map((bodega) => `<option value="${bodega.id}">${bodega.nombre}</option>`)
       .join("");
@@ -707,7 +730,11 @@ export default function IngresoInventario() {
         return { bodegaId: bodega, raw, fileBase64, fileName: file?.name || "" };
       },
     });
-    if (!resp.isConfirmed || !resp.value) return;
+    if (!resp.isConfirmed || !resp.value) {
+      importandoIngresoRef.current = false;
+      setImportandoIngreso(false);
+      return;
+    }
     try {
       const previewResp = await api.post("/ingresos/importar/preview", resp.value);
       const preview = previewResp.data || {};
@@ -757,6 +784,7 @@ export default function IngresoInventario() {
       if (!confirmar.isConfirmed) return;
 
       const result = await api.post("/ingresos/importar", {
+        requestId: createIngresoRequestId(),
         bodegaId: preview.bodegaId,
         items: preview.items || [],
         responsable: usuario || null,
@@ -767,6 +795,9 @@ export default function IngresoInventario() {
       await cargarIngresos();
     } catch (error: any) {
       Swal.fire("Error", error?.response?.data?.message || "No se pudo importar el ingreso", "error");
+    } finally {
+      importandoIngresoRef.current = false;
+      setImportandoIngreso(false);
     }
   };
 
@@ -783,8 +814,8 @@ export default function IngresoInventario() {
             <Typography variant="h4">Ingresos de inventario</Typography>
           </Stack>
           <Stack direction="row" spacing={1}>
-            <Button variant="outlined" onClick={importarMasivo}>
-              Importar masivo
+            <Button variant="outlined" onClick={importarMasivo} disabled={importandoIngreso}>
+              {importandoIngreso ? "Procesando..." : "Importar masivo"}
             </Button>
             <Button
               startIcon={<AddIcon />}
@@ -793,6 +824,7 @@ export default function IngresoInventario() {
                 limpiarArticulo();
                 setDetalle([]);
                 setObservaciones("");
+                setIngresoRequestId(createIngresoRequestId());
                 setVista("nuevo");
               }}
             >
@@ -1264,8 +1296,8 @@ export default function IngresoInventario() {
 
       <Stack direction="row" justifyContent="space-between" sx={{ mt: 2 }}>
         <Typography>Total items: {totalItems}</Typography>
-        <Button variant="contained" color="success" onClick={guardar}>
-          Guardar ingreso
+        <Button variant="contained" color="success" onClick={guardar} disabled={guardandoIngreso}>
+          {guardandoIngreso ? "Guardando..." : "Guardar ingreso"}
         </Button>
       </Stack>
     </Paper>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Paper,
   Typography,
@@ -180,6 +180,8 @@ export default function Traslados() {
   const [traslados, setTraslados] = useState<TrasladoRegistro[]>([]);
   const [solicitudes, setSolicitudes] = useState<SolicitudTrasladoRegistro[]>([]);
   const [loadingTraslados, setLoadingTraslados] = useState(false);
+  const [guardandoTraslado, setGuardandoTraslado] = useState(false);
+  const guardandoTrasladoRef = useRef(false);
   const [filtroDesdeFecha, setFiltroDesdeFecha] = useState(today);
   const [filtroHastaFecha, setFiltroHastaFecha] = useState(today);
   const [filtroDesdeBodegaId, setFiltroDesdeBodegaId] = useState<number | "">("");
@@ -658,6 +660,7 @@ export default function Traslados() {
   const totalItems = useMemo(() => detalle.reduce((sum, r) => sum + (Number(r.cantidad) || 0), 0), [detalle]);
 
   const guardar = async () => {
+    if (guardandoTrasladoRef.current) return;
     if (!desdeBodegaId || !haciaBodegaId) {
       Swal.fire("Validacion", "Selecciona bodega origen y destino", "warning");
       return;
@@ -690,6 +693,8 @@ export default function Traslados() {
     };
 
     try {
+      guardandoTrasladoRef.current = true;
+      setGuardandoTraslado(true);
       const resp = await api.post("/traslados", payload);
       Swal.fire("Guardado", "Traslado registrado", "success");
       abrirPdfTraslado(resp.data, detalle);
@@ -701,6 +706,9 @@ export default function Traslados() {
     } catch (error: any) {
       const msg = error?.response?.data?.message || error?.message || "No se pudo guardar";
       Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
+    } finally {
+      guardandoTrasladoRef.current = false;
+      setGuardandoTraslado(false);
     }
   };
 
@@ -1439,8 +1447,8 @@ export default function Traslados() {
 
       <Stack direction="row" justifyContent="space-between" sx={{ mt: 2 }}>
         <Typography>Total items: {totalItems}</Typography>
-        <Button variant="contained" color="success" onClick={guardar}>
-          Guardar traslado
+        <Button variant="contained" color="success" onClick={guardar} disabled={guardandoTraslado}>
+          {guardandoTraslado ? "Guardando..." : "Guardar traslado"}
         </Button>
       </Stack>
     </Paper>

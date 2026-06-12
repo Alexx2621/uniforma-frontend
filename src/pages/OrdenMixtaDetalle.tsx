@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   Button,
@@ -32,6 +32,7 @@ export default function OrdenMixtaDetalle() {
   const navigate = useNavigate();
   const [orden, setOrden] = useState<any>(null);
   const [guardandoPago, setGuardandoPago] = useState(false);
+  const guardandoPagoRef = useRef(false);
   const [pago, setPago] = useState({
     monto: 0,
     metodo: "efectivo",
@@ -67,6 +68,7 @@ export default function OrdenMixtaDetalle() {
   const saldoPedido = Number(orden?.saldoPedido || 0);
 
   const registrarPago = async () => {
+    if (guardandoPagoRef.current) return;
     const monto = Number(saldoTotal || 0);
     if (monto <= 0) {
       Swal.fire("Validacion", "La orden mixta no tiene saldo pendiente", "warning");
@@ -92,6 +94,7 @@ export default function OrdenMixtaDetalle() {
     if (!confirmar.isConfirmed) return;
 
     try {
+      guardandoPagoRef.current = true;
       setGuardandoPago(true);
       const { data } = await api.post(`/orden-mixta/${id}/pago`, { ...pago, monto });
       setOrden(data.orden);
@@ -108,6 +111,7 @@ export default function OrdenMixtaDetalle() {
       const msg = error?.response?.data?.message || "No se pudo registrar el pago";
       Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
     } finally {
+      guardandoPagoRef.current = false;
       setGuardandoPago(false);
     }
   };

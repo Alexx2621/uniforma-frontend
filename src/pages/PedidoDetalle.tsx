@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Paper,
@@ -353,6 +353,8 @@ export default function PedidoDetalle() {
   const { fetchConfig } = useSystemConfigStore();
   const [pedido, setPedido] = useState<Pedido | null>(null);
   const [loading, setLoading] = useState(false);
+  const [accionPedidoActiva, setAccionPedidoActiva] = useState(false);
+  const accionPedidoRef = useRef(false);
   const [bodegas, setBodegas] = useState<any[]>([]);
   const [bodegaIngreso, setBodegaIngreso] = useState<number | "">("");
   const [telas, setTelas] = useState<any[]>([]);
@@ -459,6 +461,7 @@ export default function PedidoDetalle() {
   };
 
   const terminar = async () => {
+    if (accionPedidoRef.current) return;
     if (esPedidoParaStock && ingresarInventarioStock && !Number(bodegaIngreso || 0)) {
       Swal.fire("Bodega requerida", "Selecciona la bodega donde se ingresara el inventario.", "warning");
       return;
@@ -476,8 +479,11 @@ export default function PedidoDetalle() {
       cancelButtonText: "Cancelar",
     });
     if (!confirmacion.isConfirmed) return;
+    if (accionPedidoRef.current) return;
 
     try {
+      accionPedidoRef.current = true;
+      setAccionPedidoActiva(true);
       const { data } = await api.post(`/produccion/${id}/terminar`, {
         bodegaId: Number(bodegaIngreso || 0) || null,
         ingresarInventario: esPedidoParaStock && ingresarInventarioStock,
@@ -491,10 +497,14 @@ export default function PedidoDetalle() {
     } catch (error: any) {
       const msg = error?.response?.data?.message || error?.message || "No se pudo terminar";
       Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
+    } finally {
+      accionPedidoRef.current = false;
+      setAccionPedidoActiva(false);
     }
   };
 
   const regresarPorInconformidad = async () => {
+    if (accionPedidoRef.current) return;
     const result = await Swal.fire({
       title: "Regresar pedido",
       text: "Describe la inconformidad de produccion.",
@@ -508,8 +518,11 @@ export default function PedidoDetalle() {
     });
 
     if (!result.isConfirmed) return;
+    if (accionPedidoRef.current) return;
 
     try {
+      accionPedidoRef.current = true;
+      setAccionPedidoActiva(true);
       await api.post(`/produccion/${id}/regresar`, {
         motivo: `${result.value || ""}`.trim(),
       });
@@ -519,6 +532,9 @@ export default function PedidoDetalle() {
     } catch (error: any) {
       const msg = error?.response?.data?.message || error?.message || "No se pudo regresar el pedido";
       Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
+    } finally {
+      accionPedidoRef.current = false;
+      setAccionPedidoActiva(false);
     }
   };
 
@@ -926,7 +942,7 @@ export default function PedidoDetalle() {
                 color="success"
                 startIcon={<DoneAllOutlined />}
                 onClick={terminar}
-                disabled={esAnulado || esRecibido || loading}
+                disabled={esAnulado || esRecibido || loading || accionPedidoActiva}
               >
                 {esPedidoParaStock && ingresarInventarioStock ? "Recibir e ingresar inventario" : "Marcar como recibido"}
               </Button>
@@ -946,7 +962,7 @@ export default function PedidoDetalle() {
                   color="warning"
                   startIcon={<AssignmentReturnOutlined />}
                   onClick={regresarPorInconformidad}
-                  disabled={loading}
+                  disabled={loading || accionPedidoActiva}
                 >
                   Regresar por inconformidad
                 </Button>

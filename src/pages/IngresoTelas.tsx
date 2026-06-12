@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import {
   Box,
   Button,
@@ -379,6 +379,7 @@ function RevisarIngresoDialog({
   onDeleteLine,
   onSave,
   onProcess,
+  processing,
 }: {
   dialog: IngresoTelasState["dialog"];
   telas: Catalogo[];
@@ -390,6 +391,7 @@ function RevisarIngresoDialog({
   onDeleteLine: (item: IngresoTelaDetalle) => void;
   onSave: () => void;
   onProcess: () => void;
+  processing: boolean;
 }) {
   return (
     <Dialog open={dialog.open} onClose={onClose} maxWidth="xl" fullWidth>
@@ -432,8 +434,10 @@ function RevisarIngresoDialog({
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cerrar</Button>
-        <Button variant="outlined" onClick={onSave} disabled={!canManage}>Guardar cambios</Button>
-        <Button startIcon={<AddBusinessOutlined />} variant="contained" onClick={onProcess} disabled={!canManage || dialog.ingreso?.estado === "cerrado"}>Procesar ingreso</Button>
+        <Button variant="outlined" onClick={onSave} disabled={!canManage || processing}>Guardar cambios</Button>
+        <Button startIcon={<AddBusinessOutlined />} variant="contained" onClick={onProcess} disabled={!canManage || processing || dialog.ingreso?.estado === "cerrado"}>
+          {processing ? "Procesando..." : "Procesar ingreso"}
+        </Button>
       </DialogActions>
     </Dialog>
   );
@@ -453,6 +457,7 @@ function ManualIngresoDialog({
   onRemoveLine,
   onChangeLine,
   onCreate,
+  creating,
 }: {
   open: boolean;
   manualForm: ManualForm;
@@ -467,6 +472,7 @@ function ManualIngresoDialog({
   onRemoveLine: (index: number) => void;
   onChangeLine: (index: number, field: string, value: any) => void;
   onCreate: () => void;
+  creating: boolean;
 }) {
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xl" fullWidth>
@@ -529,8 +535,10 @@ function ManualIngresoDialog({
         </Stack>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Cancelar</Button>
-        <Button variant="contained" onClick={onCreate} disabled={!canManage}>Crear ingreso</Button>
+        <Button onClick={onClose} disabled={creating}>Cancelar</Button>
+        <Button variant="contained" onClick={onCreate} disabled={!canManage || creating}>
+          {creating ? "Creando..." : "Crear ingreso"}
+        </Button>
       </DialogActions>
     </Dialog>
   );
@@ -540,8 +548,12 @@ export default function IngresoTelas() {
   const { rol, permisos } = useAuthStore();
   const canManage = hasPermission(rol, permisos, "inventario.telas.manage");
   const [state, dispatch] = useReducer(ingresoTelasReducer, initialIngresoTelasState);
+  const [creandoManual, setCreandoManual] = useState(false);
+  const [procesandoIngreso, setProcesandoIngreso] = useState(false);
   const { rows, telas, bodegas, colores, proveedores, loading, filtros, paginationModel, rowCount, dialog, manualOpen, manualForm } = state;
   const colorAliasesRef = useRef<ColorAlias[]>([]);
+  const creandoManualRef = useRef(false);
+  const procesandoIngresoRef = useRef(false);
 
   const normalize = (value: any) =>
     `${value ?? ""}`.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ");
@@ -675,7 +687,10 @@ export default function IngresoTelas() {
   };
 
   const crearManual = async () => {
+    if (creandoManualRef.current) return;
     try {
+      creandoManualRef.current = true;
+      setCreandoManual(true);
       const { data } = await api.post("/inventario-telas/ingresos", manualForm);
       dispatch({ type: "manualOpenChanged", value: false });
       dispatch({ type: "manualFormChanged", value: createInitialManualForm() });
@@ -684,6 +699,9 @@ export default function IngresoTelas() {
       Swal.fire("Listo", "Ingreso manual creado", "success");
     } catch (error: any) {
       Swal.fire("Error", error?.response?.data?.message || "No se pudo crear el ingreso", "error");
+    } finally {
+      creandoManualRef.current = false;
+      setCreandoManual(false);
     }
   };
 
@@ -703,6 +721,7 @@ export default function IngresoTelas() {
       cancelButtonText: "Cancelar",
     });
     if (!result.isConfirmed) return;
+    if (procesandoIngresoRef.current) return;
     try {
       const { data } = await api.delete(`/inventario-telas/ingresos/${dialog.ingreso.id}/detalle/${item.id}`);
       dispatch({ type: "dialogChanged", value: { open: true, ingreso: data, detalle: data.detalle || [] } });
@@ -746,6 +765,7 @@ export default function IngresoTelas() {
   };
 
   const procesar = async () => {
+    if (procesandoIngresoRef.current) return;
     if (!dialog.ingreso) return;
     const incompletas = dialog.detalle.filter((item) => !item.rolloId && (!item.telaId || !item.bodegaId || Number(item.cantidad || 0) <= 0));
     if (incompletas.length) {
@@ -762,6 +782,8 @@ export default function IngresoTelas() {
     });
     if (!result.isConfirmed) return;
     try {
+      procesandoIngresoRef.current = true;
+      setProcesandoIngreso(true);
       await guardarTodo();
       await api.post(`/inventario-telas/ingresos/${dialog.ingreso.id}/procesar`);
       dispatch({ type: "dialogChanged", value: { open: false, ingreso: null, detalle: [] } });
@@ -769,6 +791,9 @@ export default function IngresoTelas() {
       Swal.fire("Listo", "Ingreso procesado y rollos creados", "success");
     } catch (error: any) {
       Swal.fire("Error", error?.response?.data?.message || "No se pudo procesar el ingreso", "error");
+    } finally {
+      procesandoIngresoRef.current = false;
+      setProcesandoIngreso(false);
     }
   };
 
@@ -803,6 +828,7 @@ export default function IngresoTelas() {
         onDeleteLine={(item) => void eliminarLinea(item)}
         onSave={() => void guardarTodo()}
         onProcess={() => void procesar()}
+        processing={procesandoIngreso}
       />
       <ManualIngresoDialog
         open={manualOpen}
@@ -818,6 +844,7 @@ export default function IngresoTelas() {
         onRemoveLine={(index) => dispatch({ type: "manualLineRemoved", index })}
         onChangeLine={setManualLineValue}
         onCreate={() => void crearManual()}
+        creating={creandoManual}
       />
     </Box>
   );

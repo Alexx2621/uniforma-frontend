@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Box,
@@ -346,6 +346,7 @@ export default function StockBajo() {
   const [cantidades, setCantidades] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
   const [creandoPedido, setCreandoPedido] = useState(false);
+  const creandoPedidoRef = useRef(false);
 
   const cargar = async () => {
     try {
@@ -555,6 +556,7 @@ export default function StockBajo() {
   const limpiarSeleccion = () => setSeleccionados(new Set());
 
   const crearPedidoStock = async () => {
+    if (creandoPedidoRef.current) return;
     if (!stats.selectedRows.length) {
       Swal.fire("Selecciona articulos", "Marca al menos una linea para crear el pedido para stock.", "info");
       return;
@@ -591,8 +593,10 @@ export default function StockBajo() {
       confirmButtonColor: "#1f3f87",
     });
     if (!confirm.isConfirmed) return;
+    if (creandoPedidoRef.current) return;
 
     try {
+      creandoPedidoRef.current = true;
       setCreandoPedido(true);
 
       const resultados = await Promise.all(Array.from(grupos.entries()).map(async ([, rows]) => {
@@ -656,6 +660,7 @@ export default function StockBajo() {
       const msg = error?.response?.data?.message || error?.message || "No se pudo crear el pedido para stock";
       Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
     } finally {
+      creandoPedidoRef.current = false;
       setCreandoPedido(false);
     }
   };
@@ -680,7 +685,7 @@ export default function StockBajo() {
             PDF
           </Button>
           <Button startIcon={<AddShoppingCartOutlined />} variant="contained" onClick={crearPedidoStock} disabled={!stats.selectedRows.length || creandoPedido}>
-            Crear pedido stock
+            {creandoPedido ? "Creando..." : "Crear pedido stock"}
           </Button>
         </Stack>
       </Stack>

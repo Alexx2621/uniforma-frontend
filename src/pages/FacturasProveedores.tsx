@@ -1,4 +1,4 @@
-import { ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
   Button,
@@ -214,6 +214,9 @@ export default function FacturasProveedores() {
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [guardandoFactura, setGuardandoFactura] = useState(false);
+  const uploadingRef = useRef(false);
+  const guardandoFacturaRef = useRef(false);
   const [archivo, setArchivo] = useState<File | null>(null);
   const [filtros, setFiltros] = useState({ q: "", estado: "", proveedorId: "", desde: "", hasta: "" });
   const [paginationModel, setPaginationModel] = useState({ page: 0, pageSize: 25 });
@@ -322,7 +325,10 @@ export default function FacturasProveedores() {
 
   const guardar = async () => {
     if (!canManage) return;
+    if (guardandoFacturaRef.current) return;
     try {
+      guardandoFacturaRef.current = true;
+      setGuardandoFactura(true);
       const payload = {
         ...dialog.form,
         proveedorId: dialog.form.proveedorId ? Number(dialog.form.proveedorId) : null,
@@ -346,10 +352,14 @@ export default function FacturasProveedores() {
       Swal.fire("Listo", "Factura guardada correctamente", "success");
     } catch (error: any) {
       Swal.fire("Error", error?.response?.data?.message || "No se pudo guardar la factura", "error");
+    } finally {
+      guardandoFacturaRef.current = false;
+      setGuardandoFactura(false);
     }
   };
 
   const cargarPdf = async () => {
+    if (uploadingRef.current) return;
     if (!archivo) {
       Swal.fire("Validacion", "Selecciona una factura PDF", "info");
       return;
@@ -357,6 +367,7 @@ export default function FacturasProveedores() {
     const form = new FormData();
     form.append("archivo", archivo);
     if (uploadProveedorId) form.append("proveedorId", uploadProveedorId);
+    uploadingRef.current = true;
     setUploading(true);
     try {
       await api.post("/facturas-proveedores/cargar-pdf", form);
@@ -395,6 +406,7 @@ export default function FacturasProveedores() {
         Swal.fire("Error", apiError.message || "No se pudo cargar el PDF", "error");
       }
     } finally {
+      uploadingRef.current = false;
       setUploading(false);
     }
   };
@@ -554,7 +566,9 @@ export default function FacturasProveedores() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setUploadDialog(false)}>Cancelar</Button>
-          <Button variant="contained" onClick={() => void cargarPdf()} disabled={uploading || !archivo}>Cargar y leer</Button>
+          <Button variant="contained" onClick={() => void cargarPdf()} disabled={uploading || !archivo}>
+            {uploading ? "Leyendo..." : "Cargar y leer"}
+          </Button>
         </DialogActions>
       </Dialog>
 
@@ -674,7 +688,9 @@ export default function FacturasProveedores() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDialog((p) => ({ ...p, open: false }))}>Cancelar</Button>
-          <Button variant="contained" onClick={() => void guardar()} disabled={!canManage}>Guardar</Button>
+          <Button variant="contained" onClick={() => void guardar()} disabled={!canManage || guardandoFactura}>
+            {guardandoFactura ? "Guardando..." : "Guardar"}
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

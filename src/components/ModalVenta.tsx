@@ -15,7 +15,7 @@ import {
   TableRow,
   Paper,
 } from "@mui/material";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { formatCurrency } from "../utils/currency";
@@ -38,6 +38,8 @@ export default function ModalVenta({ open, onClose, onSaved }: Props) {
   });
 
   const [busqueda, setBusqueda] = useState("");
+  const [guardando, setGuardando] = useState(false);
+  const guardandoRef = useRef(false);
 
   useEffect(() => {
     cargarClientes();
@@ -103,7 +105,10 @@ export default function ModalVenta({ open, onClose, onSaved }: Props) {
   const total = detalle.reduce((acc, r) => acc + r.subtotal, 0);
 
   const guardarVenta = async () => {
+    if (guardandoRef.current) return;
     try {
+      guardandoRef.current = true;
+      setGuardando(true);
       await api.post("/ventas", {
         clienteId: Number(form.clienteId),
         metodoPago: form.metodoPago,
@@ -120,6 +125,9 @@ export default function ModalVenta({ open, onClose, onSaved }: Props) {
       onClose();
     } catch (e) {
       Swal.fire("Error", "No se pudo guardar", "error");
+    } finally {
+      guardandoRef.current = false;
+      setGuardando(false);
     }
   };
 
@@ -247,9 +255,9 @@ export default function ModalVenta({ open, onClose, onSaved }: Props) {
       </DialogContent>
 
       <DialogActions>
-        <Button onClick={onClose}>Cancelar</Button>
-        <Button onClick={guardarVenta} variant="contained">
-          Guardar
+        <Button onClick={onClose} disabled={guardando}>Cancelar</Button>
+        <Button onClick={guardarVenta} variant="contained" disabled={guardando}>
+          {guardando ? "Guardando..." : "Guardar"}
         </Button>
       </DialogActions>
     </Dialog>

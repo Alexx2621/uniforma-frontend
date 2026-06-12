@@ -153,6 +153,7 @@ export default function OrdenMixtaNueva() {
   const restaurandoBorradorRef = useRef(false);
   const autoguardadoBorradorBloqueadoRef = useRef(false);
   const ultimoBorradorJsonRef = useRef("");
+  const savingRef = useRef(false);
 
   useEffect(() => {
     const cargar = async () => {
@@ -653,7 +654,7 @@ export default function OrdenMixtaNueva() {
   };
 
   const guardar = async () => {
-    if (saving) return;
+    if (savingRef.current) return;
     if (!lineas.length) {
       void Swal.fire("Sin detalle", "Agrega al menos una linea a la orden mixta.", "warning");
       return;
@@ -684,7 +685,9 @@ export default function OrdenMixtaNueva() {
       cancelButtonText: "Cancelar",
     });
     if (!confirm.isConfirmed) return;
+    if (savingRef.current) return;
 
+    savingRef.current = true;
     setSaving(true);
     try {
       const { data } = await api.post("/orden-mixta", {
@@ -716,6 +719,7 @@ export default function OrdenMixtaNueva() {
     } catch (error: any) {
       await Swal.fire("Error", error?.response?.data?.message || "No se pudo generar la orden mixta", "error");
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };

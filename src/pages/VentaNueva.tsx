@@ -370,6 +370,7 @@ export default function VentaNueva() {
   const restaurandoBorradorRef = useRef(false);
   const autoguardadoBorradorBloqueadoRef = useRef(false);
   const ultimoBorradorJsonRef = useRef("");
+  const savingRef = useRef(false);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -1427,39 +1428,55 @@ export default function VentaNueva() {
   };
 
   const guardar = async () => {
-    if (saving) return;
+    if (savingRef.current) return;
+    const liberarGuardadoVenta = () => {
+      savingRef.current = false;
+      setSaving(false);
+    };
+    savingRef.current = true;
+    setSaving(true);
     if (!bodegaId) {
       Swal.fire("Validacion", "Selecciona una bodega", "warning");
+      liberarGuardadoVenta();
       return;
     }
     if (documentBodegaLocked && Number(bodegaId) !== parsedUserBodegaId) {
       Swal.fire("Validacion", "La bodega de la venta debe ser tu bodega asignada", "warning");
       setBodegaId(parsedUserBodegaId);
+      liberarGuardadoVenta();
       return;
     }
     if (!metodoPago) {
       Swal.fire("Validacion", "Selecciona metodo de pago", "warning");
+      liberarGuardadoVenta();
       return;
     }
     if (!ubicacion) {
       Swal.fire("Validacion", "Selecciona ubicacion de la venta", "warning");
+      liberarGuardadoVenta();
       return;
     }
     if (!detalle.length) {
       Swal.fire("Validacion", "Agrega al menos un producto", "warning");
+      liberarGuardadoVenta();
       return;
     }
     if (metodoRequiereReferencia && !`${referenciaPago}`.trim()) {
       Swal.fire("Validacion", "Ingresa la referencia o numero de transaccion", "warning");
+      liberarGuardadoVenta();
       return;
     }
     if (metodoRequiereBanco && !bancoPago.trim()) {
       Swal.fire("Validacion", "Ingresa el banco del deposito", "warning");
+      liberarGuardadoVenta();
       return;
     }
 
     const clienteParaVenta = await resolverClienteVenta();
-    if (clienteParaVenta === false) return;
+    if (clienteParaVenta === false) {
+      liberarGuardadoVenta();
+      return;
+    }
 
     const payload = {
       clienteId: clienteParaVenta.id && Number(clienteParaVenta.id) > 0 ? Number(clienteParaVenta.id) : null,
@@ -1502,7 +1519,6 @@ export default function VentaNueva() {
         })),
       };
 
-    setSaving(true);
     try {
       const resp = await api.post("/ventas", payload);
       autoguardadoBorradorBloqueadoRef.current = true;
@@ -1518,7 +1534,7 @@ export default function VentaNueva() {
       const msg = error?.response?.data?.message || error?.message || "No se pudo guardar";
       Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
     } finally {
-      setSaving(false);
+      liberarGuardadoVenta();
     }
   };
 

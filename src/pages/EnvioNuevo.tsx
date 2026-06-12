@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import {
   Alert,
@@ -83,6 +83,7 @@ export default function EnvioNuevo() {
   const [opciones, setOpciones] = useState<DocumentoRelacionable[]>([]);
   const [documentos, setDocumentos] = useState<DocumentoRelacionable[]>([]);
   const [loading, setLoading] = useState(false);
+  const loadingRef = useRef(false);
 
   const [fecha, setFecha] = useState(today);
   const [selectedBodegaId, setSelectedBodegaId] = useState<number | "">(() => Number(bodegaId || 0) || "");
@@ -141,32 +142,45 @@ export default function EnvioNuevo() {
   };
 
   const guardar = async () => {
+    if (loadingRef.current) return;
+    const liberarGuardado = () => {
+      loadingRef.current = false;
+      setLoading(false);
+    };
+    loadingRef.current = true;
+    setLoading(true);
     if (clienteSeleccionado && !direccion.trim()) {
       Swal.fire(
         "Cliente sin direccion",
         "El cliente seleccionado no tiene direccion registrada. Actualiza el cliente o limpia la seleccion para ingresar datos manuales.",
         "info",
       );
+      liberarGuardado();
       return;
     }
     if (!destinatarioNombre.trim()) {
       Swal.fire("Validacion", "Ingresa el destinatario", "info");
+      liberarGuardado();
       return;
     }
     if (!direccion.trim()) {
       Swal.fire("Validacion", "Ingresa la direccion de entrega", "info");
+      liberarGuardado();
       return;
     }
     if (!documentos.length) {
       Swal.fire("Validacion", "Relaciona al menos una venta, pedido o pago", "info");
+      liberarGuardado();
       return;
     }
     if (requiereReferencia && !referenciaPagoEnvio.trim()) {
       Swal.fire("Validacion", "Ingresa la referencia del pago del envio", "info");
+      liberarGuardado();
       return;
     }
     if (requiereBanco && !bancoPagoEnvio.trim()) {
       Swal.fire("Validacion", "Ingresa el banco del deposito", "info");
+      liberarGuardado();
       return;
     }
 
@@ -185,10 +199,12 @@ export default function EnvioNuevo() {
       confirmButtonText: "Si, crear envio",
       cancelButtonText: "Revisar",
     });
-    if (!confirm.isConfirmed) return;
+    if (!confirm.isConfirmed) {
+      liberarGuardado();
+      return;
+    }
 
     try {
-      setLoading(true);
       const resp = await api.post("/envios", {
         fecha,
         clienteId: clienteSeleccionado?.id || null,
@@ -213,7 +229,7 @@ export default function EnvioNuevo() {
     } catch (error: any) {
       Swal.fire("Error", error?.response?.data?.message || "No se pudo crear el envio", "error");
     } finally {
-      setLoading(false);
+      liberarGuardado();
     }
   };
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
   Button,
@@ -114,6 +114,8 @@ export default function PagosPedidos() {
   const [filtroHasta, setFiltroHasta] = useState("");
   const [selectedVendedor, setSelectedVendedor] = useState("all");
   const [loading, setLoading] = useState(false);
+  const [pagandoPedidoId, setPagandoPedidoId] = useState<number | null>(null);
+  const pagandoPedidoRef = useRef<number | null>(null);
   const [extrasPedido, setExtrasPedido] = useState<PedidoPago | null>(null);
 
   const cargar = async () => {
@@ -259,6 +261,7 @@ export default function PagosPedidos() {
   };
 
   const pagar = async (pedido: PedidoPago) => {
+    if (pagandoPedidoRef.current !== null) return;
     const form = getForm(pedido);
     const monto = Number(form.monto || 0);
     const porcRecargo = metodoUsaRecargo(form.metodo) ? Number(form.porcentajeRecargo || 0) : 0;
@@ -308,8 +311,11 @@ export default function PagosPedidos() {
       cancelButtonText: "Revisar datos",
     });
     if (!confirm.isConfirmed) return;
+    if (pagandoPedidoRef.current !== null) return;
 
     try {
+      pagandoPedidoRef.current = pedido.id;
+      setPagandoPedidoId(pedido.id);
       await api.post(`/produccion/${pedido.id}/pago`, {
         monto,
         metodo: form.metodo,
@@ -329,6 +335,9 @@ export default function PagosPedidos() {
     } catch (error: any) {
       const msg = error?.response?.data?.message || error?.message || "No se pudo registrar pago";
       Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
+    } finally {
+      pagandoPedidoRef.current = null;
+      setPagandoPedidoId(null);
     }
   };
 
@@ -498,8 +507,13 @@ export default function PagosPedidos() {
                     >
                       {hasExtraData(form) ? "Datos adicionales agregados" : "Datos adicionales"}
                     </Button>
-                    <Button variant="contained" startIcon={<PaidOutlined />} onClick={() => pagar(pedido)}>
-                      Registrar pago
+                    <Button
+                      variant="contained"
+                      startIcon={<PaidOutlined />}
+                      onClick={() => pagar(pedido)}
+                      disabled={pagandoPedidoId === pedido.id}
+                    >
+                      {pagandoPedidoId === pedido.id ? "Registrando..." : "Registrar pago"}
                     </Button>
                   </Stack>
                 </CardContent>
