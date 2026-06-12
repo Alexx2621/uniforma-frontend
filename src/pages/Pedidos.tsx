@@ -269,6 +269,7 @@ export default function Pedidos() {
   const [generandoDetallePedidos, setGenerandoDetallePedidos] = useState(false);
   const [loadingPedidos, setLoadingPedidos] = useState(false);
   const pedidosRequestSeqRef = useRef(0);
+  const loadingPedidosSeqRef = useRef(0);
   const cargarPedidosRef = useRef<((silent?: boolean) => Promise<void>) | null>(null);
   const pedidosSocketRef = useRef<Socket | null>(null);
   const skipInitialPaginationResetRef = useRef(Boolean(restoredPedidosState));
@@ -470,7 +471,10 @@ export default function Pedidos() {
   const cargar = useCallback(async (silent = false) => {
     const requestSeq = pedidosRequestSeqRef.current + 1;
     pedidosRequestSeqRef.current = requestSeq;
-    if (!silent) setLoadingPedidos(true);
+    if (!silent) {
+      loadingPedidosSeqRef.current = requestSeq;
+      setLoadingPedidos(true);
+    }
 
     try {
       const [resp, respClientes, respBodegas, respProductos, respTelas, respTallas, respColores] = await Promise.all([
@@ -566,7 +570,7 @@ export default function Pedidos() {
         Swal.fire("Error", "No se pudieron cargar pedidos", "error");
       }
     } finally {
-      if (requestSeq === pedidosRequestSeqRef.current && !silent) setLoadingPedidos(false);
+      if (!silent && requestSeq === loadingPedidosSeqRef.current) setLoadingPedidos(false);
     }
   }, [paginationModel.page, paginationModel.pageSize, filterCliente, filterFechaInicio, filterFechaFin, filterBodega, filterTipoPedido]);
 
