@@ -59,15 +59,40 @@ const sanitizeFilename = (value: string) =>
 
 const normalizeGroupedValue = (value: string) => `${value || ""}`.replace(/,\s*(?=\d+\.\s)/g, "\n");
 
-const normalizeArticulo = (articulo: ProduccionArticuloUnificadoPdf): ProduccionArticuloUnificadoPdf => ({
-  ...articulo,
-  tela: normalizeGroupedValue(articulo.tela),
-  talla: normalizeGroupedValue(articulo.talla),
-  color: normalizeGroupedValue(articulo.color),
-  genero: normalizeGroupedValue(articulo.genero),
-  descripcion: normalizeGroupedValue(articulo.descripcion),
-  cantidad: Number(articulo.cantidad || 0),
-});
+const normalizeArticulo = (articulo: ProduccionArticuloUnificadoPdf & { fuentes?: Array<{ solicitadoPor?: string | null }> }): ProduccionArticuloUnificadoPdf => {
+  const usuariosFuentes = Array.from(
+    new Set(
+      (articulo.fuentes || [])
+        .map((fuente) => `${fuente?.solicitadoPor || ""}`.trim())
+        .filter(Boolean),
+    ),
+  );
+  return {
+    ...articulo,
+    usuario: `${articulo.usuario || ""}`.trim() || usuariosFuentes.join(", "),
+    tela: normalizeGroupedValue(articulo.tela),
+    talla: normalizeGroupedValue(articulo.talla),
+    color: normalizeGroupedValue(articulo.color),
+    genero: normalizeGroupedValue(articulo.genero),
+    descripcion: normalizeGroupedValue(articulo.descripcion),
+    cantidad: Number(articulo.cantidad || 0),
+  };
+};
+
+const compareText = (a?: string | null, b?: string | null) =>
+  `${a || ""}`.localeCompare(`${b || ""}`, "es", { numeric: true, sensitivity: "base" });
+
+const ordenarPorPrenda = (a: ProduccionArticuloUnificadoPdf, b: ProduccionArticuloUnificadoPdf) => {
+  const porPrenda = compareText(a.tipo, b.tipo);
+  if (porPrenda !== 0) return porPrenda;
+  const porTela = compareText(a.tela, b.tela);
+  if (porTela !== 0) return porTela;
+  const porColor = compareText(a.color, b.color);
+  if (porColor !== 0) return porColor;
+  const porTalla = compareText(a.talla, b.talla);
+  if (porTalla !== 0) return porTalla;
+  return compareText(a.usuario, b.usuario);
+};
 
 export default function ProduccionUnificados() {
   const [rows, setRows] = useState<ProduccionUnificadoRow[]>([]);
@@ -104,7 +129,9 @@ export default function ProduccionUnificados() {
 
   const reimprimir = async (row: ProduccionUnificadoRow) => {
     const articulosGuardados = row.resumen?.articulos;
-    const articulos = Array.isArray(articulosGuardados) ? articulosGuardados.map(normalizeArticulo) : [];
+    const articulos = Array.isArray(articulosGuardados)
+      ? articulosGuardados.map(normalizeArticulo).sort(ordenarPorPrenda)
+      : [];
     if (!articulos.length) {
       Swal.fire("Aviso", "Este reporte no tiene articulos guardados para reimprimir.", "info");
       return;

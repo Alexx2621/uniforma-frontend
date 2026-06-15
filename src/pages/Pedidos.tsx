@@ -204,6 +204,7 @@ const buildResumenUnificacion = (
     .sort((a, b) => a.id - b.id),
   articulos: [...articulos].map((articulo) => ({
     key: articulo.key,
+    usuario: articulo.usuario,
     codigo: articulo.codigo,
     nombre: articulo.nombre,
     tipo: articulo.tipo,
