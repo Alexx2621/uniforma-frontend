@@ -787,13 +787,6 @@ export default function Pedidos() {
 
     try {
       const articulos: ArticuloUnificado[] = [...pedidosUnificables]
-        .sort((a, b) => {
-          const porUsuario = compareText(obtenerUsuarioPedido(a), obtenerUsuarioPedido(b));
-          if (porUsuario !== 0) return porUsuario;
-          const porFecha = toDateOnly(a.fecha).localeCompare(toDateOnly(b.fecha));
-          if (porFecha !== 0) return porFecha;
-          return Number(a.id || 0) - Number(b.id || 0);
-        })
         .flatMap((pedido) =>
           (pedido.detalle || []).map((detalle, index) => {
             const producto = detalle.producto || productosMap.get(Number(detalle.productoId));
@@ -824,7 +817,20 @@ export default function Pedidos() {
             };
           }),
         )
-        .filter((articulo) => Number(articulo.cantidad || 0) > 0);
+        .filter((articulo) => Number(articulo.cantidad || 0) > 0)
+        .sort((a, b) => {
+          const porPrenda = compareText(a.tipo, b.tipo);
+          if (porPrenda !== 0) return porPrenda;
+          const porTela = compareText(a.tela, b.tela);
+          if (porTela !== 0) return porTela;
+          const porColor = compareText(a.color, b.color);
+          if (porColor !== 0) return porColor;
+          const porTalla = compareText(a.talla, b.talla);
+          if (porTalla !== 0) return porTalla;
+          const porGenero = compareText(a.genero, b.genero);
+          if (porGenero !== 0) return porGenero;
+          return compareText(a.usuario, b.usuario);
+        });
 
       if (!articulos.length) {
         Swal.fire("Sin detalle", "Los pedidos nuevos sin unificar no tienen lineas de detalle para imprimir.", "info");
@@ -904,8 +910,13 @@ export default function Pedidos() {
       .flatMap((pedido) =>
         (pedido.detalle || []).map((detalle) => {
           const producto = detalle.producto || productosMap.get(Number(detalle.productoId));
+          const unificado =
+            pedido.unificadoCorrelativo ||
+            pedido.unificaciones?.find((item) => item?.produccionUnificado?.correlativo)?.produccionUnificado?.correlativo ||
+            "";
           return {
             orden: pedido.displayFolio || pedido.folio || `P-${pedido.id}`,
+            unificado,
             usuario: normalizarTexto(obtenerUsuarioPedido(pedido)),
             codigo: normalizarTexto(producto?.codigo),
             nombre: normalizarTexto(producto?.nombre),
