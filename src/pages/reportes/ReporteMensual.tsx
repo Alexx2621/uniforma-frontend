@@ -84,6 +84,20 @@ const money = (value: number) =>
 
 const percent = (value: number) => `${Number(value || 0).toFixed(2)}%`;
 
+const formatGeneratedAt = () =>
+  new Intl.DateTimeFormat("es-GT", {
+    timeZone: "America/Guatemala",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  })
+    .format(new Date())
+    .replace(",", "");
+
 const getApiErrorMessage = async (error: any, fallback: string) => {
   const data = error?.response?.data;
   if (data instanceof Blob) {
@@ -135,7 +149,10 @@ const getUsuarioFilterId = (value: number | string | null) => {
 
 const getTiendaRowTotal = (row: any) =>
   Number(row?.total || 0) ||
-  Number(row?.transferencia || 0) + Number(row?.tarjeta || 0) + Number(row?.efectivo || 0);
+  Number(row?.transferencia || 0) +
+    Number(row?.deposito || 0) +
+    Number(row?.tarjeta || 0) +
+    Number(row?.efectivo || 0);
 
 const metodoCuentaComoTarjeta = (metodo?: string | null) => {
   const normalized = `${metodo || ""}`.trim().toLowerCase();
@@ -162,7 +179,11 @@ const getReporteDiarioTotal = (data: any) => {
       total,
     };
   });
-  const tiendaRows = [...ventasSnapshotRows, ...asArray(data?.tiendaManualRows)];
+  const tiendaAutoRows = asArray(data?.tiendaAutoRows);
+  const tiendaRows = [
+    ...(tiendaAutoRows.length ? tiendaAutoRows : ventasSnapshotRows),
+    ...asArray(data?.tiendaManualRows),
+  ];
   const tienda = tiendaRows.reduce((sum, row) => sum + getTiendaRowTotal(row), 0);
   return capital + departamento + tienda;
 };
@@ -362,7 +383,7 @@ const buildReporteMensualHtml = ({
         </table>
 
         <div class="footer-note">
-          Generado desde Uniforma el ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}.
+          Generado desde Uniforma el ${formatGeneratedAt()}.
         </div>
       </div>
       <script>window.onload = function(){ window.print(); window.onafterprint = function(){ window.close(); } }</script>

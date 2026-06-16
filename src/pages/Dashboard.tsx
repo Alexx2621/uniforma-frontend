@@ -230,7 +230,10 @@ const metodoCuentaComoTarjeta = (metodo?: string | null) => {
 
 const getTiendaRowTotal = (row: any) =>
   Number(row?.total || 0) ||
-  Number(row?.transferencia || 0) + Number(row?.tarjeta || 0) + Number(row?.efectivo || 0);
+  Number(row?.transferencia || 0) +
+    Number(row?.deposito || 0) +
+    Number(row?.tarjeta || 0) +
+    Number(row?.efectivo || 0);
 
 const getReporteDiarioTotal = (data: any) => {
   const capital = asArray(data?.capitalRows).reduce(
@@ -252,7 +255,11 @@ const getReporteDiarioTotal = (data: any) => {
       total,
     };
   });
-  const tiendaRows = [...ventasSnapshotRows, ...asArray(data?.tiendaManualRows)];
+  const tiendaAutoRows = asArray(data?.tiendaAutoRows);
+  const tiendaRows = [
+    ...(tiendaAutoRows.length ? tiendaAutoRows : ventasSnapshotRows),
+    ...asArray(data?.tiendaManualRows),
+  ];
   const tienda = tiendaRows.reduce((sum, row) => sum + getTiendaRowTotal(row), 0);
   return capital + departamento + tienda;
 };
