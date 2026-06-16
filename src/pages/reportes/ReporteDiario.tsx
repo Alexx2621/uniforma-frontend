@@ -63,6 +63,7 @@ interface DocumentoGenerado {
   data: any;
   creadoEn: string;
   actualizadoEn: string;
+  usuarioId?: number | string | null;
   usuario?: { nombre?: string | null; usuario?: string | null; bodegaId?: number | string | null };
 }
 
@@ -572,6 +573,52 @@ const createTiendaRow = (fecha: string): TiendaRow => ({
   observaciones: "",
 });
 
+const nextReporteRowId = (index: number) => Date.now() + index + Math.floor(Math.random() * 100000);
+
+const hydrateCapitalRows = (rows: any[], fecha: string): CapitalRow[] =>
+  rows.map((row, index) => ({
+    id: Number(row?.id || 0) || nextReporteRowId(index),
+    fecha: `${row?.fecha || fecha}`.slice(0, 10),
+    envio: `${row?.envio || ""}`,
+    transferencia: Number(row?.transferencia || 0),
+    autorizacion: `${row?.autorizacion || ""}`,
+    deposito: Number(row?.deposito || 0),
+    boleta: `${row?.boleta || ""}`,
+    banco: `${row?.banco || ""}`,
+    efectivo: Number(row?.efectivo || 0),
+    observaciones: `${row?.observaciones || ""}`,
+  }));
+
+const hydrateDepartamentoRows = (rows: any[], fecha: string): DepartamentoRow[] =>
+  rows.map((row, index) => ({
+    id: Number(row?.id || 0) || nextReporteRowId(index),
+    fecha: `${row?.fecha || fecha}`.slice(0, 10),
+    envio: `${row?.envio || ""}`,
+    transferencia: Number(row?.transferencia || 0),
+    autorizacion: `${row?.autorizacion || ""}`,
+    deposito: Number(row?.deposito || 0),
+    boleta: `${row?.boleta || ""}`,
+    banco: `${row?.banco || ""}`,
+    observaciones: `${row?.observaciones || ""}`,
+  }));
+
+const hydrateTiendaRows = (rows: any[], fecha: string): TiendaRow[] =>
+  rows.map((row, index) => ({
+    id: Number(row?.id || 0) || nextReporteRowId(index),
+    fecha: `${row?.fecha || fecha}`.slice(0, 10),
+    recibo: `${row?.recibo || ""}`,
+    transferencia: Number(row?.transferencia || 0),
+    autorizacionTransferencia: `${row?.autorizacionTransferencia || ""}`,
+    deposito: Number(row?.deposito || 0),
+    boleta: `${row?.boleta || ""}`,
+    banco: `${row?.banco || ""}`,
+    tarjeta: Number(row?.tarjeta || 0),
+    autorizacionTarjeta: `${row?.autorizacionTarjeta || ""}`,
+    efectivo: Number(row?.efectivo || 0),
+    total: Number(row?.total || 0),
+    observaciones: `${row?.observaciones || ""}`,
+  }));
+
 const getTiendaRowTotal = (row: TiendaRow) =>
   Number(row.total || 0) ||
   Number(row.transferencia || 0) + Number(row.deposito || 0) + Number(row.tarjeta || 0) + Number(row.efectivo || 0);
@@ -885,6 +932,39 @@ export default function ReporteDiario() {
     setShowForm(true);
   };
 
+  const editarCierreDiario = (doc: DocumentoGenerado) => {
+    const data = doc.data || {};
+    const docFecha = `${data.fecha || String(doc.creadoEn || "").slice(0, 10) || today}`.slice(0, 10);
+    const targetUsuarioId = Number(doc.usuarioId || data.usuarioId || 0) || "";
+    const capitalGuardado = Array.isArray(data.capitalRows) ? data.capitalRows : [];
+    const departamentoGuardado = Array.isArray(data.departamentoRows) ? data.departamentoRows : [];
+    const tiendaGuardado = [
+      ...(Array.isArray(data.tiendaAutoRows) ? data.tiendaAutoRows : []),
+      ...(Array.isArray(data.tiendaManualRows) ? data.tiendaManualRows : []),
+    ];
+
+    setDocumentoId(doc.id);
+    setLiquidacionNo(doc.correlativo || "Pendiente");
+    setFecha(docFecha);
+    setReporteUsuarioId(targetUsuarioId);
+    setOmitirCorreoReporte(Boolean(data.omitirCorreoReporte));
+    setVentas([]);
+    setPedidos([]);
+    setOrdenesMixtas([]);
+    setCapitalRows(hydrateCapitalRows(capitalGuardado, docFecha).filter(hasCapitalRowData));
+    setDepartamentoRows(hydrateDepartamentoRows(departamentoGuardado, docFecha).filter(hasDepartamentoRowData));
+    setTiendaManualRows(hydrateTiendaRows(tiendaGuardado, docFecha).filter(hasTiendaRowData));
+    setCapitalAutoEnvios({});
+    setDepartamentoAutoEnvios({});
+    setCapitalAutoObservaciones({});
+    setDepartamentoAutoObservaciones({});
+    setTiendaAutoObservaciones({});
+    setCapitalAutoEditId(null);
+    setDepartamentoAutoEditId(null);
+    setTiendaAutoEditId(null);
+    setShowForm(true);
+  };
+
   const ordenesMixtasDelDia = useMemo(
     () =>
       ordenesMixtas.filter((orden) => {
@@ -1115,6 +1195,8 @@ export default function ReporteDiario() {
     usuarioId: canGenerateForOtherUser && reporteUsuarioId ? Number(reporteUsuarioId) : userId,
     usuarioNombre: getGeneradoPor(),
     omitirCorreoReporte,
+    actualizadoAdministrativamente: Boolean(documentoId),
+    actualizadoAdministrativamenteEn: documentoId ? new Date().toISOString() : undefined,
     capitalRows: [...capitalAutoRows, ...capitalRows.filter(hasCapitalRowData)],
     departamentoRows: [...departamentoAutoRows, ...departamentoRows.filter(hasDepartamentoRowData)],
     tiendaAutoRows,
@@ -1128,7 +1210,7 @@ export default function ReporteDiario() {
     const payload = {
       titulo: `Reporte diario ${fecha}`,
       data: getPayload(),
-      omitirCorreo: omitirCorreoReporte,
+      omitirCorreo: Boolean(documentoId) || omitirCorreoReporte,
     };
     if (documentoId) {
       const resp = await api.patch(`/documentos/${documentoId}`, payload);
@@ -1183,10 +1265,13 @@ export default function ReporteDiario() {
     }
     const confirmar = await Swal.fire({
       icon: "question",
-      title: "Generar reporte diario",
+      title: documentoId ? "Actualizar reporte diario" : "Generar reporte diario",
       text: `Se generara el PDF del cierre diario ${fecha} por ${money(totalResumen)}. ¿Deseas continuar?`,
+      html: documentoId
+        ? `Se actualizara el cierre <strong>${liquidacionNo}</strong> del ${fecha} por <strong>${money(totalResumen)}</strong>.<br/>El quincenal tomara este dato al volver a rellenar.`
+        : undefined,
       showCancelButton: true,
-      confirmButtonText: "Si, generar PDF",
+      confirmButtonText: documentoId ? "Si, actualizar" : "Si, generar PDF",
       cancelButtonText: "Cancelar",
     });
     if (!confirmar.isConfirmed) return;
@@ -1204,7 +1289,13 @@ export default function ReporteDiario() {
       setGenerandoPdf(false);
     }
 
-    await Swal.fire("Listo", "El PDF del cierre diario se descargo automaticamente.", "success");
+    await Swal.fire(
+      "Listo",
+      documentoId
+        ? "El cierre diario se actualizo y el PDF corregido se descargo automaticamente."
+        : "El PDF del cierre diario se descargo automaticamente.",
+      "success"
+    );
     setShowForm(false);
     void cargarDocumentos();
   };
@@ -1229,21 +1320,33 @@ export default function ReporteDiario() {
     {
       field: "acciones",
       headerName: "Accion",
-      minWidth: 150,
+      minWidth: canGenerateForOtherUser ? 230 : 150,
       sortable: false,
       filterable: false,
       align: "right",
       headerAlign: "right",
       renderCell: (params) => (
-        <Button
-          size="small"
-          variant="contained"
-          color="secondary"
-          disabled={generandoPdf}
-          onClick={() => reimprimirDocumento(params.row)}
-        >
-          Reimprimir
-        </Button>
+        <Stack direction="row" spacing={1} justifyContent="flex-end">
+          {canGenerateForOtherUser && (
+            <Button
+              size="small"
+              variant="outlined"
+              disabled={generandoPdf}
+              onClick={() => editarCierreDiario(params.row)}
+            >
+              Editar
+            </Button>
+          )}
+          <Button
+            size="small"
+            variant="contained"
+            color="secondary"
+            disabled={generandoPdf}
+            onClick={() => reimprimirDocumento(params.row)}
+          >
+            Reimprimir
+          </Button>
+        </Stack>
       ),
     },
   ];
@@ -1329,8 +1432,15 @@ export default function ReporteDiario() {
           <Button startIcon={<ArrowBackOutlined />} variant="outlined" size="small" disabled={generandoPdf} onClick={() => { setShowForm(false); void cargarDocumentos(); }}>
             Volver
           </Button>
-          <Button startIcon={<RefreshOutlined />} variant="outlined" size="small" onClick={rellenarDesdeVentas} disabled={rellenando || generandoPdf}>
-            {rellenando ? "Rellenando..." : "Rellenar"}
+          <Button
+            startIcon={<RefreshOutlined />}
+            variant="outlined"
+            size="small"
+            onClick={rellenarDesdeVentas}
+            disabled
+            title="Rellenado automatico deshabilitado temporalmente"
+          >
+            Rellenar
           </Button>
           <Button
             startIcon={<CleaningServicesOutlined />}
@@ -1349,7 +1459,7 @@ export default function ReporteDiario() {
             onClick={imprimir}
             disabled={generandoPdf}
           >
-            Imprimir / PDF
+            {documentoId ? "Actualizar / PDF" : "Imprimir / PDF"}
           </Button>
         </Stack>
       </Stack>
@@ -1433,7 +1543,9 @@ export default function ReporteDiario() {
       </Grid>
 
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        Completa los bloques manuales, revisa las ventas y pedidos del dia y luego genera el PDF para guardar el cierre diario.
+        {documentoId
+          ? `Editando cierre ${liquidacionNo}. Corrige las lineas necesarias y actualiza el PDF; luego vuelve a rellenar el reporte quincenal.`
+          : "Completa los bloques manuales, revisa las ventas y pedidos del dia y luego genera el PDF para guardar el cierre diario."}
       </Typography>
 
       <Divider sx={{ mb: 2 }} />

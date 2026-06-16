@@ -50,7 +50,8 @@ interface DocumentoGenerado {
   data: any;
   creadoEn: string;
   actualizadoEn: string;
-  usuario?: { nombre?: string | null; usuario?: string | null; bodegaId?: number | string | null };
+  usuarioId?: number | string | null;
+  usuario?: { id?: number | string | null; nombre?: string | null; usuario?: string | null; bodegaId?: number | string | null };
 }
 
 interface Usuario {
@@ -553,6 +554,26 @@ export default function ReporteQuincenal() {
     setShowForm(true);
   };
 
+  const editarReporteQuincenal = (doc: DocumentoGenerado) => {
+    const data = doc.data || {};
+    const targetUsuarioId = Number(doc.usuarioId || doc.usuario?.id || 0) || "";
+    setDocumentoId(doc.id);
+    setReporteNo(doc.correlativo || "Pendiente");
+    setFiltroUsuarioId(targetUsuarioId || (canUseDropdown ? "" : userId ?? ""));
+    setMonth(Number(data.month || currentDate.getMonth() + 1));
+    setYear(Number(data.year || currentDate.getFullYear()));
+    setMetaMes(Number(data.metaMes || 0));
+    setPromedioDiario(Number(data.promedioDiario || 0));
+    setMetaSource("none");
+    setQuincena(`${data.quincena || currentQuincena}` === "2" ? "2" : "1");
+    setVentasPorDia(
+      data.ventasPorDia && typeof data.ventasPorDia === "object"
+        ? Object.fromEntries(Object.entries(data.ventasPorDia).map(([day, value]) => [Number(day), Number(value || 0)]))
+        : {}
+    );
+    setShowForm(true);
+  };
+
 
   const getPayload = () => ({
     tienda: tiendaReporte,
@@ -564,6 +585,8 @@ export default function ReporteQuincenal() {
     promedioDiario,
     quincena,
     ventasPorDia,
+    actualizadoAdministrativamente: Boolean(documentoId),
+    actualizadoAdministrativamenteEn: documentoId ? new Date().toISOString() : undefined,
   });
 
   const guardarDocumento = async () => {
@@ -571,6 +594,7 @@ export default function ReporteQuincenal() {
     const payload = {
       titulo: `${quincenaLabel} QUINCENA ${monthNames[month - 1]} ${year}`,
       data: getPayload(),
+      omitirCorreo: Boolean(documentoId),
     };
     if (documentoId) {
       const resp = await api.patch(`/documentos/${documentoId}`, payload);
@@ -644,7 +668,7 @@ export default function ReporteQuincenal() {
         return;
       }
 
-      setVentasPorDia((prev) => ({ ...prev, ...ventasEncontradas }));
+      setVentasPorDia(ventasEncontradas);
       Swal.fire(
         "Listo",
         `Se rellenaron ${Object.keys(ventasEncontradas).length} dia(s) con reportes diarios generados.`,
@@ -680,10 +704,13 @@ export default function ReporteQuincenal() {
     }
     const confirmar = await Swal.fire({
       icon: "question",
-      title: "Generar reporte quincenal",
+      title: documentoId ? "Actualizar reporte quincenal" : "Generar reporte quincenal",
       text: `Se generara el PDF con ${diasConVentas} dia(s) con ventas y total ${money(totalVenta)}. ¿Deseas continuar?`,
+      html: documentoId
+        ? `Se actualizara el reporte <strong>${reporteNo}</strong> con ${diasConVentas} dia(s) con ventas y total <strong>${money(totalVenta)}</strong>.`
+        : undefined,
       showCancelButton: true,
-      confirmButtonText: "Si, generar PDF",
+      confirmButtonText: documentoId ? "Si, actualizar" : "Si, generar PDF",
       cancelButtonText: "Cancelar",
     });
     if (!confirmar.isConfirmed) return;
@@ -701,7 +728,13 @@ export default function ReporteQuincenal() {
       setGenerandoPdf(false);
     }
 
-    await Swal.fire("Listo", "El PDF del reporte quincenal se descargo automaticamente.", "success");
+    await Swal.fire(
+      "Listo",
+      documentoId
+        ? "El reporte quincenal se actualizo y el PDF corregido se descargo automaticamente."
+        : "El PDF del reporte quincenal se descargo automaticamente.",
+      "success"
+    );
     setShowForm(false);
     void cargarDocumentos();
   };
@@ -720,22 +753,34 @@ export default function ReporteQuincenal() {
     {
       field: "acciones",
       headerName: "Accion",
-      minWidth: 160,
+      minWidth: isAdmin ? 240 : 160,
       sortable: false,
       filterable: false,
       align: "right",
       headerAlign: "right",
       renderCell: (params) => (
-        <Button
-          size="small"
-          variant="contained"
-          color="secondary"
-          disabled={generandoPdf}
-          startIcon={generandoPdf ? <CircularProgress size={14} color="inherit" /> : undefined}
-          onClick={() => reimprimirDocumento(params.row)}
-        >
-          {generandoPdf ? "Generando..." : "Reimprimir"}
-        </Button>
+        <Stack direction="row" spacing={1} justifyContent="flex-end">
+          {isAdmin && (
+            <Button
+              size="small"
+              variant="outlined"
+              disabled={generandoPdf}
+              onClick={() => editarReporteQuincenal(params.row)}
+            >
+              Editar
+            </Button>
+          )}
+          <Button
+            size="small"
+            variant="contained"
+            color="secondary"
+            disabled={generandoPdf}
+            startIcon={generandoPdf ? <CircularProgress size={14} color="inherit" /> : undefined}
+            onClick={() => reimprimirDocumento(params.row)}
+          >
+            {generandoPdf ? "Generando..." : "Reimprimir"}
+          </Button>
+        </Stack>
       ),
     },
   ];
@@ -824,7 +869,7 @@ export default function ReporteQuincenal() {
             onClick={imprimir}
             disabled={generandoPdf}
           >
-            {generandoPdf ? "Generando PDF..." : "Imprimir / PDF"}
+            {generandoPdf ? "Generando PDF..." : documentoId ? "Actualizar / PDF" : "Imprimir / PDF"}
           </Button>
         </Stack>
       </Stack>
@@ -906,7 +951,9 @@ export default function ReporteQuincenal() {
       </Grid>
 
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        Las ventas de la quincena se cargan unicamente con el boton Rellenar desde los reportes diarios.
+        {documentoId
+          ? `Editando ${reporteNo}. Usa Rellenar para tomar de nuevo los cierres diarios corregidos y luego actualiza el PDF.`
+          : "Las ventas de la quincena se cargan unicamente con el boton Rellenar desde los reportes diarios."}
       </Typography>
 
       {metaSource === "none" && (
