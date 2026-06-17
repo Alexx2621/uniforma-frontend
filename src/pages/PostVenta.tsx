@@ -46,6 +46,7 @@ import { useTablePagination } from "../utils/useTablePagination";
 
 type PostventaTipo = "cambio" | "devolucion";
 type Vista = "lista" | "form";
+type CambioModoCobro = "solo_inventario" | "con_diferencia";
 
 interface Producto {
   id: number;
@@ -205,6 +206,7 @@ const resolveColorNombre = (prod: Producto | undefined, colores: CatalogoItem[])
 
 const buildPdfHtml = (registro: RegistroPostventa, titulo: string) => {
   const detalle = getDetalleLineas(registro.detalle);
+  const cambioConDiferencia = registro.tipo === "cambio" && registro.detalle?.modoCobro === "con_diferencia";
   const filas = detalle
     .map(
       (item, index) => `<tr>
@@ -269,7 +271,13 @@ const buildPdfHtml = (registro: RegistroPostventa, titulo: string) => {
           <tbody>${filas || `<tr><td colspan="8">Sin detalle</td></tr>`}</tbody>
         </table>
         <div class="notes"><strong>Observaciones:</strong> ${escapeHtml(registro.observaciones || "N/D")}</div>
-        <div class="total">Monto de referencia: ${money(Number(registro.monto || 0))}</div>
+        <div class="total">${
+          registro.tipo === "cambio"
+            ? cambioConDiferencia
+              ? `Diferencia cobrada: ${money(Number(registro.monto || 0))}`
+              : "Operacion solo de inventario"
+            : `Monto de referencia: ${money(Number(registro.monto || 0))}`
+        }</div>
       </div>
       <script>window.onload = function(){ window.print(); }</script>
     </body>
@@ -314,6 +322,7 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
   const [detalle, setDetalle] = useState<DetallePostventa[]>([]);
   const [clienteId, setClienteId] = useState<number | "">("");
   const [articuloActual, setArticuloActual] = useState<CapturaArticulo>(() => capturaInicial());
+  const [cambioModoCobro, setCambioModoCobro] = useState<CambioModoCobro>("solo_inventario");
   const [pagoDiferencia, setPagoDiferencia] = useState({
     metodo: "",
     referencia: "",
@@ -553,15 +562,16 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
   );
 
   const diferenciaCambio = isCambio ? totalEntregado - totalDevuelto : totalDevuelto;
-  const totalDetalle = isCambio ? diferenciaCambio : totalDevuelto;
+  const cambioConDiferencia = isCambio && cambioModoCobro === "con_diferencia";
+  const totalDetalle = isCambio ? (cambioConDiferencia ? Math.max(diferenciaCambio, 0) : 0) : totalDevuelto;
 
   useEffect(() => {
-    if (!isCambio || diferenciaCambio <= 0) return;
+    if (!cambioConDiferencia || totalDetalle <= 0) return;
     setPagoDiferencia((prev) => ({
       ...prev,
-      montoPagado: Number(prev.montoPagado || 0) > 0 ? prev.montoPagado : diferenciaCambio,
+      montoPagado: Number(prev.montoPagado || 0) > 0 ? prev.montoPagado : totalDetalle,
     }));
-  }, [diferenciaCambio, isCambio]);
+  }, [cambioConDiferencia, totalDetalle]);
 
   const filtrados = useMemo(() => {
     const query = busqueda.trim().toLowerCase();
@@ -598,6 +608,7 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
       observaciones: "",
     });
     setDetalle([]);
+    setCambioModoCobro("solo_inventario");
     setPagoDiferencia({
       metodo: "",
       referencia: "",
@@ -629,7 +640,9 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
       observaciones: row.observaciones || "",
     });
     setDetalle(getDetalleLineas(row.detalle).map((item) => ({ ...item, key: item.key || Date.now() + Math.random() })));
-    const pago = !Array.isArray(row.detalle) ? row.detalle?.pago : null;
+    const rowDetalle = !Array.isArray(row.detalle) ? row.detalle : null;
+    const pago = rowDetalle?.pago || null;
+    setCambioModoCobro(rowDetalle?.modoCobro === "con_diferencia" || Number(row.monto || 0) > 0 ? "con_diferencia" : "solo_inventario");
     setPagoDiferencia({
       metodo: pago?.metodo || "",
       referencia: pago?.referencia || "",
@@ -739,15 +752,18 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
       Swal.fire("Validacion", "Un cambio debe tener al menos un producto devuelto y un producto entregado", "info");
       return;
     }
-    if (isCambio && diferenciaCambio > 0 && Number(pagoDiferencia.montoPagado || 0) < diferenciaCambio) {
-      Swal.fire("Validacion", `La diferencia a pagar es ${money(diferenciaCambio)}. Registra el pago completo.`, "info");
+    if (cambioConDiferencia && totalDetalle <= 0) {
+      Swal.fire("Validacion", "El cambio con diferencia solo aplica cuando el articulo entregado tiene mayor valor", "info");
       return;
     }
-    if (isCambio && diferenciaCambio > 0 && !pagoDiferencia.metodo) {
+    if (cambioConDiferencia && Number(pagoDiferencia.montoPagado || 0) < totalDetalle) {
+      Swal.fire("Validacion", `La diferencia a cobrar es ${money(totalDetalle)}. Registra el pago completo.`, "info");
+      return;
+    }
+    if (cambioConDiferencia && !pagoDiferencia.metodo) {
       Swal.fire("Validacion", "Selecciona el metodo de pago de la diferencia", "info");
       return;
     }
-
     const payload = {
       tipo,
       ...form,
@@ -755,9 +771,10 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
       detalle: {
         version: 2,
         modo: form.documentoReferencia.trim() ? "con_documento_origen" : "sin_documento_origen",
+        modoCobro: isCambio ? cambioModoCobro : "solo_inventario",
         devueltos: devueltos.map(({ key, ...item }) => item),
         entregados: entregados.map(({ key, ...item }) => item),
-        pago: isCambio
+        pago: cambioConDiferencia
           ? {
               ...pagoDiferencia,
               montoPagado: Number(pagoDiferencia.montoPagado || 0),
@@ -938,8 +955,27 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
             </TextField>
           </Grid>
           <Grid size={{ xs: 12, sm: 4 }}>
-            <TextField label={isCambio ? "Diferencia calculada" : "Monto calculado"} fullWidth value={money(totalDetalle)} InputProps={{ readOnly: true }} />
+            <TextField
+              label={isCambio ? "Monto del cambio" : "Monto calculado"}
+              fullWidth
+              value={isCambio ? (cambioConDiferencia ? money(totalDetalle) : "Sin movimiento monetario") : money(totalDetalle)}
+              InputProps={{ readOnly: true }}
+            />
           </Grid>
+          {isCambio && (
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <TextField
+                select
+                label="Tipo de cambio"
+                fullWidth
+                value={cambioModoCobro}
+                onChange={(e) => setCambioModoCobro(e.target.value as CambioModoCobro)}
+              >
+                <MenuItem value="solo_inventario">Solo inventario</MenuItem>
+                <MenuItem value="con_diferencia">Con diferencia</MenuItem>
+              </TextField>
+            </Grid>
+          )}
           <Grid size={{ xs: 12, sm: 6 }}>
             <TextField label="Resolucion" fullWidth value={form.resolucion} onChange={(e) => setForm({ ...form, resolucion: e.target.value })} />
           </Grid>
@@ -952,7 +988,9 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
         <Typography variant="h6" sx={{ mb: 1 }}>Seleccion de codigo</Typography>
         <Alert severity="info" sx={{ mb: 2 }}>
           {isCambio
-            ? "Agrega lo que el cliente devuelve y lo que se le entregara. Si no hay factura o venta origen, deja la referencia vacia y el cambio quedara como operacion sin documento origen."
+            ? cambioConDiferencia
+              ? "Agrega lo que el cliente devuelve y lo que se le entregara. Al cerrar, se movera inventario y se registrara la diferencia cobrada."
+              : "Agrega lo que el cliente devuelve y lo que se le entregara. Al cerrar, lo devuelto entra al stock y lo entregado se rebaja del stock, sin registrar cobros ni diferencias."
             : "Agrega lo que el cliente devuelve. El inventario se afectara hasta cerrar el documento."}
         </Alert>
 
@@ -1086,15 +1124,20 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
         {isCambio && (
           <>
             <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ mb: 2 }}>
-              <Chip label={`Devuelto: ${money(totalDevuelto)}`} color="info" variant="outlined" />
-              <Chip label={`Entregado: ${money(totalEntregado)}`} color="success" variant="outlined" />
+              <Chip label={`Valor devuelto ref.: ${money(totalDevuelto)}`} color="info" variant="outlined" />
+              <Chip label={`Valor entregado ref.: ${money(totalEntregado)}`} color="success" variant="outlined" />
               <Chip
-                label={diferenciaCambio >= 0 ? `Diferencia a pagar: ${money(diferenciaCambio)}` : `Saldo a favor: ${money(Math.abs(diferenciaCambio))}`}
-                color={diferenciaCambio > 0 ? "warning" : "default"}
+                label={`Diferencia ref.: ${money(Math.abs(diferenciaCambio))}`}
+                color={cambioConDiferencia && totalDetalle > 0 ? "warning" : "default"}
+                variant="outlined"
+              />
+              <Chip
+                label={cambioConDiferencia ? `A cobrar: ${money(totalDetalle)}` : "No afecta caja"}
+                color={cambioConDiferencia ? "warning" : "default"}
                 variant="outlined"
               />
             </Stack>
-            {diferenciaCambio > 0 && (
+            {cambioConDiferencia && totalDetalle > 0 && (
               <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
                 <Typography variant="subtitle1" sx={{ mb: 1 }}>Pago de diferencia</Typography>
                 <Grid container spacing={2}>
@@ -1113,7 +1156,13 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
                     </TextField>
                   </Grid>
                   <Grid size={{ xs: 12, sm: 3 }}>
-                    <TextField label="Monto pagado" type="number" fullWidth value={emptyWhenZero(pagoDiferencia.montoPagado)} onChange={(e) => setPagoDiferencia({ ...pagoDiferencia, montoPagado: parseNumberInput(e.target.value) })} />
+                    <TextField
+                      label="Monto pagado"
+                      type="number"
+                      fullWidth
+                      value={emptyWhenZero(pagoDiferencia.montoPagado)}
+                      onChange={(e) => setPagoDiferencia({ ...pagoDiferencia, montoPagado: parseNumberInput(e.target.value) })}
+                    />
                   </Grid>
                   <Grid size={{ xs: 12, sm: 3 }}>
                     <TextField label="Referencia" fullWidth value={pagoDiferencia.referencia} onChange={(e) => setPagoDiferencia({ ...pagoDiferencia, referencia: e.target.value })} />
@@ -1146,7 +1195,11 @@ function PostVentaPage({ tipo }: { tipo: PostventaTipo }) {
         <Divider sx={{ my: 3 }} />
         <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
           <Typography variant="h6">Lista temporal</Typography>
-          <Chip label={isCambio ? `Diferencia: ${money(totalDetalle)}` : `Total: ${money(totalDetalle)}`} color="primary" variant="outlined" />
+          <Chip
+            label={isCambio ? (cambioConDiferencia ? `Diferencia: ${money(totalDetalle)}` : "Cambio solo inventario") : `Total: ${money(totalDetalle)}`}
+            color="primary"
+            variant="outlined"
+          />
         </Stack>
         <TableContainer>
           <Table size="small">

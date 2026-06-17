@@ -1,19 +1,15 @@
 import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
 import {
+  Box,
   Button,
+  Chip,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
+  InputAdornment,
   Paper,
   Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  TablePagination,
   TextField,
   Typography,
   FormControl,
@@ -23,18 +19,21 @@ import {
   Menu,
   ListItemIcon,
 } from "@mui/material";
+import { DataGrid, GridColDef } from "@mui/x-data-grid";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
 import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
-import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
 import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
+import SearchOutlined from "@mui/icons-material/SearchOutlined";
+import AccountBalanceOutlined from "@mui/icons-material/AccountBalanceOutlined";
+import PaidOutlined from "@mui/icons-material/PaidOutlined";
+import StoreOutlined from "@mui/icons-material/StoreOutlined";
+import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
 import Swal from "sweetalert2";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/axios";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useSystemConfigStore } from "../config/useSystemConfigStore";
-import UniformaTableLoadingRow from "../components/UniformaTableLoadingRow";
 import { canUseVendedorDropdown } from "../utils/vendedorDropdownAccess";
-import { useTablePagination } from "../utils/useTablePagination";
 import TransactionRelationMap, { RelationEdge, RelationNode } from "../components/TransactionRelationMap";
 
 interface PagoRecibido {
@@ -63,6 +62,31 @@ interface PagoRecibido {
 const money = (value: number) =>
   `Q ${Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+const formatDateTime = (value?: string | null) =>
+  value
+    ? new Intl.DateTimeFormat("es-GT", {
+        timeZone: "America/Guatemala",
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(new Date(value))
+    : "N/D";
+
+const normalizeText = (value?: string | number | null) =>
+  `${value || ""}`
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ");
+
+const prettyLabel = (value?: string | null) =>
+  `${value || "N/D"}`
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+
 export default function PagosRecibidos() {
   const { usuario, usuarioCorrelativo, rol, rolId, permisos } = useAuthStore();
   const { vendedorDropdownRoleIds, vendedorDropdownBodegaIds, fetchConfig } = useSystemConfigStore();
@@ -75,9 +99,13 @@ export default function PagosRecibidos() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
   const [filtroDesde, setFiltroDesde] = useState("");
   const [filtroHasta, setFiltroHasta] = useState("");
   const [selectedVendedor, setSelectedVendedor] = useState("all");
+  const [selectedMetodo, setSelectedMetodo] = useState("all");
+  const [selectedUbicacion, setSelectedUbicacion] = useState("all");
+  const [selectedEstado, setSelectedEstado] = useState("all");
   const [contextMenuAnchor, setContextMenuAnchor] = useState<{ mouseX: number; mouseY: number } | null>(null);
   const [contextMenuPago, setContextMenuPago] = useState<PagoRecibido | null>(null);
   const [relationModalOpen, setRelationModalOpen] = useState(false);
@@ -155,6 +183,21 @@ export default function PagosRecibidos() {
     [pagosPermitidos]
   );
 
+  const metodos = useMemo(
+    () => Array.from(new Set(pagosPermitidos.map((pago) => pago.metodo || "N/D"))).sort((a, b) => a.localeCompare(b)),
+    [pagosPermitidos]
+  );
+
+  const ubicaciones = useMemo(
+    () => Array.from(new Set(pagosPermitidos.map((pago) => pago.ubicacion || "N/D"))).sort((a, b) => a.localeCompare(b)),
+    [pagosPermitidos]
+  );
+
+  const estados = useMemo(
+    () => Array.from(new Set(pagosPermitidos.map((pago) => pago.estado || "N/D"))).sort((a, b) => a.localeCompare(b)),
+    [pagosPermitidos]
+  );
+
   const isMatchingCurrentUser = useCallback((vendedor?: string) => {
     const value = `${vendedor || ""}`.trim().toLowerCase();
     if (!value) return false;
@@ -179,21 +222,63 @@ export default function PagosRecibidos() {
           if (filtroDesde && fecha < filtroDesde) return false;
           if (filtroHasta && fecha > filtroHasta) return false;
           return true;
+        })
+        .filter((pago) => (selectedMetodo === "all" ? true : (pago.metodo || "N/D") === selectedMetodo))
+        .filter((pago) => (selectedUbicacion === "all" ? true : (pago.ubicacion || "N/D") === selectedUbicacion))
+        .filter((pago) => (selectedEstado === "all" ? true : (pago.estado || "N/D") === selectedEstado))
+        .filter((pago) => {
+          const term = normalizeText(search);
+          if (!term) return true;
+          const haystack = normalizeText([
+            pago.id,
+            pago.pedidoFolio,
+            pago.clienteNombre,
+            pago.bodegaNombre,
+            pago.vendedor,
+            pago.metodo,
+            pago.referenciaPago,
+            pago.banco,
+            pago.ubicacion,
+            pago.numeroEnvio,
+            pago.numeroRecibo,
+            pago.referenciaDocumento,
+            pago.observacionesPago,
+          ].join(" "));
+          return haystack.includes(term);
         }),
-    [pagosPermitidos, pedidoFiltro, filtroDesde, filtroHasta, canUseDropdown, selectedVendedor, currentUser, isMatchingCurrentUser]
+    [
+      pagosPermitidos,
+      pedidoFiltro,
+      filtroDesde,
+      filtroHasta,
+      selectedMetodo,
+      selectedUbicacion,
+      selectedEstado,
+      search,
+      canUseDropdown,
+      selectedVendedor,
+      currentUser,
+      isMatchingCurrentUser,
+    ]
   );
-  const { paginatedRows, paginationProps } = useTablePagination(pagosFiltrados, 10);
 
-  const handleRowContextMenu = (pago: PagoRecibido) => (event: MouseEvent<HTMLTableRowElement>) => {
-    event.preventDefault();
-    setContextMenuPago(pago);
-    setContextMenuAnchor({ mouseX: event.clientX - 2, mouseY: event.clientY - 4 });
-  };
-
-  const closeContextMenu = () => {
-    setContextMenuAnchor(null);
-    setContextMenuPago(null);
-  };
+  const resumen = useMemo(() => {
+    const total = pagosFiltrados.reduce((sum, pago) => sum + Number(pago.monto || 0) + Number(pago.recargo || 0), 0);
+    const recargos = pagosFiltrados.reduce((sum, pago) => sum + Number(pago.recargo || 0), 0);
+    const pagosConReferencia = pagosFiltrados.filter((pago) => `${pago.referenciaPago || ""}`.trim()).length;
+    const metodosCount = new Map<string, number>();
+    pagosFiltrados.forEach((pago) => {
+      const metodo = prettyLabel(pago.metodo);
+      metodosCount.set(metodo, (metodosCount.get(metodo) || 0) + 1);
+    });
+    return {
+      total,
+      recargos,
+      pagosConReferencia,
+      promedio: pagosFiltrados.length ? total / pagosFiltrados.length : 0,
+      metodoPrincipal: Array.from(metodosCount.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || "N/D",
+    };
+  }, [pagosFiltrados]);
 
   const openRelationModal = async (pago: PagoRecibido) => {
     try {
@@ -204,6 +289,11 @@ export default function PagosRecibidos() {
     } catch (error: any) {
       Swal.fire("Error", error?.response?.data?.message || "No se pudieron cargar las relaciones", "error");
     }
+  };
+
+  const closeContextMenu = () => {
+    setContextMenuAnchor(null);
+    setContextMenuPago(null);
   };
 
   const handleContextMenuAction = (action: "relations" | "detail" | "pedido") => {
@@ -217,19 +307,163 @@ export default function PagosRecibidos() {
     closeContextMenu();
   };
 
+  const handleGridContextMenu = (event: MouseEvent<HTMLDivElement>) => {
+    const rowElement = (event.target as HTMLElement).closest("[data-id]");
+    const rowId = rowElement?.getAttribute("data-id");
+    if (!rowId) return;
+    const pago = pagosFiltrados.find((item) => `${item.pedidoId}-${item.id}` === rowId);
+    if (!pago) return;
+    event.preventDefault();
+    setContextMenuPago(pago);
+    setContextMenuAnchor({ mouseX: event.clientX - 2, mouseY: event.clientY - 4 });
+  };
+
+  const columns: GridColDef<PagoRecibido>[] = [
+    {
+      field: "fecha",
+      headerName: "Fecha",
+      minWidth: 155,
+      flex: 0.8,
+      valueFormatter: (value) => formatDateTime(value as string | null),
+    },
+    {
+      field: "id",
+      headerName: "Pago",
+      minWidth: 90,
+      flex: 0.45,
+      renderCell: (params) => <Chip size="small" label={`#${params.row.id}`} variant="outlined" />,
+    },
+    { field: "pedidoFolio", headerName: "Pedido", minWidth: 130, flex: 0.65 },
+    { field: "clienteNombre", headerName: "Cliente", minWidth: 190, flex: 1.1 },
+    { field: "vendedor", headerName: "Vendedor", minWidth: 170, flex: 0.9 },
+    { field: "bodegaNombre", headerName: "Bodega", minWidth: 150, flex: 0.85 },
+    {
+      field: "metodo",
+      headerName: "Metodo",
+      minWidth: 140,
+      flex: 0.7,
+      renderCell: (params) => <Chip size="small" color="primary" variant="outlined" label={prettyLabel(params.row.metodo)} />,
+    },
+    {
+      field: "ubicacion",
+      headerName: "Ubicacion",
+      minWidth: 150,
+      flex: 0.75,
+      renderCell: (params) => <Chip size="small" color="success" variant="outlined" label={prettyLabel(params.row.ubicacion)} />,
+    },
+    { field: "banco", headerName: "Banco", minWidth: 120, flex: 0.65, valueFormatter: (value) => value || "-" },
+    { field: "referenciaPago", headerName: "Referencia", minWidth: 150, flex: 0.8, valueFormatter: (value) => value || "-" },
+    {
+      field: "totalPagado",
+      headerName: "Total",
+      minWidth: 125,
+      flex: 0.6,
+      align: "right",
+      headerAlign: "right",
+      valueGetter: (_value, row) => Number(row.monto || 0) + Number(row.recargo || 0),
+      valueFormatter: (value) => money(Number(value || 0)),
+    },
+    {
+      field: "estado",
+      headerName: "Estado pedido",
+      minWidth: 130,
+      flex: 0.65,
+      renderCell: (params) => <Chip size="small" label={prettyLabel(params.row.estado)} />,
+    },
+    {
+      field: "acciones",
+      headerName: "Acciones",
+      minWidth: 250,
+      sortable: false,
+      filterable: false,
+      align: "right",
+      headerAlign: "right",
+      renderCell: (params) => (
+        <Stack direction="row" spacing={0.75} justifyContent="flex-end" sx={{ width: "100%" }}>
+          <Button size="small" variant="outlined" onClick={() => setSelectedPago(params.row)}>
+            Ver
+          </Button>
+          <Button size="small" variant="contained" startIcon={<OpenInNewOutlined />} onClick={() => navigate(`/produccion/${params.row.pedidoId}`)}>
+            Pedido
+          </Button>
+        </Stack>
+      ),
+    },
+  ];
+
   return (
     <Paper sx={{ p: 3 }}>
-      <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" alignItems="center" spacing={2} sx={{ mb: 2 }}>
-        <Stack direction="row" spacing={1} alignItems="center">
+      <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" alignItems={{ xs: "stretch", sm: "center" }} spacing={2} sx={{ mb: 2 }}>
+        <Stack direction="row" spacing={1.25} alignItems="center">
           <ReceiptLongOutlined color="primary" />
-          <Typography variant="h4">Pagos recibidos</Typography>
+          <Box>
+            <Typography variant="h4">Pagos recibidos</Typography>
+            <Typography variant="body2" color="text.secondary">
+              Control de pagos aplicados a pedidos, referencias, bancos y ubicacion para cierre diario.
+            </Typography>
+          </Box>
         </Stack>
         <Button startIcon={<RefreshOutlined />} variant="outlined" onClick={cargarPagos} disabled={loading}>
           Recargar
         </Button>
       </Stack>
 
-      <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 2 }}>
+      <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ mb: 2 }}>
+        <Paper variant="outlined" sx={{ p: 2, flex: 1, minWidth: 0 }}>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <PaidOutlined color="primary" />
+            <Box>
+              <Typography variant="caption" color="text.secondary">Total recibido</Typography>
+              <Typography variant="h5">{money(resumen.total)}</Typography>
+            </Box>
+          </Stack>
+        </Paper>
+        <Paper variant="outlined" sx={{ p: 2, flex: 1, minWidth: 0 }}>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <ReceiptLongOutlined color="primary" />
+            <Box>
+              <Typography variant="caption" color="text.secondary">Pagos filtrados</Typography>
+              <Typography variant="h5">{pagosFiltrados.length}</Typography>
+            </Box>
+          </Stack>
+        </Paper>
+        <Paper variant="outlined" sx={{ p: 2, flex: 1, minWidth: 0 }}>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <AccountBalanceOutlined color="primary" />
+            <Box>
+              <Typography variant="caption" color="text.secondary">Metodo principal</Typography>
+              <Typography variant="h6">{resumen.metodoPrincipal}</Typography>
+            </Box>
+          </Stack>
+        </Paper>
+        <Paper variant="outlined" sx={{ p: 2, flex: 1, minWidth: 0 }}>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <StoreOutlined color="primary" />
+            <Box>
+              <Typography variant="caption" color="text.secondary">Recargos / promedio</Typography>
+              <Typography variant="h6">{money(resumen.recargos)} / {money(resumen.promedio)}</Typography>
+            </Box>
+          </Stack>
+        </Paper>
+      </Stack>
+
+      <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+        <Stack direction={{ xs: "column", lg: "row" }} spacing={2}>
+          <TextField
+            label="Buscar"
+            size="small"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            sx={{ minWidth: { xs: "100%", lg: 280 } }}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchOutlined fontSize="small" />
+                </InputAdornment>
+              ),
+            }}
+            placeholder="Cliente, pedido, referencia, banco..."
+          />
         {canUseDropdown ? (
           <FormControl size="small" sx={{ minWidth: 220 }}>
             <InputLabel>Vendedor</InputLabel>
@@ -247,68 +481,55 @@ export default function PagosRecibidos() {
             </Select>
           </FormControl>
         ) : null}
+          <FormControl size="small" sx={{ minWidth: 170 }}>
+            <InputLabel>Metodo</InputLabel>
+            <Select label="Metodo" value={selectedMetodo} onChange={(e) => setSelectedMetodo(e.target.value)}>
+              <MenuItem value="all">Todos</MenuItem>
+              {metodos.map((metodo) => (
+                <MenuItem key={metodo} value={metodo}>{prettyLabel(metodo)}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <FormControl size="small" sx={{ minWidth: 180 }}>
+            <InputLabel>Ubicacion</InputLabel>
+            <Select label="Ubicacion" value={selectedUbicacion} onChange={(e) => setSelectedUbicacion(e.target.value)}>
+              <MenuItem value="all">Todas</MenuItem>
+              {ubicaciones.map((ubicacion) => (
+                <MenuItem key={ubicacion} value={ubicacion}>{prettyLabel(ubicacion)}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <FormControl size="small" sx={{ minWidth: 170 }}>
+            <InputLabel>Estado</InputLabel>
+            <Select label="Estado" value={selectedEstado} onChange={(e) => setSelectedEstado(e.target.value)}>
+              <MenuItem value="all">Todos</MenuItem>
+              {estados.map((estado) => (
+                <MenuItem key={estado} value={estado}>{prettyLabel(estado)}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <TextField label="Desde" type="date" size="small" value={filtroDesde} onChange={(e) => setFiltroDesde(e.target.value)} InputLabelProps={{ shrink: true }} />
+          <TextField label="Hasta" type="date" size="small" value={filtroHasta} onChange={(e) => setFiltroHasta(e.target.value)} InputLabelProps={{ shrink: true }} />
+        </Stack>
+      </Paper>
 
-        <TextField
-          label="Desde"
-          type="date"
-          size="small"
-          value={filtroDesde}
-          onChange={(e) => setFiltroDesde(e.target.value)}
-          InputLabelProps={{ shrink: true }}
+      <Paper variant="outlined" sx={{ height: 560, width: "100%", overflow: "hidden" }} onContextMenu={handleGridContextMenu}>
+        <DataGrid
+          rows={pagosFiltrados}
+          columns={columns}
+          getRowId={(row) => `${row.pedidoId}-${row.id}`}
+          loading={loading}
+          pageSizeOptions={[10, 25, 50, 100]}
+          initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
+          disableRowSelectionOnClick
+          localeText={{ noRowsLabel: "No se encontraron pagos recibidos." }}
+          sx={{
+            border: 0,
+            "& .MuiDataGrid-cell": { minWidth: 0 },
+            "& .MuiDataGrid-columnHeaderTitle": { fontWeight: 600 },
+          }}
         />
-        <TextField
-          label="Hasta"
-          type="date"
-          size="small"
-          value={filtroHasta}
-          onChange={(e) => setFiltroHasta(e.target.value)}
-          InputLabelProps={{ shrink: true }}
-        />
-      </Stack>
-
-      <TableContainer component={Paper} variant="outlined">
-        <Table size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell>Fecha</TableCell>
-              <TableCell>Pago</TableCell>
-              <TableCell>Pedido</TableCell>
-              <TableCell>Cliente</TableCell>
-              <TableCell>Bodega</TableCell>
-              <TableCell>Ubicacion</TableCell>
-              <TableCell>Banco</TableCell>
-              <TableCell>Vendedor</TableCell>
-              <TableCell align="right">Total</TableCell>
-              <TableCell>Estado</TableCell>
-              <TableCell align="right">Acciones</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {loading ? (
-              <UniformaTableLoadingRow colSpan={11} />
-            ) : paginatedRows.map((pago) => (
-              <TableRow key={`${pago.pedidoId}-${pago.id}`} hover onContextMenu={handleRowContextMenu(pago)}>
-                <TableCell>{pago.fecha ? new Date(pago.fecha).toLocaleString() : "-"}</TableCell>
-                <TableCell>#{pago.id}</TableCell>
-                <TableCell>{pago.pedidoFolio}</TableCell>
-                <TableCell>{pago.clienteNombre}</TableCell>
-                <TableCell>{pago.bodegaNombre}</TableCell>
-                <TableCell>{pago.ubicacion || "-"}</TableCell>
-                <TableCell>{pago.banco || "-"}</TableCell>
-                <TableCell>{pago.vendedor || "-"}</TableCell>
-                <TableCell align="right">{money(pago.monto + pago.recargo)}</TableCell>
-                <TableCell>{pago.estado || "-"}</TableCell>
-                <TableCell align="right">
-                  <Button size="small" variant="outlined" startIcon={<VisibilityOutlined />} onClick={() => setSelectedPago(pago)}>
-                    Ver
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        <TablePagination {...paginationProps} />
-      </TableContainer>
+      </Paper>
 
       {!loading && !pagosFiltrados.length && (
         <Paper variant="outlined" sx={{ p: 4, mt: 2, textAlign: "center" }}>

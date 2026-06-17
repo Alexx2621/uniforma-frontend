@@ -13,6 +13,8 @@ import {
   Menu,
   MenuItem,
   ListItemIcon,
+  Switch,
+  FormControlLabel,
   ToggleButton,
   ToggleButtonGroup,
 } from "@mui/material";
@@ -121,6 +123,7 @@ interface PedidosNavigationState {
       fechaFin?: string;
       bodega?: number | "all";
       tipoPedido?: "clientes" | "stock" | "ambos";
+      incluirStockUnificado?: boolean;
     };
     pagination?: {
       page?: number;
@@ -257,6 +260,9 @@ export default function Pedidos() {
   const [filterTipoPedido, setFilterTipoPedido] = useState<"clientes" | "stock" | "ambos">(
     () => restoredPedidosState?.filters?.tipoPedido || "clientes"
   );
+  const [incluirStockUnificado, setIncluirStockUnificado] = useState(
+    () => Boolean(restoredPedidosState?.filters?.incluirStockUnificado)
+  );
   const [paginationModel, setPaginationModel] = useState(() => ({
     page: Math.max(0, Number(restoredPedidosState?.pagination?.page || 0)),
     pageSize: Number(restoredPedidosState?.pagination?.pageSize || 10),
@@ -298,6 +304,7 @@ export default function Pedidos() {
         fechaFin: filterFechaFin,
         bodega: filterBodega,
         tipoPedido: filterTipoPedido,
+        incluirStockUnificado,
       },
       pagination: paginationModel,
       selectedId: pedidoId ?? selectedPedidoId,
@@ -644,7 +651,7 @@ export default function Pedidos() {
       return;
     }
     setPaginationModel((prev) => ({ ...prev, page: 0 }));
-  }, [filterCliente, filterFechaInicio, filterFechaFin, filterBodega, filterTipoPedido]);
+  }, [filterCliente, filterFechaInicio, filterFechaFin, filterBodega, filterTipoPedido, incluirStockUnificado]);
 
   useEffect(() => {
     const nextState = restoredPedidosState;
@@ -655,6 +662,7 @@ export default function Pedidos() {
     setFilterFechaFin(nextState.filters?.fechaFin || getTodayDateInputValue());
     setFilterBodega(nextState.filters?.bodega ?? "all");
     setFilterTipoPedido(nextState.filters?.tipoPedido || "clientes");
+    setIncluirStockUnificado(Boolean(nextState.filters?.incluirStockUnificado));
     setPaginationModel({
       page: Math.max(0, Number(nextState.pagination?.page || 0)),
       pageSize: Number(nextState.pagination?.pageSize || 10),
@@ -725,9 +733,9 @@ export default function Pedidos() {
     return filtered.filter((pedido) => {
       const estado = `${pedido.estado || ""}`.trim().toLowerCase();
       const esStock = `${pedido.metodoPago || ""}`.trim().toLowerCase() === "sin_cobro_stock";
-      return estado !== "anulado" && !pedido.unificado && !esStock;
+      return estado !== "anulado" && !pedido.unificado && (incluirStockUnificado || !esStock);
     });
-  }, [filtered, canUnifyPedidos]);
+  }, [filtered, canUnifyPedidos, incluirStockUnificado]);
 
   const pedidosParaDetallePdf = useMemo(
     () => filtered.filter((pedido) => `${pedido.estado || ""}`.trim().toLowerCase() !== "anulado"),
@@ -1148,7 +1156,7 @@ export default function Pedidos() {
         </Stack>
       </Stack>
 
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }} spacing={2}>
+      <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" alignItems={{ xs: "stretch", md: "center" }} sx={{ mb: 2 }} spacing={2}>
         <ToggleButtonGroup
           exclusive
           size="small"
@@ -1161,9 +1169,31 @@ export default function Pedidos() {
           <ToggleButton value="stock">Stock</ToggleButton>
           <ToggleButton value="ambos">Ambos</ToggleButton>
         </ToggleButtonGroup>
-        <Typography variant="body2" color="text.secondary">
-          Los pedidos para stock no se incluyen en el unificado. Usa Detalle PDF para imprimirlos individualmente.
-        </Typography>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ xs: "flex-start", sm: "center" }}>
+          {canUnifyPedidos && (
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={incluirStockUnificado}
+                  onChange={(event) => {
+                    const checked = event.target.checked;
+                    setIncluirStockUnificado(checked);
+                    if (checked && filterTipoPedido === "clientes") {
+                      setFilterTipoPedido("ambos");
+                    }
+                  }}
+                />
+              }
+              label="Incluir stock en unificado"
+            />
+          )}
+          <Typography variant="body2" color="text.secondary">
+            {incluirStockUnificado
+              ? "Los pedidos para stock seleccionados por filtros tambien se incluiran en Unificar nuevos."
+              : "Los pedidos para stock no se incluyen en el unificado. Activa el switch para incluirlos."}
+          </Typography>
+        </Stack>
       </Stack>
 
       <Grid container spacing={2} sx={{ mb: 2 }}>

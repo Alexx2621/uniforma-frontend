@@ -129,6 +129,29 @@ interface OrdenMixtaReporte {
   pedido?: { id?: number | string | null; folio?: string | null; pagos?: PagoVenta[] } | null;
 }
 
+interface PostventaReporte {
+  id: number;
+  folio?: string | null;
+  tipo?: string | null;
+  fecha: string;
+  estado?: string | null;
+  monto?: number | null;
+  clienteNombre?: string | null;
+  usuarioId?: number | string | null;
+  usuario?: { id?: number | string | null; nombre?: string | null; usuario?: string | null } | null;
+  detalle?: {
+    modoCobro?: string | null;
+    pago?: {
+      metodo?: string | null;
+      referencia?: string | null;
+      banco?: string | null;
+      ubicacion?: string | null;
+      montoPagado?: number | null;
+      observaciones?: string | null;
+    } | null;
+  } | null;
+}
+
 interface CapitalRow {
   id: number;
   fecha: string;
@@ -246,6 +269,12 @@ const ordenMixtaPerteneceAUsuario = (orden: OrdenMixtaReporte, usuario: Usuario 
   return textMatchesUsuario(orden.vendedor, usuario) || textMatchesUsuario(orden.usuario?.nombre, usuario) || textMatchesUsuario(orden.usuario?.usuario, usuario);
 };
 
+const postventaPerteneceAUsuario = (postventa: PostventaReporte, usuario: Usuario | null) => {
+  if (!usuario) return true;
+  if (Number(postventa.usuarioId || postventa.usuario?.id || 0) === Number(usuario.id)) return true;
+  return textMatchesUsuario(postventa.usuario?.nombre, usuario) || textMatchesUsuario(postventa.usuario?.usuario, usuario);
+};
+
 const metodoCuentaComoTarjeta = (metodo?: string | null) => {
   const normalized = normalizarMetodoPago(metodo);
   return normalized === "tarjeta" || normalized === "visalink";
@@ -281,6 +310,14 @@ const normalizeUbicacionPedido = (pedido: PedidoReporte, pago?: PagoVenta | null
 
 const normalizeUbicacionOrdenMixta = (orden: OrdenMixtaReporte, pago?: PagoVenta | null) => {
   const normalized = `${pago?.ubicacion || orden.ubicacion || "TIENDA"}`.trim().toUpperCase();
+  if (normalized.includes("CAPITAL")) return "CAPITAL";
+  if (normalized.includes("DEPART")) return "DEPARTAMENTO";
+  if (normalized.includes("ANTIGUA")) return "DEPARTAMENTO";
+  return "TIENDA";
+};
+
+const normalizeUbicacionPostventa = (postventa: PostventaReporte) => {
+  const normalized = `${postventa.detalle?.pago?.ubicacion || "TIENDA"}`.trim().toUpperCase();
   if (normalized.includes("CAPITAL")) return "CAPITAL";
   if (normalized.includes("DEPART")) return "DEPARTAMENTO";
   if (normalized.includes("ANTIGUA")) return "DEPARTAMENTO";
@@ -376,6 +413,19 @@ const getOrdenMixtaPagoRowId = (orden: OrdenMixtaReporte, pago?: PagoVenta | nul
   const pagoId = `${pago?.id || ""}`.replace(/\D/g, "");
   return -(900000000 + Number(orden.id || 0) * 100000 + Number(pagoId || 0));
 };
+
+const getPostventaMetodo = (postventa: PostventaReporte) => normalizarMetodoPago(postventa.detalle?.pago?.metodo);
+
+const getPostventaReferencia = (postventa: PostventaReporte) => `${postventa.detalle?.pago?.referencia || ""}`.trim();
+
+const getPostventaBanco = (postventa: PostventaReporte) => `${postventa.detalle?.pago?.banco || ""}`.trim();
+
+const getPostventaMontoReporte = (postventa: PostventaReporte) =>
+  Number(postventa.detalle?.pago?.montoPagado || postventa.monto || 0);
+
+const getPostventaRecibo = (postventa: PostventaReporte) => postventa.folio || `CAM-${postventa.id}`;
+
+const getPostventaRowId = (postventa: PostventaReporte) => -(800000000 + Number(postventa.id || 0));
 
 const createCapitalRowFromVenta = (venta: Venta, fecha: string): CapitalRow => {
   const metodo = getVentaMetodo(venta);
@@ -529,6 +579,65 @@ const createTiendaRowFromOrdenMixta = (orden: OrdenMixtaReporte, fecha: string, 
     efectivo: metodo === "efectivo" ? total : 0,
     total,
     observaciones: "",
+  };
+};
+
+const createCapitalRowFromPostventa = (postventa: PostventaReporte, fecha: string): CapitalRow => {
+  const metodo = getPostventaMetodo(postventa);
+  const referencia = getPostventaReferencia(postventa);
+  const banco = getPostventaBanco(postventa);
+  const total = getPostventaMontoReporte(postventa);
+  return {
+    id: getPostventaRowId(postventa),
+    fecha,
+    envio: "",
+    transferencia: metodo === "transferencia" ? total : 0,
+    autorizacion: metodo === "transferencia" ? referencia : "",
+    deposito: metodo === "deposito_bancario" ? total : 0,
+    boleta: metodo === "deposito_bancario" ? referencia : "",
+    banco: metodo === "deposito_bancario" ? banco : "",
+    efectivo: metodo === "efectivo" ? total : 0,
+    observaciones: `Diferencia cambio ${getPostventaRecibo(postventa)}`,
+  };
+};
+
+const createDepartamentoRowFromPostventa = (postventa: PostventaReporte, fecha: string): DepartamentoRow => {
+  const metodo = getPostventaMetodo(postventa);
+  const referencia = getPostventaReferencia(postventa);
+  const banco = getPostventaBanco(postventa);
+  const total = getPostventaMontoReporte(postventa);
+  return {
+    id: getPostventaRowId(postventa),
+    fecha,
+    envio: "",
+    transferencia: metodo === "transferencia" ? total : 0,
+    autorizacion: metodo === "transferencia" ? referencia : "",
+    deposito: metodo === "deposito_bancario" ? total : 0,
+    boleta: metodo === "deposito_bancario" ? referencia : "",
+    banco: metodo === "deposito_bancario" ? banco : "",
+    observaciones: `Diferencia cambio ${getPostventaRecibo(postventa)}`,
+  };
+};
+
+const createTiendaRowFromPostventa = (postventa: PostventaReporte, fecha: string): TiendaRow => {
+  const metodo = getPostventaMetodo(postventa);
+  const referencia = getPostventaReferencia(postventa);
+  const banco = getPostventaBanco(postventa);
+  const total = getPostventaMontoReporte(postventa);
+  return {
+    id: getPostventaRowId(postventa),
+    fecha,
+    recibo: getPostventaRecibo(postventa),
+    transferencia: metodo === "transferencia" ? total : 0,
+    autorizacionTransferencia: metodo === "transferencia" ? referencia : "",
+    deposito: metodo === "deposito_bancario" ? total : 0,
+    boleta: metodo === "deposito_bancario" ? referencia : "",
+    banco: metodo === "deposito_bancario" ? banco : "",
+    tarjeta: metodoCuentaComoTarjeta(metodo) ? total : 0,
+    autorizacionTarjeta: metodoCuentaComoTarjeta(metodo) ? referencia : "",
+    efectivo: metodo === "efectivo" ? total : 0,
+    total,
+    observaciones: "Diferencia por cambio",
   };
 };
 
@@ -745,6 +854,7 @@ export default function ReporteDiario() {
   const [ventas, setVentas] = useState<Venta[]>([]);
   const [pedidos, setPedidos] = useState<PedidoReporte[]>([]);
   const [ordenesMixtas, setOrdenesMixtas] = useState<OrdenMixtaReporte[]>([]);
+  const [postventaRows, setPostventaRows] = useState<PostventaReporte[]>([]);
   const [fecha, setFecha] = useState(today);
   const [reporteUsuarioId, setReporteUsuarioId] = useState<number | "">(userId ?? "");
   const [omitirCorreoReporte, setOmitirCorreoReporte] = useState(false);
@@ -809,14 +919,16 @@ export default function ReporteDiario() {
     if (rellenando || generandoPdf) return;
     try {
       setRellenando(true);
-      const [respVentas, respPedidos, respOrdenesMixtas] = await Promise.all([
+      const [respVentas, respPedidos, respOrdenesMixtas, respPostventa] = await Promise.all([
         api.get("/ventas"),
         api.get("/produccion"),
         api.get("/orden-mixta"),
+        api.get("/postventa", { params: { tipo: "cambio" } }).catch(() => ({ data: [] })),
       ]);
       setVentas(respVentas.data || []);
       setPedidos(respPedidos.data || []);
       setOrdenesMixtas(respOrdenesMixtas.data || []);
+      setPostventaRows(respPostventa.data || []);
       setCapitalAutoEnvios({});
       setDepartamentoAutoEnvios({});
       setCapitalAutoObservaciones({});
@@ -827,11 +939,11 @@ export default function ReporteDiario() {
       setTiendaAutoEditId(null);
       Swal.fire(
         "Listo",
-        `Se rellenaron las ventas, pedidos y ordenes mixtas registrados para ${fecha}. Revisa cada seccion antes de imprimir.`,
+        `Se rellenaron las ventas, pedidos, ordenes mixtas y diferencias por cambios registrados para ${fecha}. Revisa cada seccion antes de imprimir.`,
         "success"
       );
     } catch {
-      Swal.fire("Error", "No se pudieron rellenar las ventas, pedidos y ordenes mixtas del reporte diario", "error");
+      Swal.fire("Error", "No se pudieron rellenar las ventas, pedidos, ordenes mixtas y cambios del reporte diario", "error");
     } finally {
       setRellenando(false);
     }
@@ -916,6 +1028,7 @@ export default function ReporteDiario() {
     setVentas([]);
     setPedidos([]);
     setOrdenesMixtas([]);
+    setPostventaRows([]);
     setFecha(today);
     setOmitirCorreoReporte(false);
     setCapitalRows([createCapitalRow(today)]);
@@ -951,6 +1064,7 @@ export default function ReporteDiario() {
     setVentas([]);
     setPedidos([]);
     setOrdenesMixtas([]);
+    setPostventaRows([]);
     setCapitalRows(hydrateCapitalRows(capitalGuardado, docFecha).filter(hasCapitalRowData));
     setDepartamentoRows(hydrateDepartamentoRows(departamentoGuardado, docFecha).filter(hasDepartamentoRowData));
     setTiendaManualRows(hydrateTiendaRows(tiendaGuardado, docFecha).filter(hasTiendaRowData));
@@ -1013,6 +1127,20 @@ export default function ReporteDiario() {
     return Array.from(map.values());
   }, [pedidosPagosDelDia]);
 
+  const postventaDelDia = useMemo(
+    () =>
+      postventaRows.filter((postventa) => {
+        if (toDateOnly(postventa.fecha) !== fecha) return false;
+        if (`${postventa.tipo || ""}`.trim().toLowerCase() !== "cambio") return false;
+        if (`${postventa.estado || ""}`.trim().toLowerCase() === "anulado") return false;
+        if (postventa.detalle?.modoCobro !== "con_diferencia") return false;
+        if (getPostventaMontoReporte(postventa) <= 0) return false;
+        if (canGenerateForOtherUser && reporteUsuarioId) return postventaPerteneceAUsuario(postventa, reporteUsuario);
+        return true;
+      }),
+    [postventaRows, fecha, canGenerateForOtherUser, reporteUsuarioId, reporteUsuario]
+  );
+
   const capitalAutoRows = useMemo<CapitalRow[]>(
     () =>
       [
@@ -1030,12 +1158,15 @@ export default function ReporteDiario() {
             .filter((pago) => normalizeUbicacionOrdenMixta(orden, pago) === "CAPITAL")
             .map((pago) => createCapitalRowFromOrdenMixta(orden, fecha, pago))
         ),
+        ...postventaDelDia
+          .filter((postventa) => normalizeUbicacionPostventa(postventa) === "CAPITAL")
+          .map((postventa) => createCapitalRowFromPostventa(postventa, fecha)),
       ].map((row) => ({
         ...row,
         envio: capitalAutoEnvios[row.id] || "",
         observaciones: capitalAutoObservaciones[row.id] || "",
       })),
-    [ventasDelDia, pedidosDelDia, ordenesMixtasDelDia, fecha, capitalAutoEnvios, capitalAutoObservaciones]
+    [ventasDelDia, pedidosDelDia, ordenesMixtasDelDia, postventaDelDia, fecha, capitalAutoEnvios, capitalAutoObservaciones]
   );
 
   const departamentoAutoRows = useMemo<DepartamentoRow[]>(
@@ -1055,12 +1186,15 @@ export default function ReporteDiario() {
             .filter((pago) => normalizeUbicacionOrdenMixta(orden, pago) === "DEPARTAMENTO")
             .map((pago) => createDepartamentoRowFromOrdenMixta(orden, fecha, pago))
         ),
+        ...postventaDelDia
+          .filter((postventa) => normalizeUbicacionPostventa(postventa) === "DEPARTAMENTO")
+          .map((postventa) => createDepartamentoRowFromPostventa(postventa, fecha)),
       ].map((row) => ({
         ...row,
         envio: departamentoAutoEnvios[row.id] || "",
         observaciones: departamentoAutoObservaciones[row.id] || "",
       })),
-    [ventasDelDia, pedidosDelDia, ordenesMixtasDelDia, fecha, departamentoAutoEnvios, departamentoAutoObservaciones]
+    [ventasDelDia, pedidosDelDia, ordenesMixtasDelDia, postventaDelDia, fecha, departamentoAutoEnvios, departamentoAutoObservaciones]
   );
 
   const tiendaAutoRows = useMemo<TiendaRow[]>(() => {
@@ -1095,11 +1229,14 @@ export default function ReporteDiario() {
         .filter((pago) => normalizeUbicacionOrdenMixta(orden, pago) === "TIENDA")
         .map((pago) => createTiendaRowFromOrdenMixta(orden, fecha, pago))
     );
-    return [...ventaRows, ...pedidoRows, ...ordenMixtaRows].map((row) => ({
+    const postventaRows = postventaDelDia
+      .filter((postventa) => normalizeUbicacionPostventa(postventa) === "TIENDA")
+      .map((postventa) => createTiendaRowFromPostventa(postventa, fecha));
+    return [...ventaRows, ...pedidoRows, ...ordenMixtaRows, ...postventaRows].map((row) => ({
       ...row,
       observaciones: tiendaAutoObservaciones[row.id] || "",
     }));
-  }, [ventasDelDia, pedidosDelDia, ordenesMixtasDelDia, fecha, tiendaAutoObservaciones]);
+  }, [ventasDelDia, pedidosDelDia, ordenesMixtasDelDia, postventaDelDia, fecha, tiendaAutoObservaciones]);
 
   const tiendaRows = useMemo<TiendaRow[]>(
     () => [...tiendaAutoRows, ...tiendaManualRows.filter(hasTiendaRowData)],
