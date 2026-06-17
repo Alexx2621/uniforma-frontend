@@ -25,11 +25,14 @@ import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { hasPermission } from "../auth/permissions";
 import { useAuthStore } from "../auth/useAuthStore";
+import { useSingleFlight } from "../hooks/useSingleFlight";
 import { formatCurrency } from "../utils/currency";
+import { getStatusColor, getStatusLabel } from "../utils/statusUi";
 
 interface AutorizacionRow {
   id: string;
   sourceId: number;
+  pedidoId?: number | null;
   tipo: "pedido" | "traslado" | "postventa";
   subtipo?: string;
   titulo: string;
@@ -43,17 +46,23 @@ interface AutorizacionRow {
   comentario?: string | null;
   respuestaComentario?: string | null;
   payload?: any;
+  historial?: AutorizacionHistorialRow[];
   path?: string;
 }
 
+interface AutorizacionHistorialRow {
+  id: number;
+  estado: string;
+  tipoSolicitud?: string;
+  fecha?: string;
+  autorizadoEn?: string | null;
+  solicitadoPor?: string | null;
+  autorizadoPor?: string | null;
+  comentario?: string | null;
+  respuestaComentario?: string | null;
+}
+
 const dateLabel = (value?: string | null) => (value ? new Date(value).toLocaleString("es-GT") : "N/D");
-const estadoColor = (estado?: string): "success" | "warning" | "error" | "info" | "default" => {
-  const value = `${estado || ""}`.toLowerCase();
-  if (["aprobado", "cerrado", "recibido", "pendiente"].includes(value)) return value === "pendiente" ? "warning" : "success";
-  if (["rechazado", "anulado", "cancelado"].includes(value)) return "error";
-  if (value.includes("revision") || value.includes("aprobacion")) return "info";
-  return "default";
-};
 const getAutorizacionDetalleKey = (item: any) =>
   `${item.id ?? item.productoId ?? item.codigo ?? "linea"}-${item.cantidad ?? ""}-${item.precioUnit ?? ""}-${item.bordado ?? ""}-${item.descuento ?? ""}-${item.descripcion ?? ""}`;
 
@@ -94,7 +103,7 @@ export default function Autorizaciones() {
     void cargar();
   }, [cargar]);
 
-  const resolver = useCallback(async (row: AutorizacionRow, accion: "aprobar" | "rechazar") => {
+  const resolverBase = useCallback(async (row: AutorizacionRow, accion: "aprobar" | "rechazar") => {
     const comentario =
       accion === "rechazar"
         ? await Swal.fire({
@@ -135,6 +144,7 @@ export default function Autorizaciones() {
       Swal.fire("Error", error?.response?.data?.message || "No se pudo resolver la autorizacion", "error");
     }
   }, [cargar]);
+  const { run: resolver, running: resolviendo } = useSingleFlight(resolverBase);
 
   const puedeResolver = useCallback(
     (row: AutorizacionRow) =>
@@ -163,7 +173,7 @@ export default function Autorizaciones() {
         headerName: "Estado",
         minWidth: 140,
         flex: 0.6,
-        renderCell: ({ row }) => <Chip label={row.estado} size="small" color={estadoColor(row.estado)} />,
+        renderCell: ({ row }) => <Chip label={getStatusLabel(row.estado)} size="small" color={getStatusColor(row.estado)} />,
       },
       {
         field: "acciones",
@@ -175,8 +185,8 @@ export default function Autorizaciones() {
             <Button size="small" onClick={() => setSelected(row)}>
               Ver
             </Button>
-            {puedeResolver(row) && (
-              <Button size="small" color="success" onClick={() => void resolver(row, "aprobar")}>
+            {puedeResolver(row) && row.estado === "pendiente" && (
+              <Button size="small" color="success" disabled={resolviendo} onClick={() => void resolver(row, "aprobar")}>
                 Aprobar
               </Button>
             )}
@@ -184,7 +194,7 @@ export default function Autorizaciones() {
         ),
       },
     ],
-    [puedeResolver, resolver],
+    [puedeResolver, resolver, resolviendo],
   );
 
   if (!canView) return <Navigate to="/" replace />;
@@ -231,6 +241,12 @@ export default function Autorizaciones() {
             <Typography variant="h5">{stats.postventa || 0}</Typography>
           </Paper>
         </Grid>
+        <Grid size={{ xs: 12, sm: 4, md: 3 }}>
+          <Paper variant="outlined" sx={{ p: 2 }}>
+            <Typography variant="caption" color="text.secondary">Reemplazadas</Typography>
+            <Typography variant="h5">{stats.reemplazada || 0}</Typography>
+          </Paper>
+        </Grid>
       </Grid>
 
       <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} sx={{ mb: 2 }}>
@@ -245,6 +261,7 @@ export default function Autorizaciones() {
           <MenuItem value="todos">Todos</MenuItem>
           <MenuItem value="aprobado">Aprobados</MenuItem>
           <MenuItem value="rechazado">Rechazados</MenuItem>
+          <MenuItem value="reemplazada">Reemplazadas</MenuItem>
         </TextField>
         <Button variant="contained" onClick={() => void cargar()} disabled={loading}>
           Filtrar
@@ -270,7 +287,7 @@ export default function Autorizaciones() {
             <Stack spacing={2}>
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                 <Chip label={selected.tipo} />
-                <Chip label={selected.estado} color={estadoColor(selected.estado)} />
+                <Chip label={getStatusLabel(selected.estado)} color={getStatusColor(selected.estado)} />
                 <Chip label={formatCurrency(selected.total)} color="primary" variant="outlined" />
               </Stack>
               <Typography variant="h6">{selected.referencia}</Typography>
@@ -309,6 +326,37 @@ export default function Autorizaciones() {
                   <Typography variant="body2">{selected.comentario}</Typography>
                 </Paper>
               )}
+              {selected.tipo === "pedido" && Array.isArray(selected.historial) && selected.historial.length > 0 && (
+                <Paper variant="outlined" sx={{ p: 1.5 }}>
+                  <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                    Historial de autorizaciones del pedido
+                  </Typography>
+                  <Stack spacing={1}>
+                    {selected.historial.map((item) => (
+                      <Stack
+                        key={item.id}
+                        direction={{ xs: "column", sm: "row" }}
+                        spacing={1}
+                        alignItems={{ xs: "flex-start", sm: "center" }}
+                        justifyContent="space-between"
+                        sx={{ borderBottom: "1px solid", borderColor: "divider", pb: 1 }}
+                      >
+                        <Box>
+                          <Typography variant="body2">
+                            {dateLabel(item.fecha)} | {item.solicitadoPor || "N/D"} | {item.tipoSolicitud || "creacion"}
+                          </Typography>
+                          {(item.respuestaComentario || item.comentario) && (
+                            <Typography variant="caption" color="text.secondary">
+                              {item.respuestaComentario || item.comentario}
+                            </Typography>
+                          )}
+                        </Box>
+                        <Chip size="small" label={getStatusLabel(item.estado)} color={getStatusColor(item.estado)} />
+                      </Stack>
+                    ))}
+                  </Stack>
+                </Paper>
+              )}
               <TextField
                 label="Payload tecnico"
                 value={JSON.stringify(selected.payload || {}, null, 2)}
@@ -326,12 +374,12 @@ export default function Autorizaciones() {
               Abrir modulo
             </Button>
           )}
-          {selected && puedeResolver(selected) && (
+          {selected && puedeResolver(selected) && selected.estado === "pendiente" && (
             <>
-              <Button startIcon={<CloseOutlined />} color="error" onClick={() => void resolver(selected, "rechazar")}>
+              <Button startIcon={<CloseOutlined />} color="error" disabled={resolviendo} onClick={() => void resolver(selected, "rechazar")}>
                 Rechazar
               </Button>
-              <Button startIcon={<CheckCircleOutlineOutlined />} variant="contained" color="success" onClick={() => void resolver(selected, "aprobar")}>
+              <Button startIcon={<CheckCircleOutlineOutlined />} variant="contained" color="success" disabled={resolviendo} onClick={() => void resolver(selected, "aprobar")}>
                 Aprobar
               </Button>
             </>

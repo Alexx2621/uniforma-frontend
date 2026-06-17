@@ -307,6 +307,11 @@ export default function Correcciones() {
               </Stack>
 
               {!canManage && <Alert severity="info">Puedes revisar correcciones, pero no aplicarlas con tu rol actual.</Alert>}
+              {selected.data?.requiereRevisionPorCorreccion && (
+                <Alert severity="warning">
+                  Este documento tiene correcciones aplicadas. Revisa si reportes relacionados deben rellenarse o reimprimirse.
+                </Alert>
+              )}
 
               <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
                 <FormControl size="small" sx={{ minWidth: 220 }}>

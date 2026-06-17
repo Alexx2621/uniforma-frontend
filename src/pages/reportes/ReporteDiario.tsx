@@ -1271,6 +1271,41 @@ export default function ReporteDiario() {
     [subtotalCapital, subtotalDepartamento, subtotalTienda]
   );
 
+  const preCierreResumen = useMemo(() => {
+    const manualCapital = capitalRows.filter(hasCapitalRowData);
+    const manualDepartamento = departamentoRows.filter(hasDepartamentoRowData);
+    const manualTienda = tiendaManualRows.filter(hasTiendaRowData);
+    return {
+      documentos: {
+        ventas: ventasDelDia.length,
+        pedidos: pedidosDelDia.length,
+        ordenesMixtas: ordenesMixtasDelDia.length,
+        cambios: postventaDelDia.length,
+      },
+      capital: { automaticas: capitalAutoRows.length, manuales: manualCapital.length, total: subtotalCapital },
+      departamento: {
+        automaticas: departamentoAutoRows.length,
+        manuales: manualDepartamento.length,
+        total: subtotalDepartamento,
+      },
+      tienda: { automaticas: tiendaAutoRows.length, manuales: manualTienda.length, total: subtotalTienda },
+    };
+  }, [
+    capitalAutoRows,
+    capitalRows,
+    departamentoAutoRows,
+    departamentoRows,
+    ordenesMixtasDelDia,
+    pedidosDelDia,
+    postventaDelDia,
+    subtotalCapital,
+    subtotalDepartamento,
+    subtotalTienda,
+    tiendaAutoRows,
+    tiendaManualRows,
+    ventasDelDia,
+  ]);
+
   const updateCapitalRow = (id: number, field: keyof CapitalRow, value: string | number) => {
     setCapitalRows((prev) => prev.map((row) => (row.id === id ? { ...row, [field]: value } : row)));
   };
@@ -1403,10 +1438,18 @@ export default function ReporteDiario() {
     const confirmar = await Swal.fire({
       icon: "question",
       title: documentoId ? "Actualizar reporte diario" : "Generar reporte diario",
-      text: `Se generara el PDF del cierre diario ${fecha} por ${money(totalResumen)}. ¿Deseas continuar?`,
-      html: documentoId
-        ? `Se actualizara el cierre <strong>${liquidacionNo}</strong> del ${fecha} por <strong>${money(totalResumen)}</strong>.<br/>El quincenal tomara este dato al volver a rellenar.`
-        : undefined,
+      html: `
+        <div style="text-align:left">
+          <p style="margin:0 0 10px">Se ${documentoId ? "actualizara" : "generara"} el cierre diario <strong>${fecha}</strong> por <strong>${money(totalResumen)}</strong>.</p>
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <tr><td style="padding:4px 0">Capital</td><td style="text-align:right">${preCierreResumen.capital.automaticas} auto / ${preCierreResumen.capital.manuales} manual</td><td style="text-align:right"><strong>${money(preCierreResumen.capital.total)}</strong></td></tr>
+            <tr><td style="padding:4px 0">Departamento</td><td style="text-align:right">${preCierreResumen.departamento.automaticas} auto / ${preCierreResumen.departamento.manuales} manual</td><td style="text-align:right"><strong>${money(preCierreResumen.departamento.total)}</strong></td></tr>
+            <tr><td style="padding:4px 0">Tienda</td><td style="text-align:right">${preCierreResumen.tienda.automaticas} auto / ${preCierreResumen.tienda.manuales} manual</td><td style="text-align:right"><strong>${money(preCierreResumen.tienda.total)}</strong></td></tr>
+          </table>
+          <p style="margin:12px 0 0;color:#555">Documentos detectados: ${preCierreResumen.documentos.ventas} ventas, ${preCierreResumen.documentos.pedidos} pagos de pedidos, ${preCierreResumen.documentos.ordenesMixtas} ordenes mixtas, ${preCierreResumen.documentos.cambios} cambios/devoluciones.</p>
+          ${documentoId ? `<p style="margin:8px 0 0;color:#b45309">El quincenal tomara este dato al volver a rellenar.</p>` : ""}
+        </div>
+      `,
       showCancelButton: true,
       confirmButtonText: documentoId ? "Si, actualizar" : "Si, generar PDF",
       cancelButtonText: "Cancelar",

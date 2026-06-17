@@ -2489,6 +2489,15 @@ export default function PedidoNuevo() {
         return;
       }
 
+      if (payload?.estado === "reemplazada") {
+        Swal.fire(
+          "Solicitud reemplazada",
+          payload?.comentario || "Se envio una nueva solicitud para este pedido. La solicitud anterior quedo sin efecto.",
+          "info",
+        );
+        return;
+      }
+
       Swal.fire(
         "Solicitud rechazada",
         payload?.comentario ? `Motivo: ${payload.comentario}` : "El pedido no fue autorizado.",
