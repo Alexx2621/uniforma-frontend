@@ -1278,7 +1278,7 @@ export default function ReporteDiario() {
     return {
       documentos: {
         ventas: ventasDelDia.length,
-        pedidos: pedidosDelDia.length,
+        pedidos: pedidosPagosDelDia.length,
         ordenesMixtas: ordenesMixtasDelDia.length,
         cambios: postventaDelDia.length,
       },
@@ -1296,7 +1296,7 @@ export default function ReporteDiario() {
     departamentoAutoRows,
     departamentoRows,
     ordenesMixtasDelDia,
-    pedidosDelDia,
+    pedidosPagosDelDia,
     postventaDelDia,
     subtotalCapital,
     subtotalDepartamento,
@@ -1617,10 +1617,10 @@ export default function ReporteDiario() {
             variant="outlined"
             size="small"
             onClick={rellenarDesdeVentas}
-            disabled
-            title="Rellenado automatico deshabilitado temporalmente"
+            disabled={rellenando || generandoPdf}
+            title="Rellenar ventas, pagos de pedidos, ordenes mixtas y cambios del dia"
           >
-            Rellenar
+            {rellenando ? "Rellenando..." : "Rellenar"}
           </Button>
           <Button
             startIcon={<CleaningServicesOutlined />}
@@ -1714,7 +1714,7 @@ export default function ReporteDiario() {
         )}
         <Grid size={{ xs: 12, sm: 6, md: canGenerateForOtherUser ? 12 : 6 }}>
           <Stack direction="row" spacing={1} alignItems="center" sx={{ height: "100%", flexWrap: "wrap" }}>
-          <Chip label={`${ventasDelDia.length + pedidosDelDia.length + ordenesMixtasDelDia.length} registros del dia`} />
+          <Chip label={`${ventasDelDia.length + pedidosPagosDelDia.length + ordenesMixtasDelDia.length} registros del dia`} />
             <Chip label={`Capital ${money(subtotalCapital)}`} color="primary" variant="outlined" />
             <Chip label={`Departamento ${money(subtotalDepartamento)}`} color="warning" variant="outlined" />
             <Chip label={`Tienda ${money(subtotalTienda)}`} color="success" />
