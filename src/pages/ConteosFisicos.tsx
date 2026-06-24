@@ -5,6 +5,7 @@ import {
   Chip,
   Divider,
   FormControl,
+  Grid,
   IconButton,
   InputAdornment,
   InputLabel,
@@ -91,6 +92,9 @@ const formatDateTime = (value?: string | null) => {
   });
 };
 
+const uniqueSorted = (values: string[]) =>
+  Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+
 export default function ConteosFisicos() {
   const today = useMemo(() => toInputDate(new Date()), []);
   const [vista, setVista] = useState<"listado" | "nuevo">("listado");
@@ -105,6 +109,11 @@ export default function ConteosFisicos() {
   const [filtroBodega, setFiltroBodega] = useState<number | "">("");
   const [bodegaId, setBodegaId] = useState<number | "">("");
   const [busquedaProducto, setBusquedaProducto] = useState("");
+  const [filtroTipoProducto, setFiltroTipoProducto] = useState("");
+  const [filtroGeneroProducto, setFiltroGeneroProducto] = useState("");
+  const [filtroTelaProducto, setFiltroTelaProducto] = useState("");
+  const [filtroTallaProducto, setFiltroTallaProducto] = useState("");
+  const [filtroColorProducto, setFiltroColorProducto] = useState("");
   const [stockFisico, setStockFisico] = useState("");
   const [observaciones, setObservaciones] = useState("");
   const [detalle, setDetalle] = useState<DetalleCaptura[]>([]);
@@ -161,16 +170,6 @@ export default function ConteosFisicos() {
     }
   }, [userBodegaId, canAccessAllBodegas, bodegas, bodegaId]);
 
-  const productoDetectado = useMemo(() => {
-    const term = busquedaProducto.trim().toLowerCase();
-    if (!term) return null;
-    return (
-      productos.find((producto) => producto.codigo.toLowerCase() === term) ||
-      productos.find((producto) => producto.codigo.toLowerCase().includes(term)) ||
-      null
-    );
-  }, [productos, busquedaProducto]);
-
   const productoTexto = (producto?: Producto | null) => {
     if (!producto) return "Producto";
     return [
@@ -185,13 +184,135 @@ export default function ConteosFisicos() {
       .join(" | ");
   };
 
+  const obtenerTela = (producto?: Producto | null) => producto?.tela?.nombre?.trim() || "N/D";
+  const obtenerTalla = (producto?: Producto | null) => producto?.talla?.nombre?.trim() || "N/D";
+  const obtenerColor = (producto?: Producto | null) => producto?.color?.nombre?.trim() || "N/D";
+
+  const filtrarProductos = useCallback(
+    ({
+      tipo = filtroTipoProducto,
+      genero = filtroGeneroProducto,
+      tela = filtroTelaProducto,
+      talla = filtroTallaProducto,
+      color = filtroColorProducto,
+    }: {
+      tipo?: string;
+      genero?: string;
+      tela?: string;
+      talla?: string;
+      color?: string;
+    }) =>
+      productos.filter((producto) => {
+        const matchesTipo = !tipo || (producto.tipo || "").trim() === tipo;
+        const matchesGenero = !genero || (producto.genero || "").trim() === genero;
+        const matchesTela = !tela || obtenerTela(producto) === tela;
+        const matchesTalla = !talla || obtenerTalla(producto) === talla;
+        const matchesColor = !color || obtenerColor(producto) === color;
+        return matchesTipo && matchesGenero && matchesTela && matchesTalla && matchesColor;
+      }),
+    [productos, filtroTipoProducto, filtroGeneroProducto, filtroTelaProducto, filtroTallaProducto, filtroColorProducto],
+  );
+
+  const tiposDisponibles = useMemo(
+    () =>
+      uniqueSorted(
+        filtrarProductos({
+          tipo: "",
+          genero: filtroGeneroProducto,
+          tela: filtroTelaProducto,
+          talla: filtroTallaProducto,
+          color: filtroColorProducto,
+        }).map((producto) => producto.tipo || ""),
+      ),
+    [filtrarProductos, filtroGeneroProducto, filtroTelaProducto, filtroTallaProducto, filtroColorProducto],
+  );
+
+  const generosDisponibles = useMemo(
+    () =>
+      uniqueSorted(
+        filtrarProductos({
+          tipo: filtroTipoProducto,
+          genero: "",
+          tela: filtroTelaProducto,
+          talla: filtroTallaProducto,
+          color: filtroColorProducto,
+        }).map((producto) => producto.genero || ""),
+      ),
+    [filtrarProductos, filtroTipoProducto, filtroTelaProducto, filtroTallaProducto, filtroColorProducto],
+  );
+
+  const telasDisponibles = useMemo(
+    () =>
+      uniqueSorted(
+        filtrarProductos({
+          tipo: filtroTipoProducto,
+          genero: filtroGeneroProducto,
+          tela: "",
+          talla: filtroTallaProducto,
+          color: filtroColorProducto,
+        }).map((producto) => obtenerTela(producto)),
+      ),
+    [filtrarProductos, filtroTipoProducto, filtroGeneroProducto, filtroTallaProducto, filtroColorProducto],
+  );
+
+  const tallasDisponibles = useMemo(
+    () =>
+      uniqueSorted(
+        filtrarProductos({
+          tipo: filtroTipoProducto,
+          genero: filtroGeneroProducto,
+          tela: filtroTelaProducto,
+          talla: "",
+          color: filtroColorProducto,
+        }).map((producto) => obtenerTalla(producto)),
+      ),
+    [filtrarProductos, filtroTipoProducto, filtroGeneroProducto, filtroTelaProducto, filtroColorProducto],
+  );
+
+  const coloresDisponibles = useMemo(
+    () =>
+      uniqueSorted(
+        filtrarProductos({
+          tipo: filtroTipoProducto,
+          genero: filtroGeneroProducto,
+          tela: filtroTelaProducto,
+          talla: filtroTallaProducto,
+          color: "",
+        }).map((producto) => obtenerColor(producto)),
+      ),
+    [filtrarProductos, filtroTipoProducto, filtroGeneroProducto, filtroTelaProducto, filtroTallaProducto],
+  );
+
+  const productosCoincidentes = useMemo(() => filtrarProductos({}), [filtrarProductos]);
+
+  const productoDetectado = useMemo(() => {
+    const term = busquedaProducto.trim().toLowerCase();
+    if (term) {
+      return (
+        productos.find((producto) => producto.codigo.toLowerCase() === term) ||
+        productos.find((producto) => producto.codigo.toLowerCase().includes(term)) ||
+        null
+      );
+    }
+    return productosCoincidentes.length === 1 ? productosCoincidentes[0] : null;
+  }, [productos, productosCoincidentes, busquedaProducto]);
+
+  const limpiarSeleccionProducto = () => {
+    setBusquedaProducto("");
+    setFiltroTipoProducto("");
+    setFiltroGeneroProducto("");
+    setFiltroTelaProducto("");
+    setFiltroTallaProducto("");
+    setFiltroColorProducto("");
+  };
+
   const agregarLinea = async () => {
     if (!bodegaId) {
       Swal.fire("Validacion", "Selecciona la bodega del conteo", "warning");
       return;
     }
     if (!productoDetectado) {
-      Swal.fire("Validacion", "Busca y selecciona un codigo valido", "warning");
+      Swal.fire("Validacion", "Selecciona un producto valido por codigo o por filtros", "warning");
       return;
     }
     const fisico = Number(stockFisico);
@@ -223,7 +344,7 @@ export default function ConteosFisicos() {
         stockFisico: fisico,
       },
     ]);
-    setBusquedaProducto("");
+    limpiarSeleccionProducto();
     setStockFisico("");
   };
 
@@ -264,7 +385,7 @@ export default function ConteosFisicos() {
       Swal.fire("Aplicado", "Conteo fisico registrado correctamente", "success");
       setDetalle([]);
       setObservaciones("");
-      setBusquedaProducto("");
+      limpiarSeleccionProducto();
       setStockFisico("");
       await cargarConteos();
       setVista("listado");
@@ -399,31 +520,121 @@ export default function ConteosFisicos() {
           </Stack>
 
           <Paper variant="outlined" sx={{ p: 2 }}>
-            <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems={{ xs: "stretch", md: "flex-start" }}>
-              <TextField
-                label="Codigo de producto"
-                value={busquedaProducto}
-                onChange={(e) => setBusquedaProducto(e.target.value)}
-                fullWidth
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchIcon fontSize="small" />
-                    </InputAdornment>
-                  ),
-                }}
-                helperText={productoDetectado ? productoTexto(productoDetectado) : "Escribe el codigo o parte del codigo"}
-              />
-              <TextField
-                label="Stock fisico"
-                value={stockFisico}
-                onChange={(e) => setStockFisico(e.target.value.replace(/[^\d]/g, ""))}
-                sx={{ minWidth: 180 }}
-              />
-              <Button startIcon={<AddIcon />} variant="contained" onClick={agregarLinea} sx={{ minHeight: 56 }}>
-                Agregar
-              </Button>
-            </Stack>
+            <Grid container spacing={2} alignItems="flex-start">
+              <Grid size={{ xs: 12, md: 4 }}>
+                <TextField
+                  label="Codigo de producto"
+                  value={busquedaProducto}
+                  onChange={(e) => setBusquedaProducto(e.target.value)}
+                  fullWidth
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchIcon fontSize="small" />
+                      </InputAdornment>
+                    ),
+                  }}
+                  helperText={productoDetectado ? productoTexto(productoDetectado) : "Puedes escribir el codigo o usar los filtros"}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6, md: 2 }}>
+                <FormControl fullWidth>
+                  <InputLabel>Tipo</InputLabel>
+                  <Select label="Tipo" value={filtroTipoProducto} onChange={(e) => setFiltroTipoProducto(e.target.value)}>
+                    <MenuItem value="">Todos</MenuItem>
+                    {tiposDisponibles.map((tipo) => (
+                      <MenuItem key={tipo} value={tipo}>
+                        {tipo}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6, md: 2 }}>
+                <FormControl fullWidth>
+                  <InputLabel>Genero</InputLabel>
+                  <Select label="Genero" value={filtroGeneroProducto} onChange={(e) => setFiltroGeneroProducto(e.target.value)}>
+                    <MenuItem value="">Todos</MenuItem>
+                    {generosDisponibles.map((genero) => (
+                      <MenuItem key={genero} value={genero}>
+                        {genero}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6, md: 2 }}>
+                <FormControl fullWidth>
+                  <InputLabel>Tela</InputLabel>
+                  <Select label="Tela" value={filtroTelaProducto} onChange={(e) => setFiltroTelaProducto(e.target.value)}>
+                    <MenuItem value="">Todas</MenuItem>
+                    {telasDisponibles.map((tela) => (
+                      <MenuItem key={tela} value={tela}>
+                        {tela}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6, md: 2 }}>
+                <FormControl fullWidth>
+                  <InputLabel>Talla</InputLabel>
+                  <Select label="Talla" value={filtroTallaProducto} onChange={(e) => setFiltroTallaProducto(e.target.value)}>
+                    <MenuItem value="">Todas</MenuItem>
+                    {tallasDisponibles.map((talla) => (
+                      <MenuItem key={talla} value={talla}>
+                        {talla}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6, md: 2 }}>
+                <FormControl fullWidth>
+                  <InputLabel>Color</InputLabel>
+                  <Select label="Color" value={filtroColorProducto} onChange={(e) => setFiltroColorProducto(e.target.value)}>
+                    <MenuItem value="">Todos</MenuItem>
+                    {coloresDisponibles.map((color) => (
+                      <MenuItem key={color} value={color}>
+                        {color}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6, md: 2 }}>
+                <TextField
+                  label="Producto detectado"
+                  value={productoDetectado?.codigo || ""}
+                  fullWidth
+                  disabled
+                  helperText={
+                    busquedaProducto.trim()
+                      ? productoDetectado
+                        ? "Codigo encontrado"
+                        : "No existe ese codigo"
+                      : productosCoincidentes.length === 1
+                        ? "Detectado por filtros"
+                        : productosCoincidentes.length > 1
+                          ? `${productosCoincidentes.length} coincidencias`
+                          : "Sin coincidencias"
+                  }
+                />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6, md: 2 }}>
+                <TextField
+                  label="Stock fisico"
+                  value={stockFisico}
+                  onChange={(e) => setStockFisico(e.target.value.replace(/[^\d]/g, ""))}
+                  fullWidth
+                />
+              </Grid>
+              <Grid size={{ xs: 12, md: 2 }}>
+                <Button startIcon={<AddIcon />} variant="contained" onClick={agregarLinea} fullWidth sx={{ minHeight: 56 }}>
+                  Agregar
+                </Button>
+              </Grid>
+            </Grid>
           </Paper>
 
           <div style={{ height: 420, width: "100%" }}>

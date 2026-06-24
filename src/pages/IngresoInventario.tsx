@@ -34,6 +34,7 @@ import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
 import PrintOutlined from "@mui/icons-material/PrintOutlined";
 import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import Swal from "sweetalert2";
+import { useLocation } from "react-router-dom";
 import { api } from "../api/axios";
 import { hasPermission } from "../auth/permissions";
 import { useAuthStore } from "../auth/useAuthStore";
@@ -167,6 +168,9 @@ const createIngresoRequestId = () => {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 };
 
+const INGRESO_BORRADOR_TIPO = "ingreso-inventario";
+const INGRESO_BORRADOR_LOCAL_KEY = "ingreso-inventario:borrador-local:v1";
+
 export default function IngresoInventario() {
   const today = useMemo(() => toInputDate(new Date()), []);
   const [vista, setVista] = useState<"listado" | "nuevo">("listado");
@@ -198,10 +202,19 @@ export default function IngresoInventario() {
   const [guardandoIngreso, setGuardandoIngreso] = useState(false);
   const [importandoIngreso, setImportandoIngreso] = useState(false);
   const [ingresoRequestId, setIngresoRequestId] = useState(() => createIngresoRequestId());
+  const [documentoBorradorId, setDocumentoBorradorId] = useState<number | null>(null);
+  const [borradorGuardadoEn, setBorradorGuardadoEn] = useState("");
+  const [borradorEstado, setBorradorEstado] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const guardandoIngresoRef = useRef(false);
   const importandoIngresoRef = useRef(false);
+  const borradorInicializadoRef = useRef(false);
+  const restaurandoBorradorRef = useRef(false);
+  const autoguardadoBorradorBloqueadoRef = useRef(false);
+  const ultimoBorradorJsonRef = useRef("");
 
-  const { usuario, rol, permisos, bodegaId: userBodegaId } = useAuthStore();
+  const location = useLocation();
+  const returnState = location.state as { borradorId?: number } | null;
+  const { usuario, rol, permisos, bodegaId: userBodegaId, id: userId } = useAuthStore();
   const { fetchConfig } = useSystemConfigStore();
   const canAccessAllBodegas = hasPermission(rol, permisos, "sistema.multi-tienda");
 
@@ -261,6 +274,195 @@ export default function IngresoInventario() {
       setFiltroBodega((prev) => prev || (exists ? parsed : ""));
     }
   }, [userBodegaId, canAccessAllBodegas, bodegas, bodegaId]);
+
+  const limpiarFormularioIngreso = useCallback(() => {
+    setBodegaId(userBodegaId && !canAccessAllBodegas ? Number(userBodegaId) || "" : "");
+    setObservaciones("");
+    setDetalle([]);
+    setArticuloActual(detalleInicial);
+    setCantidadInput("1");
+    setEditingDetalleKey(null);
+    setFiltroTipo("");
+    setFiltroGenero("");
+    setFiltroTela("");
+    setFiltroTalla("");
+    setFiltroColor("");
+    setIngresoRequestId(createIngresoRequestId());
+  }, [canAccessAllBodegas, userBodegaId]);
+
+  const restaurarBorradorIngreso = useCallback((data: any) => {
+    restaurandoBorradorRef.current = true;
+    const encabezado = data?.encabezado || {};
+    const captura = data?.capturaArticulo || {};
+    setBodegaId(encabezado.bodegaId ? Number(encabezado.bodegaId) : "");
+    setObservaciones(`${encabezado.observaciones || ""}`);
+    setIngresoRequestId(`${data?.requestId || createIngresoRequestId()}`);
+    setDetalle(
+      (Array.isArray(data?.detalle) ? data.detalle : []).map((item: any, index: number) => ({
+        ...item,
+        key: Number(item?.key || 0) || Date.now() + index,
+        productoId: Number(item?.productoId || 0),
+        cantidad: Number(item?.cantidad || 0),
+        stockMax: item?.stockMax ?? null,
+        stockActual: item?.stockActual ?? null,
+      })),
+    );
+    setArticuloActual({
+      ...detalleInicial,
+      ...captura,
+      productoId: captura?.productoId ? Number(captura.productoId) : "",
+      cantidad: Number(captura?.cantidad || 1),
+      stockMax: captura?.stockMax ?? null,
+      stockActual: captura?.stockActual ?? null,
+    });
+    setCantidadInput(`${captura?.cantidad || data?.cantidadInput || "1"}`);
+    setFiltroTipo(data?.filtros?.tipo || "");
+    setFiltroGenero(data?.filtros?.genero || "");
+    setFiltroTela(data?.filtros?.tela || "");
+    setFiltroTalla(data?.filtros?.talla || "");
+    setFiltroColor(data?.filtros?.color || "");
+    setVista("nuevo");
+    setTimeout(() => {
+      restaurandoBorradorRef.current = false;
+    }, 0);
+  }, []);
+
+  const finalizarBorradorActual = useCallback(async (documentoFinal?: { tipo?: string; id?: number | null; folio?: string | null }) => {
+    autoguardadoBorradorBloqueadoRef.current = true;
+    const id = documentoBorradorId;
+    setDocumentoBorradorId(null);
+    setBorradorGuardadoEn("");
+    setBorradorEstado("idle");
+    ultimoBorradorJsonRef.current = "";
+    localStorage.removeItem(INGRESO_BORRADOR_LOCAL_KEY);
+    if (!id) return;
+    try {
+      await api.post(`/documentos-borradores/${id}/finalizar`, {
+        documentoFinalTipo: documentoFinal?.tipo || "ingreso-inventario",
+        documentoFinalId: documentoFinal?.id || null,
+        documentoFinalFolio: documentoFinal?.folio || null,
+      });
+    } catch {
+      // El ingreso ya fue creado; el cierre del preliminar no debe bloquear el flujo.
+    }
+  }, [documentoBorradorId]);
+
+  const descartarBorradorActual = useCallback(async () => {
+    if (!documentoBorradorId) return;
+    const result = await Swal.fire({
+      title: "Descartar preliminar",
+      text: "Se eliminara el ingreso preliminar y se limpiara esta pantalla.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Descartar",
+      cancelButtonText: "Cancelar",
+      confirmButtonColor: "#d32f2f",
+    });
+    if (!result.isConfirmed) return;
+    try {
+      await api.delete(`/documentos-borradores/${documentoBorradorId}`);
+    } catch {
+      // Si ya no existe, limpiamos localmente.
+    }
+    setDocumentoBorradorId(null);
+    setBorradorGuardadoEn("");
+    setBorradorEstado("idle");
+    ultimoBorradorJsonRef.current = "";
+    localStorage.removeItem(INGRESO_BORRADOR_LOCAL_KEY);
+    limpiarFormularioIngreso();
+    autoguardadoBorradorBloqueadoRef.current = false;
+  }, [documentoBorradorId, limpiarFormularioIngreso]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const cargarBorrador = async () => {
+      try {
+        const { data } = returnState?.borradorId
+          ? await api.get(`/documentos-borradores/${returnState.borradorId}`)
+          : await api.get("/documentos-borradores/activo", { params: { tipoDocumento: INGRESO_BORRADOR_TIPO } });
+        if (cancelled) return;
+        if (!data?.id) {
+          const localRaw = localStorage.getItem(INGRESO_BORRADOR_LOCAL_KEY);
+          const localData = localRaw ? JSON.parse(localRaw) : null;
+          if (localData?.data) {
+            const result = await Swal.fire({
+              title: "Respaldo local encontrado",
+              text: "Hay un ingreso preliminar guardado en este navegador que aun no estaba en servidor.",
+              icon: "info",
+              showDenyButton: true,
+              showCancelButton: true,
+              confirmButtonText: "Recuperar",
+              denyButtonText: "Descartar",
+              cancelButtonText: "Ahora no",
+              confirmButtonColor: "#1f3f87",
+            });
+            if (result.isConfirmed) {
+              restaurarBorradorIngreso(localData.data);
+              ultimoBorradorJsonRef.current = JSON.stringify(localData.data);
+            } else if (result.isDenied) {
+              localStorage.removeItem(INGRESO_BORRADOR_LOCAL_KEY);
+            }
+          }
+          borradorInicializadoRef.current = true;
+          return;
+        }
+        const result = await Swal.fire({
+          title: "Ingreso preliminar encontrado",
+          text: "Tienes un ingreso de inventario que no fue finalizado. Puedes continuarlo o descartarlo.",
+          icon: "info",
+          showDenyButton: true,
+          showCancelButton: true,
+          confirmButtonText: "Continuar",
+          denyButtonText: "Descartar",
+          cancelButtonText: "Ahora no",
+          confirmButtonColor: "#1f3f87",
+        });
+        if (cancelled) return;
+        if (result.isConfirmed) {
+          autoguardadoBorradorBloqueadoRef.current = false;
+          setDocumentoBorradorId(Number(data.id));
+          setBorradorGuardadoEn(data.actualizadoEn || "");
+          restaurarBorradorIngreso(data.data || {});
+          ultimoBorradorJsonRef.current = JSON.stringify(data.data || {});
+        } else if (result.isDenied) {
+          await api.delete(`/documentos-borradores/${data.id}`).catch(() => undefined);
+          localStorage.removeItem(INGRESO_BORRADOR_LOCAL_KEY);
+        }
+      } catch {
+        try {
+          const localRaw = localStorage.getItem(INGRESO_BORRADOR_LOCAL_KEY);
+          const localData = localRaw ? JSON.parse(localRaw) : null;
+          if (!cancelled && localData?.data) {
+            const result = await Swal.fire({
+              title: "Respaldo local encontrado",
+              text: "No se pudo consultar el preliminar del servidor, pero hay una copia local en este navegador.",
+              icon: "info",
+              showDenyButton: true,
+              showCancelButton: true,
+              confirmButtonText: "Recuperar",
+              denyButtonText: "Descartar",
+              cancelButtonText: "Ahora no",
+              confirmButtonColor: "#1f3f87",
+            });
+            if (result.isConfirmed) {
+              restaurarBorradorIngreso(localData.data);
+              ultimoBorradorJsonRef.current = JSON.stringify(localData.data);
+            } else if (result.isDenied) {
+              localStorage.removeItem(INGRESO_BORRADOR_LOCAL_KEY);
+            }
+          }
+        } catch {
+          // Sin respaldo local legible.
+        }
+      } finally {
+        if (!cancelled) borradorInicializadoRef.current = true;
+      }
+    };
+    void cargarBorrador();
+    return () => {
+      cancelled = true;
+    };
+  }, [restaurarBorradorIngreso, returnState?.borradorId]);
 
   const fetchStockActual = async (bodega: number, producto: number) => {
     if (!bodega || !producto) return null;
@@ -635,6 +837,94 @@ export default function IngresoInventario() {
 
   const totalItems = useMemo(() => detalle.reduce((sum, r) => sum + (Number(r.cantidad) || 0), 0), [detalle]);
 
+  useEffect(() => {
+    if (!userId || !borradorInicializadoRef.current || restaurandoBorradorRef.current || autoguardadoBorradorBloqueadoRef.current) {
+      return;
+    }
+
+    const hasContenido =
+      detalle.length > 0 ||
+      Boolean(articuloActual.productoId) ||
+      Boolean(observaciones.trim()) ||
+      Boolean(filtroTipo || filtroGenero || filtroTela || filtroTalla || filtroColor);
+
+    if (!hasContenido) return;
+
+    const data = {
+      version: 1,
+      requestId: ingresoRequestId,
+      encabezado: {
+        bodegaId: bodegaId === "" ? null : Number(bodegaId),
+        observaciones,
+        responsable: usuario || null,
+      },
+      detalle,
+      capturaArticulo: articuloActual,
+      cantidadInput,
+      filtros: {
+        tipo: filtroTipo,
+        genero: filtroGenero,
+        tela: filtroTela,
+        talla: filtroTalla,
+        color: filtroColor,
+      },
+    };
+
+    const serialized = JSON.stringify(data);
+    if (serialized === ultimoBorradorJsonRef.current) return;
+
+    try {
+      localStorage.setItem(
+        INGRESO_BORRADOR_LOCAL_KEY,
+        JSON.stringify({ tipoDocumento: INGRESO_BORRADOR_TIPO, actualizadoEn: new Date().toISOString(), data }),
+      );
+    } catch {
+      // El respaldo local es secundario; seguimos con backend.
+    }
+
+    const timer = window.setTimeout(async () => {
+      try {
+        if (autoguardadoBorradorBloqueadoRef.current) return;
+        setBorradorEstado("saving");
+        const { data: saved } = await api.post("/documentos-borradores/autoguardar", {
+          id: documentoBorradorId,
+          tipoDocumento: INGRESO_BORRADOR_TIPO,
+          titulo: bodegaId
+            ? `Ingreso preliminar ${bodegas.find((b) => b.id === Number(bodegaId))?.nombre || ""}`.trim()
+            : "Ingreso preliminar",
+          bodegaId: bodegaId === "" ? null : Number(bodegaId),
+          totalEstimado: totalItems,
+          data,
+        });
+        ultimoBorradorJsonRef.current = serialized;
+        setDocumentoBorradorId(Number(saved?.id || documentoBorradorId || 0) || null);
+        setBorradorGuardadoEn(saved?.actualizadoEn || new Date().toISOString());
+        setBorradorEstado("saved");
+      } catch {
+        setBorradorEstado("error");
+      }
+    }, 500);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    articuloActual,
+    bodegaId,
+    bodegas,
+    cantidadInput,
+    detalle,
+    documentoBorradorId,
+    filtroColor,
+    filtroGenero,
+    filtroTalla,
+    filtroTela,
+    filtroTipo,
+    ingresoRequestId,
+    observaciones,
+    totalItems,
+    userId,
+    usuario,
+  ]);
+
   const guardar = async () => {
     if (guardandoIngresoRef.current) return;
     if (!bodegaId) {
@@ -675,6 +965,11 @@ export default function IngresoInventario() {
       guardandoIngresoRef.current = true;
       setGuardandoIngreso(true);
       const resp = await api.post("/ingresos", payload);
+      await finalizarBorradorActual({
+        tipo: "ingreso-inventario",
+        id: resp.data?.id || null,
+        folio: resp.data?.folio || null,
+      });
       Swal.fire("Guardado", "Ingreso registrado", "success");
       abrirPdfIngreso(resp.data, detalle);
       setObservaciones("");
@@ -821,10 +1116,8 @@ export default function IngresoInventario() {
               startIcon={<AddIcon />}
               variant="contained"
               onClick={() => {
-                limpiarArticulo();
-                setDetalle([]);
-                setObservaciones("");
-                setIngresoRequestId(createIngresoRequestId());
+                autoguardadoBorradorBloqueadoRef.current = false;
+                limpiarFormularioIngreso();
                 setVista("nuevo");
               }}
             >
@@ -1059,6 +1352,30 @@ export default function IngresoInventario() {
         </Button>
       </Stack>
       <Divider sx={{ mb: 2 }} />
+
+      {(documentoBorradorId || borradorEstado === "error") && (
+        <Alert
+          severity={borradorEstado === "error" ? "warning" : "info"}
+          sx={{ mb: 2 }}
+          action={
+            documentoBorradorId ? (
+              <Button color="inherit" size="small" onClick={descartarBorradorActual}>
+                Descartar
+              </Button>
+            ) : undefined
+          }
+        >
+          {borradorEstado === "saving"
+            ? `Guardando ingreso preliminar PRE-${String(documentoBorradorId).padStart(6, "0")}...`
+            : borradorEstado === "error"
+              ? "No se pudo autoguardar el ingreso preliminar en servidor. Se mantiene una copia local en este navegador."
+              : `Ingreso preliminar PRE-${String(documentoBorradorId).padStart(6, "0")} guardado${
+                  borradorGuardadoEn
+                    ? ` (${new Date(borradorGuardadoEn).toLocaleTimeString("es-GT", { hour: "2-digit", minute: "2-digit" })})`
+                    : ""
+                }.`}
+        </Alert>
+      )}
 
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, sm: 4 }}>

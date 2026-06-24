@@ -53,12 +53,14 @@ const tipoLabels: Record<string, string> = {
   "pedido-produccion": "Pedido de produccion",
   venta: "Venta",
   "orden-mixta": "Orden mixta",
+  "ingreso-inventario": "Ingreso de inventario",
 };
 
 const tipoContinuacionPath: Record<string, string> = {
   "pedido-produccion": "/produccion/nuevo",
   venta: "/ventas/nueva",
   "orden-mixta": "/orden-mixta/nueva",
+  "ingreso-inventario": "/inventario",
 };
 
 const formatPreliminar = (id: number) => `PRE-${String(id).padStart(6, "0")}`;
