@@ -88,6 +88,14 @@ const emptyPagoForm: PagoForm = {
 const money = (value: number) =>
   `Q ${Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+const roundMoney = (value: unknown) => {
+  const parsed = Number(value || 0);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.round((parsed + Number.EPSILON) * 100) / 100;
+};
+
+const hasPendingBalance = (value: unknown) => roundMoney(value) > 0;
+
 const metodoUsaRecargo = (metodo: string) => metodo === "tarjeta" || metodo === "visalink";
 const metodoRequiereReferencia = (metodo: string) => metodo !== "efectivo";
 const metodoRequiereBanco = (metodo: string) => metodo === "deposito_bancario";
@@ -125,7 +133,7 @@ export default function PagosPedidos() {
       const data = (resp.data || []).map((pedido: any) => ({
         ...pedido,
         totalEstimado: Number(pedido?.totalEstimado || 0),
-        saldoPendiente: Number(pedido?.saldoPendiente || 0),
+        saldoPendiente: roundMoney(pedido?.saldoPendiente),
         pagos: Array.isArray(pedido?.pagos)
           ? pedido.pagos.map((pago: any) => ({
               ...pago,
@@ -142,7 +150,7 @@ export default function PagosPedidos() {
           if (!next[pedido.id]) {
             next[pedido.id] = {
               ...emptyPagoForm,
-              monto: Number(pedido.saldoPendiente || 0),
+              monto: roundMoney(pedido.saldoPendiente),
               ubicacion: getPedidoUbicacionPago(pedido),
             };
           }
@@ -177,7 +185,7 @@ export default function PagosPedidos() {
         const estadoCerrado = ["anulado", "recibido", "completado", "regresado_produccion"].includes(estado);
         if (estadoCerrado) return false;
         if (pedido.esOrdenMixta || pedido.ordenMixta) return false;
-        if (Number(pedido.saldoPendiente || 0) <= 0) return false;
+        if (!hasPendingBalance(pedido.saldoPendiente)) return false;
         if (filtroDesde && fecha < filtroDesde) return false;
         if (filtroHasta && fecha > filtroHasta) return false;
         if (selectedVendedor !== "all" && pedido.vendedor !== selectedVendedor) return false;
@@ -197,7 +205,7 @@ export default function PagosPedidos() {
   };
 
   const getForm = (pedido: PedidoPago) =>
-    forms[pedido.id] || { ...emptyPagoForm, monto: Number(pedido.saldoPendiente || 0), ubicacion: getPedidoUbicacionPago(pedido) };
+    forms[pedido.id] || { ...emptyPagoForm, monto: roundMoney(pedido.saldoPendiente), ubicacion: getPedidoUbicacionPago(pedido) };
 
   const hasExtraData = (form: PagoForm) =>
     Boolean(
@@ -265,15 +273,15 @@ export default function PagosPedidos() {
     const form = getForm(pedido);
     const monto = Number(form.monto || 0);
     const porcRecargo = metodoUsaRecargo(form.metodo) ? Number(form.porcentajeRecargo || 0) : 0;
-    const recargo = monto * (porcRecargo / 100);
-    const aplicado = monto + recargo;
-    const saldo = Number(pedido.saldoPendiente || 0);
+    const recargo = roundMoney(monto * (porcRecargo / 100));
+    const aplicado = roundMoney(monto + recargo);
+    const saldo = roundMoney(pedido.saldoPendiente);
 
     if (monto <= 0) {
       Swal.fire("Validacion", "Ingresa un monto mayor a 0", "warning");
       return;
     }
-    if (aplicado > saldo) {
+    if (aplicado - saldo > 0.005) {
       Swal.fire("Aviso", `El pago mas recargo excede el saldo (${money(saldo)}). Ajusta el monto.`, "info");
       return;
     }

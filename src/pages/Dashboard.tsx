@@ -223,6 +223,14 @@ const valuesMatchUser = (values: Array<string | number | null | undefined>, usua
 const asArray = (value: unknown): any[] => (Array.isArray(value) ? value : []);
 const apiRows = (value: any): any[] => (Array.isArray(value) ? value : Array.isArray(value?.data) ? value.data : []);
 
+const roundMoney = (value: unknown) => {
+  const parsed = Number(value || 0);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.round((parsed + Number.EPSILON) * 100) / 100;
+};
+
+const hasPendingBalance = (value: unknown) => roundMoney(value) > 0;
+
 const metodoCuentaComoTarjeta = (metodo?: string | null) => {
   const normalized = `${metodo || ""}`.trim().toLowerCase();
   return normalized === "tarjeta" || normalized === "visalink";
@@ -713,12 +721,12 @@ export default function Dashboard() {
     const estadosSinSaldo = new Set(["anulado", "recibido", "completado"]);
     const pedidosSaldo = pedidosFiltrados.filter((pedido) => {
       const estado = `${pedido.estado || ""}`.trim().toLowerCase();
-      return !estadosSinSaldo.has(estado) && Number(pedido.saldoPendiente || 0) > 0;
+      return !estadosSinSaldo.has(estado) && hasPendingBalance(pedido.saldoPendiente);
     });
     const pedidosSaldoOrdenados = pedidosSaldo
       .slice()
-      .sort((a, b) => Number(b.saldoPendiente || 0) - Number(a.saldoPendiente || 0));
-    const saldoPendiente = pedidosSaldoOrdenados.reduce((sum, pedido) => sum + Number(pedido.saldoPendiente || 0), 0);
+      .sort((a, b) => roundMoney(b.saldoPendiente) - roundMoney(a.saldoPendiente));
+    const saldoPendiente = roundMoney(pedidosSaldoOrdenados.reduce((sum, pedido) => sum + roundMoney(pedido.saldoPendiente), 0));
     const pedidosSinCobro = pedidosFiltrados.filter((pedido) => pedido.postventaCobro === "sin_cobro");
 
     const postventaAbierta = postventa.filter(
