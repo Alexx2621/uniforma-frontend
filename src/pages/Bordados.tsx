@@ -95,6 +95,11 @@ type DetalleDraft = {
   bordadoFechaEntrega: string;
 };
 
+type ImagenPreview = {
+  src: string;
+  title: string;
+} | null;
+
 interface BordadosNavigationState {
   returnTo?: string;
   returnLabel?: string;
@@ -193,6 +198,7 @@ export default function Bordados() {
   const [selected, setSelected] = useState<PedidoBordado | null>(null);
   const [drafts, setDrafts] = useState<Record<number, DetalleDraft>>({});
   const [saving, setSaving] = useState(false);
+  const [imagenPreview, setImagenPreview] = useState<ImagenPreview>(null);
   const { rol, id: currentUserId, nombre: currentNombre, usuario: currentUsuario, permisos } = useAuthStore();
   const isAdmin = `${rol || ""}`.toUpperCase() === "ADMIN";
   const canEditSeguimiento = ["ADMIN", "BORDADOR"].includes(`${rol || ""}`.toUpperCase()) || hasPermission(rol, permisos, "bordados.manage");
@@ -303,6 +309,10 @@ export default function Bordados() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const abrirImagenBordado = (src: string, title: string) => {
+    setImagenPreview({ src, title });
   };
 
   const rows = useMemo(
@@ -598,7 +608,18 @@ export default function Bordados() {
                             <Stack spacing={0.5} sx={{ minWidth: 110 }}>
                               {bordados.map((bordado, index) =>
                                 bordado.imagenUrl ? (
-                                  <Button key={`${getBordadoKey(detalle.id, bordado)}-img`} size="small" href={bordado.imagenUrl} target="_blank" rel="noreferrer" endIcon={<OpenInNewOutlined />}>
+                                  <Button
+                                    key={`${getBordadoKey(detalle.id, bordado)}-img`}
+                                    size="small"
+                                    type="button"
+                                    onClick={() =>
+                                      abrirImagenBordado(
+                                        bordado.imagenUrl || "",
+                                        `${getFolio(selected)} | ${getProducto(detalle)} | ${safeText(bordado.posicion)}`,
+                                      )
+                                    }
+                                    endIcon={<VisibilityOutlined />}
+                                  >
                                     Ver {index + 1}
                                   </Button>
                                 ) : (
@@ -657,6 +678,34 @@ export default function Bordados() {
               Guardar
             </Button>
           )}
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={Boolean(imagenPreview)} onClose={() => setImagenPreview(null)} maxWidth="md" fullWidth>
+        <DialogTitle>{imagenPreview?.title || "Imagen de bordado"}</DialogTitle>
+        <DialogContent dividers sx={{ bgcolor: "grey.50" }}>
+          {imagenPreview?.src ? (
+            <Box
+              component="img"
+              src={imagenPreview.src}
+              alt={imagenPreview.title || "Imagen de bordado"}
+              sx={{
+                display: "block",
+                width: "100%",
+                maxHeight: "75vh",
+                objectFit: "contain",
+                bgcolor: "common.white",
+                border: "1px solid",
+                borderColor: "divider",
+                borderRadius: 1,
+              }}
+            />
+          ) : (
+            <Typography color="text.secondary">No hay imagen disponible.</Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setImagenPreview(null)}>Cerrar</Button>
         </DialogActions>
       </Dialog>
     </Paper>
