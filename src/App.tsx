@@ -61,6 +61,7 @@ import TrasladosReporte from "./pages/reportes/TrasladosReporte";
 import StockBajo from "./pages/reportes/StockBajo";
 import ProduccionUnificados from "./pages/reportes/ProduccionUnificados";
 import ComparativoTiendas from "./pages/reportes/ComparativoTiendas";
+import Comisiones from "./pages/reportes/Comisiones";
 import MetasMensuales from "./pages/MetasMensuales";
 import NotFound from "./pages/NotFound";
 import { useTextInputStandards } from "./utils/useTextInputStandards";
@@ -139,6 +140,7 @@ export default function App() {
           <Route path="/reportes/stock-bajo" element={<StockBajo />} />
           <Route path="/reportes/produccion-unificados" element={<ProduccionUnificados />} />
           <Route path="/reportes/comparativo-tiendas" element={<ComparativoTiendas />} />
+          <Route path="/reportes/comisiones" element={<Comisiones />} />
           <Route path="/catalogos/categorias" element={<Categorias />} />
           <Route path="/catalogos/telas" element={<Telas />} />
           <Route path="/catalogos/colores" element={<Colores />} />

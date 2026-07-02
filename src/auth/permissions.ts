@@ -57,6 +57,7 @@ export const routePermissionMap: Record<string, string> = {
   "/reportes/stock-bajo": "reportes.stock-bajo.view",
   "/reportes/produccion-unificados": "reportes.produccion-unificados.view",
   "/reportes/comparativo-tiendas": "reportes.comparativo-tiendas.view",
+  "/reportes/comisiones": "reportes.comisiones.view",
 };
 
 export function getAutoViewPermissionForPath(pathname: string) {
@@ -110,6 +111,7 @@ const defaultRoutePriority = [
   "/reportes/stock-bajo",
   "/reportes/produccion-unificados",
   "/reportes/comparativo-tiendas",
+  "/reportes/comisiones",
 ];
 
 export function hasPermission(

@@ -258,10 +258,10 @@ export default function Pedidos() {
     () => restoredPedidosState?.filters?.bodega ?? "all"
   );
   const [filterTipoPedido, setFilterTipoPedido] = useState<"clientes" | "stock" | "ambos">(
-    () => restoredPedidosState?.filters?.tipoPedido || "clientes"
+    () => restoredPedidosState?.filters?.tipoPedido || "ambos"
   );
   const [incluirStockUnificado, setIncluirStockUnificado] = useState(
-    () => Boolean(restoredPedidosState?.filters?.incluirStockUnificado)
+    () => restoredPedidosState?.filters?.incluirStockUnificado ?? true
   );
   const [paginationModel, setPaginationModel] = useState(() => ({
     page: Math.max(0, Number(restoredPedidosState?.pagination?.page || 0)),
@@ -442,6 +442,60 @@ export default function Pedidos() {
     return date.toISOString().slice(0, 10);
   };
 
+  const normalizarPedidos = useCallback((pedidoRows: any[], clientes: any[] = [], bodegasSource: any[] = []) => {
+    const clienteMap = new Map<number, string>(clientes.map((c: any) => [Number(c.id), c.nombre]));
+    const bodegaMap = new Map<number, string>(bodegasSource.map((b: any) => [Number(b.id), b.nombre]));
+
+    return pedidoRows.map((p: any, idx: number) => {
+      const rawId =
+        p?.id ??
+        p?.pedidoId ??
+        p?.pedido_id ??
+        p?.folioId ??
+        (typeof p?.folio === "number" ? p.folio : undefined) ??
+        (typeof p?.folio === "string" ? Number(p.folio.replace(/\D/g, "")) : undefined);
+      const numericId = Number(rawId);
+      const id = Number.isFinite(numericId) && numericId > 0 ? numericId : idx + 1;
+      const folioTexto = p?.folio != null ? `${p.folio}`.trim() : "";
+      const folioNormalizado =
+        folioTexto !== ""
+          ? /^\d+$/.test(folioTexto)
+            ? `P-${folioTexto}`
+            : folioTexto
+          : `P-${id}`;
+      const clienteId = p?.clienteId ?? p?.cliente_id ?? p?.clienteid ?? null;
+      const clienteNombre =
+        p?.cliente?.nombre ||
+        p?.clienteNombre ||
+        p?.cliente_name ||
+        p?.nombreCliente ||
+        p?.nombre_cliente ||
+        (clienteMap.get(Number(clienteId)) as string | undefined) ||
+        (typeof p?.cliente === "string" ? p.cliente : undefined) ||
+        "Mostrador";
+      const bodegaId = p?.bodegaId ?? p?.bodega_id ?? p?.bodegaid ?? null;
+      const bodegaNombre =
+        p?.bodega?.nombre ||
+        p?.bodegaNombre ||
+        p?.bodega_name ||
+        (bodegaMap.get(Number(bodegaId)) as string | undefined) ||
+        (typeof p?.bodega === "string" ? p.bodega : undefined) ||
+        "N/D";
+      return {
+        ...p,
+        id,
+        folio: folioNormalizado,
+        displayFolio: folioNormalizado,
+        clienteId,
+        clienteNombre,
+        clienteDisplay: clienteNombre,
+        bodegaId,
+        bodegaNombre,
+        bodegaDisplay: bodegaNombre,
+      };
+    });
+  }, []);
+
   const buscarNombreCatalogo = (
     producto: ProductoCatalogo | PedidoDetalle["producto"] | undefined | null,
     tipo: "tela" | "talla" | "color"
@@ -511,59 +565,10 @@ export default function Pedidos() {
       const telas = respTelas.data || [];
       const tallas = respTallas.data || [];
       const colores = respColores.data || [];
-      const clienteMap = new Map<number, string>(clientes.map((c: any) => [Number(c.id), c.nombre]));
-      const bodegaMap = new Map<number, string>(bodegas.map((b: any) => [Number(b.id), b.nombre]));
 
       const payload = resp.data || {};
       const pedidoRows = Array.isArray(payload) ? payload : payload.data || [];
-      const normalizados = pedidoRows.map((p: any, idx: number) => {
-        const rawId =
-          p?.id ??
-          p?.pedidoId ??
-          p?.pedido_id ??
-          p?.folioId ??
-          (typeof p?.folio === "number" ? p.folio : undefined) ??
-          (typeof p?.folio === "string" ? Number(p.folio.replace(/\D/g, "")) : undefined);
-        const numericId = Number(rawId);
-        const id = Number.isFinite(numericId) && numericId > 0 ? numericId : idx + 1;
-        const folioTexto = p?.folio != null ? `${p.folio}`.trim() : "";
-        const folioNormalizado =
-          folioTexto !== ""
-            ? /^\d+$/.test(folioTexto)
-              ? `P-${folioTexto}`
-              : folioTexto
-            : `P-${id}`;
-        const clienteId = p?.clienteId ?? p?.cliente_id ?? p?.clienteid ?? null;
-        const clienteNombre =
-          p?.cliente?.nombre ||
-          p?.clienteNombre ||
-          p?.cliente_name ||
-          p?.nombreCliente ||
-          p?.nombre_cliente ||
-          (clienteMap.get(Number(clienteId)) as string | undefined) ||
-          (typeof p?.cliente === "string" ? p.cliente : undefined) ||
-          "Mostrador";
-        const bodegaId = p?.bodegaId ?? p?.bodega_id ?? p?.bodegaid ?? null;
-        const bodegaNombre =
-          p?.bodega?.nombre ||
-          p?.bodegaNombre ||
-          p?.bodega_name ||
-          (bodegaMap.get(Number(bodegaId)) as string | undefined) ||
-          (typeof p?.bodega === "string" ? p.bodega : undefined) ||
-          "N/D";
-        return {
-          ...p,
-          id,
-          folio: folioNormalizado,
-          displayFolio: folioNormalizado,
-          clienteId,
-          clienteNombre,
-          clienteDisplay: clienteNombre,
-          bodegaId,
-          bodegaNombre,
-          bodegaDisplay: bodegaNombre,
-        };
-      });
+      const normalizados = normalizarPedidos(pedidoRows, clientes, bodegas);
       if (requestSeq !== pedidosRequestSeqRef.current) return;
 
       setBodegas(bodegas);
@@ -580,7 +585,7 @@ export default function Pedidos() {
     } finally {
       if (!silent && requestSeq === loadingPedidosSeqRef.current) setLoadingPedidos(false);
     }
-  }, [paginationModel.page, paginationModel.pageSize, filterCliente, filterFechaInicio, filterFechaFin, filterBodega, filterTipoPedido]);
+  }, [paginationModel.page, paginationModel.pageSize, filterCliente, filterFechaInicio, filterFechaFin, filterBodega, filterTipoPedido, normalizarPedidos]);
 
   useEffect(() => {
     cargarPedidosRef.current = cargar;
@@ -661,8 +666,8 @@ export default function Pedidos() {
     setFilterFechaInicio(nextState.filters?.fechaInicio || getTodayDateInputValue());
     setFilterFechaFin(nextState.filters?.fechaFin || getTodayDateInputValue());
     setFilterBodega(nextState.filters?.bodega ?? "all");
-    setFilterTipoPedido(nextState.filters?.tipoPedido || "clientes");
-    setIncluirStockUnificado(Boolean(nextState.filters?.incluirStockUnificado));
+    setFilterTipoPedido(nextState.filters?.tipoPedido || "ambos");
+    setIncluirStockUnificado(nextState.filters?.incluirStockUnificado ?? true);
     setPaginationModel({
       page: Math.max(0, Number(nextState.pagination?.page || 0)),
       pageSize: Number(nextState.pagination?.pageSize || 10),
@@ -672,8 +677,8 @@ export default function Pedidos() {
     setSelectedPedidoId(Number.isFinite(selectedId) && selectedId > 0 ? selectedId : null);
   }, [restoredPedidosState]);
 
-  const filtered = useMemo(() => {
-    return rows.filter((r) => {
+  const aplicarFiltrosLocales = useCallback((items: PedidoRow[]) => {
+    return items.filter((r) => {
       const cli = obtenerNombreCliente(r).toLowerCase();
       const parsedUserBodegaId = Number(userBodegaId);
       const fechaPedido = toDateOnly(r.fecha);
@@ -698,7 +703,34 @@ export default function Pedidos() {
         cumpleTipoPedido
       );
     });
-  }, [rows, filterCliente, filterBodega, filterFechaInicio, filterFechaFin, filterTipoPedido, canAccessAllBodegas, userBodegaId]);
+  }, [filterCliente, filterBodega, filterFechaInicio, filterFechaFin, filterTipoPedido, canAccessAllBodegas, userBodegaId]);
+
+  const filtered = useMemo(() => aplicarFiltrosLocales(rows), [rows, aplicarFiltrosLocales]);
+
+  const cargarPedidosCompletosParaReporte = useCallback(async () => {
+    const resp = await api.get("/produccion", {
+      params: {
+        cliente: filterCliente || undefined,
+        fechaInicio: filterFechaInicio || undefined,
+        fechaFin: filterFechaFin || undefined,
+        bodegaId: filterBodega === "all" ? undefined : filterBodega,
+        tipoPedido: filterTipoPedido,
+        _ts: Date.now(),
+      },
+    });
+    const payload = resp.data || {};
+    const pedidoRows = Array.isArray(payload) ? payload : payload.data || [];
+    return aplicarFiltrosLocales(normalizarPedidos(pedidoRows, [], bodegas));
+  }, [
+    aplicarFiltrosLocales,
+    bodegas,
+    filterBodega,
+    filterCliente,
+    filterFechaFin,
+    filterFechaInicio,
+    filterTipoPedido,
+    normalizarPedidos,
+  ]);
 
   useEffect(() => {
     if (!pendingRestoreSelectionRef.current || !selectedPedidoId || !filtered.length) return;
@@ -726,20 +758,6 @@ export default function Pedidos() {
   const productosMap = useMemo(
     () => new Map<number, ProductoCatalogo>(productos.map((producto) => [Number(producto.id), producto])),
     [productos]
-  );
-
-  const pedidosUnificables = useMemo(() => {
-    if (!canUnifyPedidos) return [];
-    return filtered.filter((pedido) => {
-      const estado = `${pedido.estado || ""}`.trim().toLowerCase();
-      const esStock = `${pedido.metodoPago || ""}`.trim().toLowerCase() === "sin_cobro_stock";
-      return estado !== "anulado" && !pedido.unificado && (incluirStockUnificado || !esStock);
-    });
-  }, [filtered, canUnifyPedidos, incluirStockUnificado]);
-
-  const pedidosParaDetallePdf = useMemo(
-    () => filtered.filter((pedido) => `${pedido.estado || ""}`.trim().toLowerCase() !== "anulado"),
-    [filtered],
   );
 
   const anularPedido = async (pedido: PedidoRow) => {
@@ -776,26 +794,34 @@ export default function Pedidos() {
 
   const abrirVistaPreviaUnificada = async () => {
     if (!canUnifyPedidos || generandoUnificado) return;
-    if (!pedidosUnificables.length) {
-      Swal.fire("Aviso", "No hay pedidos nuevos sin unificar.", "info");
-      return;
-    }
-
-    const confirmacion = await Swal.fire({
-      title: "Unificar pedidos nuevos",
-      text: `Se unificaran ${pedidosUnificables.length} pedido(s) sin unificar. Los pedidos ya unificados no se incluiran.`,
-      icon: "question",
-      showCancelButton: true,
-      confirmButtonText: "Si, unificar",
-      cancelButtonText: "Cancelar",
-    });
-
-    if (!confirmacion.isConfirmed) return;
 
     setGenerandoUnificado(true);
 
     try {
-      const articulos: ArticuloUnificado[] = [...pedidosUnificables]
+      const pedidosCompletos = await cargarPedidosCompletosParaReporte();
+      const pedidosUnificablesCompletos = pedidosCompletos.filter((pedido) => {
+        const estado = `${pedido.estado || ""}`.trim().toLowerCase();
+        const esStock = `${pedido.metodoPago || ""}`.trim().toLowerCase() === "sin_cobro_stock";
+        return estado !== "anulado" && !pedido.unificado && (incluirStockUnificado || !esStock);
+      });
+
+      if (!pedidosUnificablesCompletos.length) {
+        Swal.fire("Aviso", "No hay pedidos nuevos sin unificar.", "info");
+        return;
+      }
+
+      const confirmacion = await Swal.fire({
+        title: "Unificar pedidos nuevos",
+        text: `Se unificaran ${pedidosUnificablesCompletos.length} pedido(s) sin unificar de todo el rango filtrado. Los pedidos ya unificados no se incluiran.`,
+        icon: "question",
+        showCancelButton: true,
+        confirmButtonText: "Si, unificar",
+        cancelButtonText: "Cancelar",
+      });
+
+      if (!confirmacion.isConfirmed) return;
+
+      const articulos: ArticuloUnificado[] = [...pedidosUnificablesCompletos]
         .flatMap((pedido) =>
           (pedido.detalle || []).map((detalle, index) => {
             const producto = detalle.producto || productosMap.get(Number(detalle.productoId));
@@ -851,8 +877,8 @@ export default function Pedidos() {
         filterBodega === "all"
           ? "Todas las tiendas"
           : bodegas.find((b) => b.id === Number(filterBodega))?.nombre || "Tienda filtrada";
-      const resumenCorrelativo = buildResumenUnificacion(articulos, pedidosUnificables, bodegaCorrelativo, filtroTienda);
-      const pedidoIds = pedidosUnificables
+      const resumenCorrelativo = buildResumenUnificacion(articulos, pedidosUnificablesCompletos, bodegaCorrelativo, filtroTienda);
+      const pedidoIds = pedidosUnificablesCompletos
         .map((pedido) => Number(pedido.id))
         .filter((pedidoId) => Number.isInteger(pedidoId) && pedidoId > 0);
 
@@ -873,7 +899,7 @@ export default function Pedidos() {
 
       await Swal.fire({
         title: "Pedidos unificados",
-        text: `Se generara el PDF ${pedidoNo} con ${pedidosUnificables.length} pedido(s) y ${articulos.length} linea(s), sin consolidar articulos repetidos.`,
+        text: `Se generara el PDF ${pedidoNo} con ${pedidosUnificablesCompletos.length} pedido(s) y ${articulos.length} linea(s), sin consolidar articulos repetidos.`,
         icon: "success",
         confirmButtonText: "Descargar PDF",
         width: 640,
@@ -885,8 +911,8 @@ export default function Pedidos() {
           fileName,
           pedidoNo,
           filtroTienda,
-          totalPedidos: pedidosUnificables.length,
-          fechasPedidos: pedidosUnificables.map((pedido) => pedido.fecha),
+          totalPedidos: pedidosUnificablesCompletos.length,
+          fechasPedidos: pedidosUnificablesCompletos.map((pedido) => pedido.fecha),
         }),
         cargar(),
       ]);
@@ -903,70 +929,75 @@ export default function Pedidos() {
 
   const generarDetallePedidosPdf = async () => {
     if (generandoDetallePedidos) return;
-    if (!pedidosParaDetallePdf.length) {
-      Swal.fire("Sin datos", "No hay pedidos activos visibles para generar el detalle.", "info");
-      return;
-    }
-
-    const articulos: ProduccionDetallePedidoPdf[] = [...pedidosParaDetallePdf]
-      .sort((a, b) => {
-        const porUsuario = compareText(obtenerUsuarioPedido(a), obtenerUsuarioPedido(b));
-        if (porUsuario !== 0) return porUsuario;
-        const porFecha = toDateOnly(a.fecha).localeCompare(toDateOnly(b.fecha));
-        if (porFecha !== 0) return porFecha;
-        return Number(a.id || 0) - Number(b.id || 0);
-      })
-      .flatMap((pedido) =>
-        (pedido.detalle || []).map((detalle) => {
-          const producto = detalle.producto || productosMap.get(Number(detalle.productoId));
-          const unificado =
-            pedido.unificadoCorrelativo ||
-            pedido.unificaciones?.find((item) => item?.produccionUnificado?.correlativo)?.produccionUnificado?.correlativo ||
-            "";
-          return {
-            orden: pedido.displayFolio || pedido.folio || `P-${pedido.id}`,
-            unificado,
-            usuario: normalizarTexto(obtenerUsuarioPedido(pedido)),
-            codigo: normalizarTexto(producto?.codigo),
-            nombre: normalizarTexto(producto?.nombre),
-            tipo: normalizarTexto(producto?.tipo),
-            genero: normalizarTexto(producto?.genero),
-            tela: buscarNombreCatalogo(producto, "tela"),
-            talla: buscarNombreCatalogo(producto, "talla"),
-            color: buscarNombreCatalogo(producto, "color"),
-            descripcion: normalizarTexto(detalle.descripcion),
-            cantidad: Number(detalle.cantidad) || 0,
-          };
-        }),
-      )
-      .filter((articulo) => Number(articulo.cantidad || 0) > 0);
-
-    if (!articulos.length) {
-      Swal.fire("Sin detalle", "Los pedidos activos visibles no tienen lineas de detalle para imprimir.", "info");
-      return;
-    }
-
-    const filtroTienda =
-      filterBodega === "all"
-        ? "Todas las tiendas"
-        : bodegas.find((b) => b.id === Number(filterBodega))?.nombre || "Tienda filtrada";
-    const rango =
-      filterFechaInicio && filterFechaFin
-        ? `${filterFechaInicio} a ${filterFechaFin}`
-        : filterFechaInicio || filterFechaFin || "rango actual";
-
-    const confirmacion = await Swal.fire({
-      title: "Generar detalle de pedidos",
-      text: `Se generara un PDF con ${pedidosParaDetallePdf.length} pedido(s) activo(s) y ${articulos.length} linea(s) del ${rango}. Los pedidos anulados no se incluiran.`,
-      icon: "question",
-      showCancelButton: true,
-      confirmButtonText: "Si, generar PDF",
-      cancelButtonText: "Cancelar",
-    });
-    if (!confirmacion.isConfirmed) return;
-
     try {
       setGenerandoDetallePedidos(true);
+      const pedidosCompletos = await cargarPedidosCompletosParaReporte();
+      const pedidosParaDetallePdfCompletos = pedidosCompletos.filter(
+        (pedido) => `${pedido.estado || ""}`.trim().toLowerCase() !== "anulado",
+      );
+
+      if (!pedidosParaDetallePdfCompletos.length) {
+        Swal.fire("Sin datos", "No hay pedidos activos en el rango filtrado para generar el detalle.", "info");
+        return;
+      }
+
+      const articulos: ProduccionDetallePedidoPdf[] = [...pedidosParaDetallePdfCompletos]
+        .sort((a, b) => {
+          const porUsuario = compareText(obtenerUsuarioPedido(a), obtenerUsuarioPedido(b));
+          if (porUsuario !== 0) return porUsuario;
+          const porFecha = toDateOnly(a.fecha).localeCompare(toDateOnly(b.fecha));
+          if (porFecha !== 0) return porFecha;
+          return Number(a.id || 0) - Number(b.id || 0);
+        })
+        .flatMap((pedido) =>
+          (pedido.detalle || []).map((detalle) => {
+            const producto = detalle.producto || productosMap.get(Number(detalle.productoId));
+            const unificado =
+              pedido.unificadoCorrelativo ||
+              pedido.unificaciones?.find((item) => item?.produccionUnificado?.correlativo)?.produccionUnificado?.correlativo ||
+              "";
+            return {
+              orden: pedido.displayFolio || pedido.folio || `P-${pedido.id}`,
+              unificado,
+              usuario: normalizarTexto(obtenerUsuarioPedido(pedido)),
+              codigo: normalizarTexto(producto?.codigo),
+              nombre: normalizarTexto(producto?.nombre),
+              tipo: normalizarTexto(producto?.tipo),
+              genero: normalizarTexto(producto?.genero),
+              tela: buscarNombreCatalogo(producto, "tela"),
+              talla: buscarNombreCatalogo(producto, "talla"),
+              color: buscarNombreCatalogo(producto, "color"),
+              descripcion: normalizarTexto(detalle.descripcion),
+              cantidad: Number(detalle.cantidad) || 0,
+            };
+          }),
+        )
+        .filter((articulo) => Number(articulo.cantidad || 0) > 0);
+
+      if (!articulos.length) {
+        Swal.fire("Sin detalle", "Los pedidos activos del rango filtrado no tienen lineas de detalle para imprimir.", "info");
+        return;
+      }
+
+      const filtroTienda =
+        filterBodega === "all"
+          ? "Todas las tiendas"
+          : bodegas.find((b) => b.id === Number(filterBodega))?.nombre || "Tienda filtrada";
+      const rango =
+        filterFechaInicio && filterFechaFin
+          ? `${filterFechaInicio} a ${filterFechaFin}`
+          : filterFechaInicio || filterFechaFin || "rango actual";
+
+      const confirmacion = await Swal.fire({
+        title: "Generar detalle de pedidos",
+        text: `Se generara un PDF con ${pedidosParaDetallePdfCompletos.length} pedido(s) activo(s) y ${articulos.length} linea(s) del ${rango}. Los pedidos anulados no se incluiran.`,
+        icon: "question",
+        showCancelButton: true,
+        confirmButtonText: "Si, generar PDF",
+        cancelButtonText: "Cancelar",
+      });
+      if (!confirmacion.isConfirmed) return;
+
       const fechaArchivo = formatDateForFilename(new Date());
       const desde = filterFechaInicio || "inicio";
       const hasta = filterFechaFin || "fin";
@@ -974,8 +1005,8 @@ export default function Pedidos() {
         articulos,
         fileName: `Detalle_pedidos_${sanitizeFilename(desde)}_${sanitizeFilename(hasta)}_${fechaArchivo}.pdf`,
         filtroTienda,
-        totalPedidos: pedidosParaDetallePdf.length,
-        fechasPedidos: pedidosParaDetallePdf.map((pedido) => pedido.fecha),
+        totalPedidos: pedidosParaDetallePdfCompletos.length,
+        fechasPedidos: pedidosParaDetallePdfCompletos.map((pedido) => pedido.fecha),
       });
     } catch (error: any) {
       Swal.fire("Error", error?.message || "No se pudo generar el detalle de pedidos", "error");
@@ -1136,7 +1167,7 @@ export default function Pedidos() {
             startIcon={<PictureAsPdfOutlined />}
             variant="outlined"
             onClick={generarDetallePedidosPdf}
-            disabled={generandoDetallePedidos || pedidosParaDetallePdf.length === 0}
+            disabled={generandoDetallePedidos || loadingPedidos || rowCount === 0}
           >
             {generandoDetallePedidos ? "Generando..." : "Detalle PDF"}
           </Button>
@@ -1145,9 +1176,9 @@ export default function Pedidos() {
               startIcon={<MergeTypeOutlined />}
               variant="outlined"
               onClick={abrirVistaPreviaUnificada}
-              disabled={generandoUnificado || pedidosUnificables.length === 0}
+              disabled={generandoUnificado || loadingPedidos || rowCount === 0}
             >
-              {generandoUnificado ? "Unificando..." : `Unificar nuevos (${pedidosUnificables.length})`}
+              {generandoUnificado ? "Unificando..." : "Unificar nuevos"}
             </Button>
           )}
           <Button startIcon={<AddIcon />} variant="contained" onClick={abrirNuevoPedido}>

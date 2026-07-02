@@ -572,6 +572,7 @@ export default function PedidoNuevo() {
   const [pedidoEditFolio, setPedidoEditFolio] = useState("");
   const [loadingPedidoEdit, setLoadingPedidoEdit] = useState(false);
   const [guardandoPedido, setGuardandoPedido] = useState(false);
+  const [scheduleTick, setScheduleTick] = useState(() => Date.now());
   const [documentoBorradorId, setDocumentoBorradorId] = useState<number | null>(null);
   const [borradorGuardadoEn, setBorradorGuardadoEn] = useState("");
   const [borradorEstado, setBorradorEstado] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -622,7 +623,12 @@ export default function PedidoNuevo() {
   const pedidoSinCobro = Boolean(postventaSeleccionada && postventaCobro === "sin_cobro");
   const pedidoSinValor = pedidoSinCobro || pedidoParaStock;
   const pedidoSchedule = useMemo(() => getActionSchedule(reportesConfig, "pedidoNuevo"), [reportesConfig]);
-  const pedidoScheduleOpen = useMemo(() => isReportScheduleOpen(pedidoSchedule), [pedidoSchedule]);
+  const pedidoScheduleOpen = useMemo(() => isReportScheduleOpen(pedidoSchedule, new Date(scheduleTick)), [pedidoSchedule, scheduleTick]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setScheduleTick(Date.now()), 30000);
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   const volverAlListado = (selectedId?: number | null) => {
     const nextState =
@@ -1905,7 +1911,9 @@ export default function PedidoNuevo() {
     };
     guardandoPedidoRef.current = true;
     setGuardandoPedido(true);
-    if (!isEditingPedido && !pedidoScheduleOpen) {
+    const horarioPedidoAbiertoAhora = isReportScheduleOpen(pedidoSchedule, new Date());
+    if (!isEditingPedido && !horarioPedidoAbiertoAhora) {
+      setScheduleTick(Date.now());
       Swal.fire(
         "Horario no habilitado",
         `La creacion de pedidos esta habilitada en este horario: ${formatReportScheduleForDay(pedidoSchedule)}.`,

@@ -164,6 +164,7 @@ export const menuSections: MenuSection[] = [
           { label: "Stock bajo", path: "/reportes/stock-bajo", icon: <WarningAmberOutlined /> },
           { label: "Unificados produccion", path: "/reportes/produccion-unificados", icon: <SummarizeOutlined /> },
           { label: "Comparativo tiendas", path: "/reportes/comparativo-tiendas", icon: <StorefrontOutlined /> },
+          { label: "Comisiones", path: "/reportes/comisiones", icon: <RequestQuoteOutlined /> },
         ],
       },
     ],
