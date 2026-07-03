@@ -317,7 +317,15 @@ export default function Pedidos() {
     navigate(`/produccion/${pedidoId}`, { state: buildPedidosReturnState(pedidoId) });
   };
 
+  const pedidoEstaUnificado = (pedido: PedidoRow) =>
+    Boolean(
+      pedido.unificado ||
+        pedido.unificadoCorrelativo ||
+        pedido.unificaciones?.some((item) => item?.produccionUnificadoId || item?.produccionUnificado?.id || item?.produccionUnificado?.correlativo),
+    );
+
   const puedeModificarPedido = (pedido: PedidoRow) =>
+    !pedidoEstaUnificado(pedido) &&
     !["anulado", "recibido", "completado"].includes(`${pedido.estado || ""}`.trim().toLowerCase()) &&
     (rol === "ADMIN" || Number(pedido.usuarioId || 0) === Number(userId || 0));
 
