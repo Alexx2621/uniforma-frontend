@@ -1475,6 +1475,73 @@ export default function PedidoNuevo() {
   }, [productosBaseFiltrados, tallas, colores, filtroTalla, filtroColor]);
 
   const productoDetectado = productosCoincidentes.length === 1 ? productosCoincidentes[0] : undefined;
+  const normalizarTextoProducto = (value?: string | null) =>
+    `${value || ""}`
+      .trim()
+      .toUpperCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+
+  const getTipoComplementario = (tipo?: string | null) => {
+    const normalized = normalizarTextoProducto(tipo);
+    if (normalized.includes("FILIPINA")) return "PANTALON";
+    if (normalized.includes("PANTALON")) return "FILIPINA";
+    return "";
+  };
+
+  const buscarProductoComplementario = (producto?: Producto) => {
+    const tipoComplementario = getTipoComplementario(producto?.tipo);
+    if (!producto || !tipoComplementario) return null;
+
+    const genero = normalizarTextoProducto(producto.genero);
+    const tela = normalizarTextoProducto(obtenerTela(producto));
+    const talla = normalizarTextoProducto(obtenerTalla(producto));
+    const color = normalizarTextoProducto(obtenerColor(producto));
+
+    return (
+      productos.find(
+        (candidate) =>
+          normalizarTextoProducto(candidate.tipo) === tipoComplementario &&
+          normalizarTextoProducto(candidate.genero) === genero &&
+          normalizarTextoProducto(obtenerTela(candidate)) === tela &&
+          normalizarTextoProducto(obtenerTalla(candidate)) === talla &&
+          normalizarTextoProducto(obtenerColor(candidate)) === color,
+      ) || null
+    );
+  };
+
+  const sugerirProductoComplementario = async (productoAgregado?: Producto, cantidadSugerida = 1, descuentoSugerido = 0) => {
+    const complementario = buscarProductoComplementario(productoAgregado);
+    if (!complementario) return;
+    if (detalle.some((row) => Number(row.productoId) === Number(complementario.id))) return;
+
+    const tipoComplementario = getTipoComplementario(productoAgregado?.tipo).toLowerCase();
+    const result = await Swal.fire({
+      title: `Agregar ${tipoComplementario}?`,
+      text: `Se encontro ${complementario.codigo}. Puedo rellenar la captura con la misma tela, talla, color y genero para que lo revises antes de agregarlo.`,
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "Rellenar campos",
+      cancelButtonText: "No",
+      confirmButtonColor: "#1f3f87",
+    });
+    if (!result.isConfirmed) return;
+
+    setEditingDetalleKey(null);
+    setCantidadInput(String(cantidadSugerida || 1));
+    setCantidadAdvertida(null);
+    setArticuloActual({
+      ...detalleInicial,
+      cantidad: cantidadSugerida || 1,
+      descuento: pedidoParaStock ? 0 : descuentoSugerido || 0,
+    });
+    setFiltroTipo(complementario.tipo || "");
+    setFiltroGenero(complementario.genero || "");
+    setFiltroTela(obtenerTela(complementario) === "N/D" ? "" : obtenerTela(complementario));
+    setFiltroTalla(obtenerTalla(complementario) === "N/D" ? "" : obtenerTalla(complementario));
+    setFiltroColor(obtenerColor(complementario) === "N/D" ? "" : obtenerColor(complementario));
+  };
+
   const filtrosArticuloCompletos = Boolean(filtroTipo && filtroGenero && filtroTela && filtroTalla && filtroColor);
   const alertaArticulo = (() => {
     if (!filtrosArticuloCompletos) {
@@ -1651,11 +1718,19 @@ export default function PedidoNuevo() {
       descripcion,
     };
 
+    const debeSugerirComplementario = editingDetalleKey === null;
+    const productoAgregado = productos.find((p) => Number(p.id) === Number(productoId));
+    const cantidadSugerida = cantidad;
+    const descuentoSugerido = Number(articuloActual.descuento) || 0;
+
     setDetalle((prev) =>
       editingDetalleKey === null ? [...prev, row] : prev.map((item) => (item.key === editingDetalleKey ? row : item))
     );
 
     limpiarArticulo();
+    if (debeSugerirComplementario) {
+      await sugerirProductoComplementario(productoAgregado, cantidadSugerida, descuentoSugerido);
+    }
   };
 
   const editarArticulo = (row: DetalleRow) => {

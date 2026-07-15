@@ -44,6 +44,8 @@ interface AlertaInterna {
   payload?: {
     pedidoId?: number;
     autorizacionPedidoId?: number;
+    autorizacionTipo?: string | null;
+    ordenMixtaId?: number;
     estado?: string;
     prioridad?: "baja" | "normal" | "alta" | "urgente";
     programadaPara?: string | null;
@@ -1009,6 +1011,8 @@ function useNavbarController() {
       }
 
       const payload = alerta.payload || {};
+      const autorizacionTipo = `${payload.autorizacionTipo || ""}`.trim();
+      const esOrdenMixta = autorizacionTipo === "orden_mixta";
       const detalleItems = Array.isArray(payload.detalleItems) ? payload.detalleItems : [];
       const detalleRows = detalleItems.length
         ? detalleItems
@@ -1032,7 +1036,7 @@ function useNavbarController() {
       const comentario = `${payload.comentario || ""}`.trim();
 
       const result = await Swal.fire({
-        title: alerta.titulo || "Autorizar pedido",
+        title: alerta.titulo || (esOrdenMixta ? "Autorizar orden mixta" : "Autorizar pedido"),
         html: `
           <div style="text-align:left;font-size:13px;line-height:1.45;">
             <p style="margin:0 0 10px 0;">${escapeHtml(alerta.mensaje)}</p>
@@ -1098,15 +1102,22 @@ function useNavbarController() {
 
       try {
         const endpoint = result.isConfirmed ? "aprobar" : "rechazar";
-        const { data } = await api.post(`/produccion/autorizaciones/${autorizacionId}/${endpoint}`, {
+        const baseEndpoint = esOrdenMixta ? "/orden-mixta/autorizaciones" : "/produccion/autorizaciones";
+        const { data } = await api.post(`${baseEndpoint}/${autorizacionId}/${endpoint}`, {
           comentario: result.value || "",
         });
         await marcarLeida(alerta.id);
 
         if (result.isConfirmed) {
-          const pedidoId = Number(data?.pedido?.id || data?.pedidoId || 0);
-          await Swal.fire("Autorizado", "El pedido fue generado correctamente.", "success");
-          if (pedidoId > 0) navigate(`/produccion/${pedidoId}`);
+          if (esOrdenMixta) {
+            const ordenMixtaId = Number(data?.ordenMixta?.id || data?.ordenMixtaId || 0);
+            await Swal.fire("Autorizado", "La orden mixta fue generada correctamente.", "success");
+            if (ordenMixtaId > 0) navigate(`/orden-mixta/${ordenMixtaId}`);
+          } else {
+            const pedidoId = Number(data?.pedido?.id || data?.pedidoId || 0);
+            await Swal.fire("Autorizado", "El pedido fue generado correctamente.", "success");
+            if (pedidoId > 0) navigate(`/produccion/${pedidoId}`);
+          }
         } else {
           await Swal.fire("Rechazado", "La solicitud fue rechazada.", "success");
         }

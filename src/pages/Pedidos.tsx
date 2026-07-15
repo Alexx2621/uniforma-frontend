@@ -119,6 +119,8 @@ interface PedidosNavigationState {
   pedidosState?: {
     filters?: {
       cliente?: string;
+      folio?: string;
+      unificacion?: string;
       fechaInicio?: string;
       fechaFin?: string;
       bodega?: number | "all";
@@ -248,6 +250,10 @@ export default function Pedidos() {
   const [tallas, setTallas] = useState<CatalogoItem[]>([]);
   const [colores, setColores] = useState<CatalogoItem[]>([]);
   const [filterCliente, setFilterCliente] = useState(() => restoredPedidosState?.filters?.cliente || "");
+  const [filterFolioInput, setFilterFolioInput] = useState(() => restoredPedidosState?.filters?.folio || "");
+  const [filterUnificacionInput, setFilterUnificacionInput] = useState(() => restoredPedidosState?.filters?.unificacion || "");
+  const [filterFolio, setFilterFolio] = useState(() => restoredPedidosState?.filters?.folio || "");
+  const [filterUnificacion, setFilterUnificacion] = useState(() => restoredPedidosState?.filters?.unificacion || "");
   const [filterFechaInicio, setFilterFechaInicio] = useState(
     () => restoredPedidosState?.filters?.fechaInicio || getTodayDateInputValue()
   );
@@ -263,6 +269,7 @@ export default function Pedidos() {
   const [incluirStockUnificado, setIncluirStockUnificado] = useState(
     () => restoredPedidosState?.filters?.incluirStockUnificado ?? true
   );
+  const busquedaDocumentoActiva = Boolean(filterFolio.trim() || filterUnificacion.trim());
   const [paginationModel, setPaginationModel] = useState(() => ({
     page: Math.max(0, Number(restoredPedidosState?.pagination?.page || 0)),
     pageSize: Number(restoredPedidosState?.pagination?.pageSize || 10),
@@ -294,12 +301,22 @@ export default function Pedidos() {
   const [contextMenuAnchor, setContextMenuAnchor] = useState<{ mouseX: number; mouseY: number } | null>(null);
   const [contextMenuPedido, setContextMenuPedido] = useState<PedidoRow | null>(null);
 
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setFilterFolio(filterFolioInput.trim());
+      setFilterUnificacion(filterUnificacionInput.trim());
+    }, 400);
+    return () => window.clearTimeout(timeout);
+  }, [filterFolioInput, filterUnificacionInput]);
+
   const buildPedidosReturnState = (pedidoId?: number | null): PedidosNavigationState => ({
     returnTo: "/produccion",
     returnLabel: "Regresar a pedidos",
     pedidosState: {
       filters: {
         cliente: filterCliente,
+        folio: filterFolio,
+        unificacion: filterUnificacion,
         fechaInicio: filterFechaInicio,
         fechaFin: filterFechaFin,
         bodega: filterBodega,
@@ -554,8 +571,10 @@ export default function Pedidos() {
             page: paginationModel.page,
             pageSize: paginationModel.pageSize,
             cliente: filterCliente || undefined,
-            fechaInicio: filterFechaInicio || undefined,
-            fechaFin: filterFechaFin || undefined,
+            folio: filterFolio || undefined,
+            unificacion: filterUnificacion || undefined,
+            fechaInicio: busquedaDocumentoActiva ? undefined : filterFechaInicio || undefined,
+            fechaFin: busquedaDocumentoActiva ? undefined : filterFechaFin || undefined,
             bodegaId: filterBodega === "all" ? undefined : filterBodega,
             tipoPedido: filterTipoPedido,
           },
@@ -593,7 +612,7 @@ export default function Pedidos() {
     } finally {
       if (!silent && requestSeq === loadingPedidosSeqRef.current) setLoadingPedidos(false);
     }
-  }, [paginationModel.page, paginationModel.pageSize, filterCliente, filterFechaInicio, filterFechaFin, filterBodega, filterTipoPedido, normalizarPedidos]);
+  }, [paginationModel.page, paginationModel.pageSize, filterCliente, filterFolio, filterUnificacion, busquedaDocumentoActiva, filterFechaInicio, filterFechaFin, filterBodega, filterTipoPedido, normalizarPedidos]);
 
   useEffect(() => {
     cargarPedidosRef.current = cargar;
@@ -664,13 +683,17 @@ export default function Pedidos() {
       return;
     }
     setPaginationModel((prev) => ({ ...prev, page: 0 }));
-  }, [filterCliente, filterFechaInicio, filterFechaFin, filterBodega, filterTipoPedido, incluirStockUnificado]);
+  }, [filterCliente, filterFolio, filterUnificacion, filterFechaInicio, filterFechaFin, filterBodega, filterTipoPedido, incluirStockUnificado]);
 
   useEffect(() => {
     const nextState = restoredPedidosState;
     if (!nextState) return;
 
     setFilterCliente(nextState.filters?.cliente || "");
+    setFilterFolioInput(nextState.filters?.folio || "");
+    setFilterUnificacionInput(nextState.filters?.unificacion || "");
+    setFilterFolio(nextState.filters?.folio || "");
+    setFilterUnificacion(nextState.filters?.unificacion || "");
     setFilterFechaInicio(nextState.filters?.fechaInicio || getTodayDateInputValue());
     setFilterFechaFin(nextState.filters?.fechaFin || getTodayDateInputValue());
     setFilterBodega(nextState.filters?.bodega ?? "all");
@@ -686,8 +709,15 @@ export default function Pedidos() {
   }, [restoredPedidosState]);
 
   const aplicarFiltrosLocales = useCallback((items: PedidoRow[]) => {
+    const folioSearch = filterFolio.trim().toLowerCase();
+    const unificacionSearch = filterUnificacion.trim().toLowerCase();
     return items.filter((r) => {
       const cli = obtenerNombreCliente(r).toLowerCase();
+      const folio = `${r.displayFolio || r.folio || ""}`.trim().toLowerCase();
+      const unificacion =
+        `${r.unificadoCorrelativo || r.unificaciones?.find((item) => item?.produccionUnificado?.correlativo)?.produccionUnificado?.correlativo || ""}`
+          .trim()
+          .toLowerCase();
       const parsedUserBodegaId = Number(userBodegaId);
       const fechaPedido = toDateOnly(r.fecha);
       const bodegaUsuario =
@@ -696,14 +726,18 @@ export default function Pedidos() {
           : true;
       const bodegaSeleccionada =
         filterBodega === "all" ? true : Number(r.bodegaId) === Number(filterBodega);
-      const cumpleFechaInicio = !filterFechaInicio || (!!fechaPedido && fechaPedido >= filterFechaInicio);
-      const cumpleFechaFin = !filterFechaFin || (!!fechaPedido && fechaPedido <= filterFechaFin);
+      const cumpleFechaInicio = busquedaDocumentoActiva || !filterFechaInicio || (!!fechaPedido && fechaPedido >= filterFechaInicio);
+      const cumpleFechaFin = busquedaDocumentoActiva || !filterFechaFin || (!!fechaPedido && fechaPedido <= filterFechaFin);
       const esStock = `${r.metodoPago || ""}`.trim().toLowerCase() === "sin_cobro_stock";
       const cumpleTipoPedido =
         filterTipoPedido === "ambos" ? true : filterTipoPedido === "stock" ? esStock : !esStock;
+      const cumpleFolio = !folioSearch || folio.includes(folioSearch);
+      const cumpleUnificacion = !unificacionSearch || unificacion.includes(unificacionSearch);
 
       return (
         cli.includes(filterCliente.toLowerCase()) &&
+        cumpleFolio &&
+        cumpleUnificacion &&
         bodegaUsuario &&
         bodegaSeleccionada &&
         cumpleFechaInicio &&
@@ -711,16 +745,39 @@ export default function Pedidos() {
         cumpleTipoPedido
       );
     });
-  }, [filterCliente, filterBodega, filterFechaInicio, filterFechaFin, filterTipoPedido, canAccessAllBodegas, userBodegaId]);
+  }, [filterCliente, filterFolio, filterUnificacion, filterBodega, filterFechaInicio, filterFechaFin, filterTipoPedido, busquedaDocumentoActiva, canAccessAllBodegas, userBodegaId]);
 
   const filtered = useMemo(() => aplicarFiltrosLocales(rows), [rows, aplicarFiltrosLocales]);
+
+  useEffect(() => {
+    if (!busquedaDocumentoActiva || !filtered.length) return;
+
+    const folioSearch = filterFolio.trim().toLowerCase();
+    const unificacionSearch = filterUnificacion.trim().toLowerCase();
+    const exactMatch =
+      filtered.find((pedido) => {
+        const folio = `${pedido.displayFolio || pedido.folio || ""}`.trim().toLowerCase();
+        const unificacion =
+          `${pedido.unificadoCorrelativo || pedido.unificaciones?.find((item) => item?.produccionUnificado?.correlativo)?.produccionUnificado?.correlativo || ""}`
+            .trim()
+            .toLowerCase();
+        return (folioSearch && folio === folioSearch) || (unificacionSearch && unificacion === unificacionSearch);
+      }) || filtered[0];
+
+    const fechaPedido = toDateOnly(exactMatch.fecha);
+    if (!fechaPedido) return;
+    if (filterFechaInicio !== fechaPedido) setFilterFechaInicio(fechaPedido);
+    if (filterFechaFin !== fechaPedido) setFilterFechaFin(fechaPedido);
+  }, [busquedaDocumentoActiva, filtered, filterFolio, filterUnificacion, filterFechaInicio, filterFechaFin]);
 
   const cargarPedidosCompletosParaReporte = useCallback(async () => {
     const resp = await api.get("/produccion", {
       params: {
         cliente: filterCliente || undefined,
-        fechaInicio: filterFechaInicio || undefined,
-        fechaFin: filterFechaFin || undefined,
+        folio: filterFolio || undefined,
+        unificacion: filterUnificacion || undefined,
+        fechaInicio: busquedaDocumentoActiva ? undefined : filterFechaInicio || undefined,
+        fechaFin: busquedaDocumentoActiva ? undefined : filterFechaFin || undefined,
         bodegaId: filterBodega === "all" ? undefined : filterBodega,
         tipoPedido: filterTipoPedido,
         _ts: Date.now(),
@@ -734,6 +791,9 @@ export default function Pedidos() {
     bodegas,
     filterBodega,
     filterCliente,
+    filterFolio,
+    filterUnificacion,
+    busquedaDocumentoActiva,
     filterFechaFin,
     filterFechaInicio,
     filterTipoPedido,
@@ -1236,7 +1296,7 @@ export default function Pedidos() {
       </Stack>
 
       <Grid container spacing={2} sx={{ mb: 2 }}>
-        <Grid size={{ xs: 12, sm: 4 }}>
+        <Grid size={{ xs: 12, sm: 4, md: 2 }}>
           <TextField
             label="Buscar por cliente"
             size="small"
@@ -1245,7 +1305,27 @@ export default function Pedidos() {
             onChange={(e) => setFilterCliente(e.target.value)}
           />
         </Grid>
-        <Grid size={{ xs: 12, sm: 4 }}>
+        <Grid size={{ xs: 12, sm: 4, md: 2 }}>
+          <TextField
+            label="Buscar por folio"
+            size="small"
+            fullWidth
+            value={filterFolioInput}
+            onChange={(e) => setFilterFolioInput(e.target.value)}
+            placeholder="PE-BO-0033"
+          />
+        </Grid>
+        <Grid size={{ xs: 12, sm: 4, md: 2 }}>
+          <TextField
+            label="Buscar por unificacion"
+            size="small"
+            fullWidth
+            value={filterUnificacionInput}
+            onChange={(e) => setFilterUnificacionInput(e.target.value)}
+            placeholder="UNI-0044"
+          />
+        </Grid>
+        <Grid size={{ xs: 12, sm: 4, md: 2 }}>
           <FormControl fullWidth size="small" disabled={!canAccessAllBodegas}>
             <InputLabel>Tienda</InputLabel>
             <Select
@@ -1262,7 +1342,7 @@ export default function Pedidos() {
             </Select>
           </FormControl>
         </Grid>
-        <Grid size={{ xs: 12, sm: 4 }}>
+        <Grid size={{ xs: 12, sm: 4, md: 2 }}>
           <TextField
             label="Fecha inicio"
             type="date"
@@ -1273,7 +1353,7 @@ export default function Pedidos() {
             InputLabelProps={{ shrink: true }}
           />
         </Grid>
-        <Grid size={{ xs: 12, sm: 4 }}>
+        <Grid size={{ xs: 12, sm: 4, md: 2 }}>
           <TextField
             label="Fecha fin"
             type="date"

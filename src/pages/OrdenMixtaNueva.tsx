@@ -29,8 +29,10 @@ import SaveOutlined from "@mui/icons-material/SaveOutlined";
 import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import CallSplitOutlined from "@mui/icons-material/CallSplitOutlined";
 import Swal from "sweetalert2";
+import { io, Socket } from "socket.io-client";
 import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api/axios";
+import { hasPermission } from "../auth/permissions";
 import { useAuthStore } from "../auth/useAuthStore";
 import { formatCurrency } from "../utils/currency";
 import { emptyWhenZero, parseNumberInput } from "../utils/numberInputs";
@@ -84,6 +86,7 @@ const lineBase: Omit<Linea, "key"> = {
 
 const ORDEN_MIXTA_BORRADOR_TIPO = "orden-mixta";
 const ORDEN_MIXTA_BORRADOR_LOCAL_KEY = "orden-mixta:borrador-local:v1";
+const PEDIDO_AUTORIZACION_MONTO_MINIMO = 3000;
 
 const uniqueSorted = (values: string[]) =>
   Array.from(new Set(values.map((value) => `${value || ""}`.trim()).filter(Boolean))).sort((a, b) =>
@@ -154,6 +157,8 @@ export default function OrdenMixtaNueva() {
   const autoguardadoBorradorBloqueadoRef = useRef(false);
   const ultimoBorradorJsonRef = useRef("");
   const savingRef = useRef(false);
+  const autorizacionSocketRef = useRef<Socket | null>(null);
+  const autorizacionPendienteRef = useRef<number | null>(null);
 
   useEffect(() => {
     const cargar = async () => {
@@ -343,6 +348,12 @@ export default function OrdenMixtaNueva() {
   const anticipoPedido = Math.max(0, Math.round((Number(anticipoTotal || 0) - anticipoVenta) * 100) / 100);
   const saldoTotal = Math.max(0, total - Number(anticipoTotal || 0));
   const pedidoSinAnticipo = subtotalPedido > 0 && anticipoPedido <= 0 && metodoPago !== "orden_compra";
+  const puedeCrearProduccionSinAutorizacion =
+    auth.rol === "ADMIN" ||
+    hasPermission(auth.rol, auth.permisos, "produccion.autorizar-pedidos") ||
+    hasPermission(auth.rol, auth.permisos, "produccion.crear-sin-autorizacion");
+  const produccionRequiereAutorizacion =
+    subtotalPedido > PEDIDO_AUTORIZACION_MONTO_MINIMO && !puedeCrearProduccionSinAutorizacion;
   const stockRestanteEstimado =
     controlaInventarioLinea && linea.stock != null ? Math.max(linea.stock - (Number(linea.cantidad) || 0), 0) : null;
 
@@ -585,6 +596,43 @@ export default function OrdenMixtaNueva() {
     void syncProducto();
   }, [productoDetectado, linea.bodegaId, linea.tipoOperacion, bodegaId, bodegas, fetchStock]);
 
+  useEffect(() => {
+    const socket = io(api.defaults.baseURL || window.location.origin, {
+      withCredentials: true,
+      transports: ["websocket", "polling"],
+      reconnection: true,
+    });
+    autorizacionSocketRef.current = socket;
+
+    const manejarResolucion = (payload: any) => {
+      const solicitudId = Number(payload?.solicitudId || 0);
+      if (!autorizacionPendienteRef.current || solicitudId !== autorizacionPendienteRef.current) return;
+
+      autorizacionPendienteRef.current = null;
+      Swal.close();
+
+      if (payload?.estado === "aprobado") {
+        const ordenId = Number(payload?.ordenMixta?.id || 0);
+        void Swal.fire("Orden autorizada", "La orden mixta fue generada correctamente.", "success").then(() => {
+          navigate(ordenId > 0 ? `/orden-mixta/${ordenId}` : "/orden-mixta");
+        });
+        return;
+      }
+
+      if (payload?.estado === "rechazado") {
+        void Swal.fire("Solicitud rechazada", payload?.comentario || "La orden mixta no fue autorizada.", "warning");
+      }
+    };
+
+    socket.on("produccion:autorizacion-resuelta", manejarResolucion);
+
+    return () => {
+      socket.off("produccion:autorizacion-resuelta", manejarResolucion);
+      socket.disconnect();
+      autorizacionSocketRef.current = null;
+    };
+  }, [navigate]);
+
   const seleccionarCliente = (value: Cliente | null) => {
     setCliente(value);
     if (value) {
@@ -673,6 +721,86 @@ export default function OrdenMixtaNueva() {
     }
     if (pedidoSinAnticipo) {
       void Swal.fire("Anticipo requerido", "La parte de producción necesita anticipo si no es orden de compra.", "warning");
+      return;
+    }
+
+    if (produccionRequiereAutorizacion) {
+      const detalleHtml = lineas
+        .slice(0, 12)
+        .map((item, index) => {
+          const producto = productoMap.get(Number(item.productoId));
+          return `<li>${index + 1}. ${producto?.codigo || item.productoId} - ${producto?.nombre || "Producto"} x ${item.cantidad}</li>`;
+        })
+        .join("");
+      const result = await Swal.fire({
+        title: "Esta orden mixta necesita autorizacion",
+        html: `
+          <div style="text-align:left;font-size:14px;line-height:1.45;">
+            <p>La parte de producción es <strong>${formatCurrency(subtotalPedido)}</strong> y supera el límite de <strong>${formatCurrency(PEDIDO_AUTORIZACION_MONTO_MINIMO)}</strong>.</p>
+            <p><strong>Cliente:</strong> ${clienteNombre || "CF"}<br/>
+            <strong>Total orden:</strong> ${formatCurrency(total)}<br/>
+            <strong>Detalle:</strong></p>
+            <ul style="max-height:140px;overflow:auto;margin:0 0 12px 18px;padding:0;">${detalleHtml}</ul>
+            <label for="orden-mixta-autorizacion-comentario" style="display:block;margin-bottom:6px;font-weight:600;">Comentario para autorizacion</label>
+            <textarea id="orden-mixta-autorizacion-comentario" class="swal2-textarea" placeholder="Explica brevemente por que debe autorizarse..." style="height:90px;margin:0;width:100%;"></textarea>
+          </div>
+        `,
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: "Solicitar autorizacion",
+        cancelButtonText: "Cancelar",
+        confirmButtonColor: "#1f3f87",
+        width: 680,
+        preConfirm: () =>
+          (document.getElementById("orden-mixta-autorizacion-comentario") as HTMLTextAreaElement | null)?.value || "",
+      });
+      if (!result.isConfirmed) return;
+
+      savingRef.current = true;
+      setSaving(true);
+      try {
+        const { data } = await api.post("/orden-mixta/autorizaciones", {
+          orden: {
+            clienteId: cliente?.id || null,
+            clienteNombre,
+            clienteTelefono,
+            bodegaId,
+            ubicacion,
+            metodoPago,
+            referenciaPago,
+            bancoPago,
+            envio: envioMonto,
+            anticipoTotal: Number(anticipoTotal || 0),
+            vendedor: auth.nombre || auth.usuario,
+            detalle: lineas,
+          },
+          comentario: result.value || "",
+        });
+        const solicitudId = Number(data?.id || 0);
+        autorizacionPendienteRef.current = solicitudId || null;
+        const espera = await Swal.fire({
+          title: "Esperando autorizacion",
+          text: "La solicitud fue enviada. Puedes esperar aqui hasta que se autorice o regresar al modulo de ordenes mixtas.",
+          icon: "info",
+          showConfirmButton: false,
+          showCancelButton: true,
+          cancelButtonText: "Regresar a ordenes mixtas",
+          allowOutsideClick: false,
+          allowEscapeKey: false,
+          didOpen: () => {
+            Swal.showLoading();
+          },
+        });
+        if (espera.dismiss === Swal.DismissReason.cancel && autorizacionPendienteRef.current === solicitudId) {
+          autorizacionPendienteRef.current = null;
+          navigate("/orden-mixta");
+        }
+      } catch (error: any) {
+        await Swal.fire("Error", error?.response?.data?.message || "No se pudo enviar la solicitud de autorizacion", "error");
+      } finally {
+        savingRef.current = false;
+        setSaving(false);
+      }
       return;
     }
 
@@ -1072,6 +1200,11 @@ export default function OrdenMixtaNueva() {
             )}
             {pedidoSinAnticipo && (
               <Alert severity="warning">La parte de producción necesita anticipo mayor a 0, salvo que sea orden de compra.</Alert>
+            )}
+            {produccionRequiereAutorizacion && (
+              <Alert severity="warning">
+                La parte de produccion supera {formatCurrency(PEDIDO_AUTORIZACION_MONTO_MINIMO)}. Esta orden debe generarla un administrador o un usuario autorizado.
+              </Alert>
             )}
           </Grid>
           <Grid size={{ xs: 12, md: 4 }}>
