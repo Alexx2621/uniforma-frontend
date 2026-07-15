@@ -109,6 +109,11 @@ const toInputMonth = (value?: string | Date | null) => {
 
 const parseNumber = (value: unknown) => Number(value || 0) || 0;
 
+const primerNombre = (value?: string | null) => {
+  const first = `${value || ""}`.trim().split(/\s+/)[0];
+  return first || "VENDEDOR";
+};
+
 const dateDisplay = (value?: string | null) => {
   if (!value) return "-";
   const [year, month, day] = `${value}`.slice(0, 10).split("-");
@@ -379,7 +384,7 @@ export default function Comisiones() {
   const abrirPdf = (data: any) => {
     const lineasPdf = normalizarLineas(data.lineas || []).filter(lineHasData);
     const totals = calcularTotales(lineasPdf, parseNumber(data.comisionPct || 7.5));
-    const vendedorPdf = `${data.vendedor || vendedor || "VENDEDOR"}`.toUpperCase();
+    const vendedorPdf = primerNombre(data.vendedor || vendedor).toUpperCase();
     const periodoPdf = data.periodoPdf || periodoLabel((data.periodo || periodo) as PeriodoComision, data.mes || mes);
     const rowsHtml = lineasPdf
       .map(
@@ -406,7 +411,7 @@ export default function Comisiones() {
         <meta charset="utf-8" />
         <title>Reporte de comisiones</title>
         <style>
-          @page { size: letter landscape; margin: 18px; }
+          @page { size: letter landscape; margin: 14mm 12mm; }
           * {
             box-sizing: border-box;
             -webkit-print-color-adjust: exact !important;
@@ -414,7 +419,7 @@ export default function Comisiones() {
           }
           html, body { margin: 0; padding: 0; background: #fff; }
           body { font-family: Arial, sans-serif; color: #000; font-size: 11px; }
-          .sheet { width: 100%; }
+          .sheet { width: 100%; max-width: 1010px; margin: 0 auto; }
           .top {
             width: 100%;
             border-collapse: collapse;
@@ -484,6 +489,7 @@ export default function Comisiones() {
               print-color-adjust: exact !important;
             }
             body { width: 100%; }
+            .sheet { width: 100%; max-width: none; margin: 0 auto; }
             .top { margin-bottom: 0 !important; }
             .top td { background-color: #092b68 !important; color: #fff !important; }
             .data th.blue { background-color: #092b68 !important; color: #fff !important; }
