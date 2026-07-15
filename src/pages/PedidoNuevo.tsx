@@ -582,6 +582,7 @@ export default function PedidoNuevo() {
   const autoguardadoBorradorBloqueadoRef = useRef(false);
   const ultimoBorradorJsonRef = useRef("");
   const guardandoPedidoRef = useRef(false);
+  const complementoSugeridoProductoIdRef = useRef<number | null>(null);
   const autorizacionPendienteRef = useRef<{
     id: number;
     clienteParaPedido: ClientePedido;
@@ -1513,7 +1514,6 @@ export default function PedidoNuevo() {
   const sugerirProductoComplementario = async (productoAgregado?: Producto, cantidadSugerida = 1, descuentoSugerido = 0) => {
     const complementario = buscarProductoComplementario(productoAgregado);
     if (!complementario) return;
-    if (detalle.some((row) => Number(row.productoId) === Number(complementario.id))) return;
 
     const tipoComplementario = getTipoComplementario(productoAgregado?.tipo).toLowerCase();
     const result = await Swal.fire({
@@ -1527,6 +1527,7 @@ export default function PedidoNuevo() {
     });
     if (!result.isConfirmed) return;
 
+    complementoSugeridoProductoIdRef.current = Number(complementario.id);
     setEditingDetalleKey(null);
     setCantidadInput(String(cantidadSugerida || 1));
     setCantidadAdvertida(null);
@@ -1631,6 +1632,7 @@ export default function PedidoNuevo() {
     setFiltroTela("");
     setFiltroTalla("");
     setFiltroColor("");
+    complementoSugeridoProductoIdRef.current = null;
   };
 
   const agregarArticulo = async () => {
@@ -1718,7 +1720,8 @@ export default function PedidoNuevo() {
       descripcion,
     };
 
-    const debeSugerirComplementario = editingDetalleKey === null;
+    const productoAgregadoDesdeSugerencia = complementoSugeridoProductoIdRef.current === Number(productoId);
+    const debeSugerirComplementario = editingDetalleKey === null && !productoAgregadoDesdeSugerencia;
     const productoAgregado = productos.find((p) => Number(p.id) === Number(productoId));
     const cantidadSugerida = cantidad;
     const descuentoSugerido = Number(articuloActual.descuento) || 0;
