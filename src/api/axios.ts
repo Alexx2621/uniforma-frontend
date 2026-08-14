@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { clearSessionStorage } from '../auth/clearSessionStorage';
 
 const apiBaseUrl = process.env.REACT_APP_API_URL || 'http://localhost:3000';
 
@@ -109,7 +110,7 @@ api.interceptors.response.use(
     if (error?.response?.status === 401 && window.location.pathname !== "/login") {
       clearNavigationCache();
       navigationCacheToken = null;
-      localStorage.clear();
+      clearSessionStorage();
       window.location.href = "/login";
     }
     return Promise.reject(error);

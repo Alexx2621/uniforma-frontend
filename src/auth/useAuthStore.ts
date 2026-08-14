@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { clearSessionStorage } from './clearSessionStorage';
 
 const PERMISOS_STORAGE_KEY = 'permisos:v1';
 
@@ -166,7 +167,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: () => {
-    localStorage.clear();
+    clearSessionStorage();
     set({
       token: null,
       usuario: null,
