@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert, Box, Button, Checkbox, Chip, FormControlLabel, Grid, Paper, Stack,
   MenuItem,
@@ -26,10 +26,53 @@ const emptyFilters = (): Filters => ({ tipos: "", generos: "", telas: "", tallas
 const emptyUnusedFilters = (): UnusedFilters => ({ tipo: "", genero: "", tela: "", talla: "", color: "", categoria: "" });
 const csv = (value: string) => value.split(",").map((item) => item.trim()).filter(Boolean);
 const normalize = (value: unknown) => `${value ?? ""}`.trim().toLocaleLowerCase("es-GT");
-const unusedCheckboxSx = {
-  color: "#64748b",
-  "&.Mui-checked, &.MuiCheckbox-indeterminate": { color: "primary.main" },
+const selectionCellSx = {
+  position: "sticky",
+  left: 0,
+  zIndex: 4,
+  width: 76,
+  minWidth: 76,
+  maxWidth: 76,
+  bgcolor: "background.paper",
 };
+
+function SelectionCheckbox({
+  checked,
+  indeterminate = false,
+  disabled = false,
+  label,
+  onChange,
+}: {
+  checked: boolean;
+  indeterminate?: boolean;
+  disabled?: boolean;
+  label: string;
+  onChange: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (inputRef.current) inputRef.current.indeterminate = indeterminate;
+  }, [indeterminate]);
+
+  return (
+    <input
+      ref={inputRef}
+      type="checkbox"
+      checked={checked}
+      disabled={disabled}
+      aria-label={label}
+      onChange={onChange}
+      style={{
+        width: 18,
+        height: 18,
+        margin: 0,
+        cursor: disabled ? "not-allowed" : "pointer",
+        accentColor: "#18366f",
+      }}
+    />
+  );
+}
 const uniqueOptions = (values: unknown[]) => Array.from(new Set(values.map((value) => `${value ?? ""}`.trim()).filter(Boolean)))
   .sort((a, b) => a.localeCompare(b, "es"));
 const getMessage = (error: any, fallback: string) => {
@@ -346,8 +389,8 @@ export default function GestionCodigos() {
               </Grid>
             </Paper>
             <Paper variant="outlined" sx={{ overflow: "hidden" }}>
-              <TableContainer sx={{ maxHeight: 540 }}><Table stickyHeader size="small"><TableHead><TableRow><TableCell padding="checkbox"><Checkbox sx={unusedCheckboxSx} checked={allCurrentPageSelected} indeterminate={!allCurrentPageSelected && someCurrentPageSelected} disabled={!currentPageUnusedIds.length} onChange={toggleCurrentPageSelection} inputProps={{ "aria-label": allCurrentPageSelected ? "Deseleccionar todos los códigos de esta página" : "Seleccionar todos los códigos de esta página" }} /></TableCell><TableCell>Código</TableCell><TableCell>Producto</TableCell><TableCell>Tipo y género</TableCell><TableCell>Combinación</TableCell><TableCell align="right">Precio</TableCell><TableCell align="right">Acciones</TableCell></TableRow></TableHead><TableBody>
-                {paginatedUnused.map((item) => <TableRow key={item.id} hover selected={selectedUnusedIds.has(item.id)}><TableCell padding="checkbox"><Checkbox sx={unusedCheckboxSx} checked={selectedUnusedIds.has(item.id)} onChange={() => toggleUnusedSelection(item.id)} inputProps={{ "aria-label": `Seleccionar código ${item.codigo}` }} /></TableCell><TableCell sx={{ fontFamily: "monospace", fontWeight: 700, color: "primary.main" }}>{item.codigo}</TableCell><TableCell><Typography variant="body2">{item.nombre}</Typography>{item.categoria && normalize(item.categoria) !== normalize(item.nombre) && <Typography variant="caption" color="text.secondary">{item.categoria}</Typography>}</TableCell><TableCell>{[item.tipo, item.genero].filter(Boolean).join(" / ") || "—"}</TableCell><TableCell>{[item.tela, item.talla, item.color].filter(Boolean).join(" / ") || "—"}</TableCell><TableCell align="right">Q {Number(item.precio).toFixed(2)}</TableCell><TableCell align="right"><Button color="error" size="small" startIcon={<DeleteOutlineOutlined />} onClick={() => void removeUnused(item)}>Eliminar</Button></TableCell></TableRow>)}
+              <TableContainer sx={{ maxHeight: 540 }}><Table stickyHeader size="small"><TableHead><TableRow><TableCell sx={{ ...selectionCellSx, zIndex: 6, bgcolor: "background.default" }}><Stack direction="row" spacing={0.75} alignItems="center"><SelectionCheckbox checked={allCurrentPageSelected} indeterminate={!allCurrentPageSelected && someCurrentPageSelected} disabled={!currentPageUnusedIds.length} onChange={toggleCurrentPageSelection} label={allCurrentPageSelected ? "Deseleccionar todos los códigos de esta página" : "Seleccionar todos los códigos de esta página"} /><Typography variant="caption" fontWeight={700}>Todos</Typography></Stack></TableCell><TableCell>Código</TableCell><TableCell>Producto</TableCell><TableCell>Tipo y género</TableCell><TableCell>Combinación</TableCell><TableCell align="right">Precio</TableCell><TableCell align="right">Acciones</TableCell></TableRow></TableHead><TableBody>
+                {paginatedUnused.map((item) => <TableRow key={item.id} hover selected={selectedUnusedIds.has(item.id)}><TableCell sx={{ ...selectionCellSx, bgcolor: selectedUnusedIds.has(item.id) ? "action.selected" : "background.paper" }} align="center"><SelectionCheckbox checked={selectedUnusedIds.has(item.id)} onChange={() => toggleUnusedSelection(item.id)} label={`Seleccionar código ${item.codigo}`} /></TableCell><TableCell sx={{ fontFamily: "monospace", fontWeight: 700, color: "primary.main" }}>{item.codigo}</TableCell><TableCell><Typography variant="body2">{item.nombre}</Typography>{item.categoria && normalize(item.categoria) !== normalize(item.nombre) && <Typography variant="caption" color="text.secondary">{item.categoria}</Typography>}</TableCell><TableCell>{[item.tipo, item.genero].filter(Boolean).join(" / ") || "—"}</TableCell><TableCell>{[item.tela, item.talla, item.color].filter(Boolean).join(" / ") || "—"}</TableCell><TableCell align="right">Q {Number(item.precio).toFixed(2)}</TableCell><TableCell align="right"><Button color="error" size="small" startIcon={<DeleteOutlineOutlined />} onClick={() => void removeUnused(item)}>Eliminar</Button></TableCell></TableRow>)}
                 {!visibleUnused.length && <TableRow><TableCell colSpan={7} align="center" sx={{ py: 6, color: "text.secondary" }}>No hay códigos sin uso que coincidan con los filtros.</TableCell></TableRow>}
               </TableBody></Table></TableContainer>
               <TablePagination
