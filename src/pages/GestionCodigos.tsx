@@ -7,7 +7,10 @@ import {
 } from "@mui/material";
 import AddBoxOutlined from "@mui/icons-material/AddBoxOutlined";
 import AutoFixHighOutlined from "@mui/icons-material/AutoFixHighOutlined";
+import ContentCopyOutlined from "@mui/icons-material/ContentCopyOutlined";
 import DeleteOutlineOutlined from "@mui/icons-material/DeleteOutlineOutlined";
+import DeleteSweepOutlined from "@mui/icons-material/DeleteSweepOutlined";
+import DownloadOutlined from "@mui/icons-material/DownloadOutlined";
 import FactCheckOutlined from "@mui/icons-material/FactCheckOutlined";
 import MenuBookOutlined from "@mui/icons-material/MenuBookOutlined";
 import RefreshOutlined from "@mui/icons-material/RefreshOutlined";
@@ -79,6 +82,7 @@ const getMessage = (error: any, fallback: string) => {
   const message = error?.response?.data?.message || error?.message || fallback;
   return Array.isArray(message) ? message.join(", ") : message;
 };
+const escapeCsv = (value: unknown) => `"${`${value ?? ""}`.replace(/"/g, '""')}"`;
 const escapeHtml = (value: unknown) => `${value ?? ""}`
   .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
   .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
@@ -289,6 +293,10 @@ export default function GestionCodigos() {
     () => paginatedUnused.map((item) => item.id),
     [paginatedUnused],
   );
+  const selectedUnused = useMemo(
+    () => unused.filter((item) => selectedUnusedIds.has(item.id)),
+    [unused, selectedUnusedIds],
+  );
   const allCurrentPageSelected = currentPageUnusedIds.length > 0
     && currentPageUnusedIds.every((id) => selectedUnusedIds.has(id));
   const someCurrentPageSelected = currentPageUnusedIds.some((id) => selectedUnusedIds.has(id));
@@ -307,6 +315,95 @@ export default function GestionCodigos() {
       else next.add(id);
       return next;
     });
+  };
+  const copySelectedUnused = async () => {
+    if (!selectedUnused.length) return;
+    const text = selectedUnused.map((item) => item.codigo).join("\n");
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
+      else {
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        textarea.remove();
+      }
+      void Swal.fire("Copiados", `${selectedUnused.length} códigos copiados al portapapeles.`, "success");
+    } catch {
+      void Swal.fire("No se pudo copiar", "El navegador no permitió acceder al portapapeles.", "error");
+    }
+  };
+  const exportSelectedUnused = () => {
+    if (!selectedUnused.length) return;
+    const headers = ["Codigo", "Producto", "Categoria", "Tipo", "Genero", "Tela", "Talla", "Color", "Precio"];
+    const rows = selectedUnused.map((item) => [
+      item.codigo, item.nombre, item.categoria, item.tipo, item.genero,
+      item.tela, item.talla, item.color, Number(item.precio || 0).toFixed(2),
+    ]);
+    const content = `\uFEFF${[headers, ...rows].map((row) => row.map(escapeCsv).join(",")).join("\r\n")}`;
+    const url = URL.createObjectURL(new Blob([content], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `codigos-sin-uso-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+  const deleteSelectedUnused = async () => {
+    if (!selectedUnused.length) return;
+    if (selectedUnused.length > 500) {
+      await Swal.fire("Límite por operación", "Selecciona como máximo 500 códigos para eliminarlos de forma segura.", "warning");
+      return;
+    }
+
+    const confirmation = await Swal.fire({
+      title: `Eliminar ${selectedUnused.length} códigos`,
+      html: "Se volverá a validar stock, inventario e historial. Los códigos que tengan alguna relación serán omitidos.<br><b>Esta acción no se puede deshacer.</b>",
+      icon: "warning",
+      input: "text",
+      inputLabel: "Escribe ELIMINAR para confirmar",
+      inputPlaceholder: "ELIMINAR",
+      showCancelButton: true,
+      confirmButtonText: "Eliminar seleccionados",
+      cancelButtonText: "Cancelar",
+      confirmButtonColor: "#d32f2f",
+      preConfirm: (value) => {
+        if (`${value || ""}`.trim().toUpperCase() !== "ELIMINAR") {
+          Swal.showValidationMessage("Escribe ELIMINAR para continuar");
+          return false;
+        }
+        return true;
+      },
+    });
+    if (!confirmation.isConfirmed) return;
+
+    try {
+      setLoading(true);
+      const { data } = await api.post("/productos/gestion/codigos-sin-uso/eliminar", {
+        ids: selectedUnused.map((item) => item.id),
+      });
+      const removedIds = new Set<number>((data?.idsEliminados || []).map(Number));
+      setUnused((items) => items.filter((item) => !removedIds.has(item.id)));
+      setSelectedUnusedIds(new Set());
+      const eliminados = Number(data?.eliminados || 0);
+      const omitidos = Number(data?.omitidos || 0);
+      await Swal.fire({
+        title: eliminados ? "Operación completada" : "No se eliminó ningún código",
+        text: omitidos
+          ? `Eliminados: ${eliminados}. Omitidos por seguridad: ${omitidos}.`
+          : `Se eliminaron ${eliminados} códigos.`,
+        icon: eliminados ? (omitidos ? "info" : "success") : "warning",
+      });
+      await loadUnused();
+    } catch (error) {
+      await Swal.fire("No se pudieron eliminar", getMessage(error, "La validación del servidor impidió completar la operación."), "error");
+    } finally {
+      setLoading(false);
+    }
   };
   useEffect(() => {
     const lastPage = Math.max(0, Math.ceil(visibleUnused.length / unusedRowsPerPage) - 1);
@@ -380,7 +477,6 @@ export default function GestionCodigos() {
                       {selectedUnusedIds.size > 0 && ` · ${selectedUnusedIds.size} seleccionado${selectedUnusedIds.size === 1 ? "" : "s"}`}
                     </Typography>
                     <Stack direction="row" gap={1}>
-                      {selectedUnusedIds.size > 0 && <Button size="small" onClick={() => setSelectedUnusedIds(new Set())}>Deseleccionar todo</Button>}
                       <Button size="small" onClick={() => { setSearch(""); setUnusedFilters(emptyUnusedFilters()); setUnusedPage(0); }}>Limpiar filtros</Button>
                       <Button size="small" startIcon={<RefreshOutlined />} onClick={() => void loadUnused()} disabled={loading}>Revisar nuevamente</Button>
                     </Stack>
@@ -388,6 +484,22 @@ export default function GestionCodigos() {
                 </Grid>
               </Grid>
             </Paper>
+            {selectedUnused.length > 0 && (
+              <Paper variant="outlined" sx={{ p: 1.5, borderColor: "primary.light", bgcolor: "action.hover" }}>
+                <Stack direction={{ xs: "column", md: "row" }} gap={1.25} alignItems={{ md: "center" }} justifyContent="space-between">
+                  <Box>
+                    <Typography fontWeight={700}>{selectedUnused.length} código{selectedUnused.length === 1 ? "" : "s"} seleccionado{selectedUnused.length === 1 ? "" : "s"}</Typography>
+                    <Typography variant="caption" color="text.secondary">Las acciones se aplican únicamente a esta selección.</Typography>
+                  </Box>
+                  <Stack direction="row" gap={1} flexWrap="wrap">
+                    <Button size="small" variant="outlined" startIcon={<ContentCopyOutlined />} onClick={() => void copySelectedUnused()} disabled={loading}>Copiar códigos</Button>
+                    <Button size="small" variant="outlined" startIcon={<DownloadOutlined />} onClick={exportSelectedUnused} disabled={loading}>Exportar CSV</Button>
+                    <Button size="small" variant="outlined" onClick={() => setSelectedUnusedIds(new Set())} disabled={loading}>Deseleccionar</Button>
+                    <Button size="small" variant="contained" color="error" startIcon={<DeleteSweepOutlined />} onClick={() => void deleteSelectedUnused()} disabled={loading}>Eliminar seleccionados</Button>
+                  </Stack>
+                </Stack>
+              </Paper>
+            )}
             <Paper variant="outlined" sx={{ overflow: "hidden" }}>
               <TableContainer sx={{ maxHeight: 540 }}><Table stickyHeader size="small"><TableHead><TableRow><TableCell sx={{ ...selectionCellSx, zIndex: 6, bgcolor: "background.default" }}><Stack direction="row" spacing={0.75} alignItems="center"><SelectionCheckbox checked={allCurrentPageSelected} indeterminate={!allCurrentPageSelected && someCurrentPageSelected} disabled={!currentPageUnusedIds.length} onChange={toggleCurrentPageSelection} label={allCurrentPageSelected ? "Deseleccionar todos los códigos de esta página" : "Seleccionar todos los códigos de esta página"} /><Typography variant="caption" fontWeight={700}>Todos</Typography></Stack></TableCell><TableCell>Código</TableCell><TableCell>Producto</TableCell><TableCell>Tipo y género</TableCell><TableCell>Combinación</TableCell><TableCell align="right">Precio</TableCell><TableCell align="right">Acciones</TableCell></TableRow></TableHead><TableBody>
                 {paginatedUnused.map((item) => <TableRow key={item.id} hover selected={selectedUnusedIds.has(item.id)}><TableCell sx={{ ...selectionCellSx, bgcolor: selectedUnusedIds.has(item.id) ? "action.selected" : "background.paper" }} align="center"><SelectionCheckbox checked={selectedUnusedIds.has(item.id)} onChange={() => toggleUnusedSelection(item.id)} label={`Seleccionar código ${item.codigo}`} /></TableCell><TableCell sx={{ fontFamily: "monospace", fontWeight: 700, color: "primary.main" }}>{item.codigo}</TableCell><TableCell><Typography variant="body2">{item.nombre}</Typography>{item.categoria && normalize(item.categoria) !== normalize(item.nombre) && <Typography variant="caption" color="text.secondary">{item.categoria}</Typography>}</TableCell><TableCell>{[item.tipo, item.genero].filter(Boolean).join(" / ") || "—"}</TableCell><TableCell>{[item.tela, item.talla, item.color].filter(Boolean).join(" / ") || "—"}</TableCell><TableCell align="right">Q {Number(item.precio).toFixed(2)}</TableCell><TableCell align="right"><Button color="error" size="small" startIcon={<DeleteOutlineOutlined />} onClick={() => void removeUnused(item)}>Eliminar</Button></TableCell></TableRow>)}
