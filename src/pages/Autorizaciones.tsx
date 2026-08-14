@@ -33,7 +33,7 @@ interface AutorizacionRow {
   id: string;
   sourceId: number;
   pedidoId?: number | null;
-  tipo: "pedido" | "traslado" | "postventa";
+  tipo: "pedido" | "traslado" | "postventa" | "ajuste_pago";
   subtipo?: string;
   titulo: string;
   referencia: string;
@@ -72,6 +72,7 @@ export default function Autorizaciones() {
   const canApprovePedidos = hasPermission(rol, permisos, "produccion.autorizar-pedidos");
   const canApproveTraslados = hasPermission(rol, permisos, "inventario.trasladar");
   const canManagePostventa = hasPermission(rol, permisos, "postventa.manage");
+  const canApproveAdjustments = hasPermission(rol, permisos, "correcciones.manage");
   const navigate = useNavigate();
   const [rows, setRows] = useState<AutorizacionRow[]>([]);
   const [stats, setStats] = useState<Record<string, number>>({});
@@ -125,6 +126,7 @@ export default function Autorizaciones() {
     if (!comentario.isConfirmed) return;
 
     try {
+      let response: any = null;
       if (row.tipo === "pedido") {
         await api.post(`/produccion/autorizaciones/${row.sourceId}/${accion === "aprobar" ? "aprobar" : "rechazar"}`, {
           comentario: comentario.value || "",
@@ -136,8 +138,15 @@ export default function Autorizaciones() {
         });
       } else if (row.tipo === "postventa") {
         await api.post(`/postventa/${row.sourceId}/${accion === "aprobar" ? "cerrar" : "anular"}`);
+      } else if (row.tipo === "ajuste_pago") {
+        response = await api.post(`/ajustes-pagos-pedidos/${row.sourceId}/${accion === "aprobar" ? "aprobar" : "rechazar"}`, {
+          comentario: comentario.value || "",
+        });
       }
-      Swal.fire("Listo", accion === "aprobar" ? "Solicitud autorizada" : "Solicitud rechazada", "success");
+      const quedaSegunda = response?.data?.estado === "pendiente_segunda_aprobacion";
+      Swal.fire("Listo", quedaSegunda
+        ? "Primera aprobacion registrada. Falta la autorizacion de otro administrador."
+        : accion === "aprobar" ? "Solicitud autorizada y aplicada" : "Solicitud rechazada", "success");
       setSelected(null);
       await cargar();
     } catch (error: any) {
@@ -150,9 +159,12 @@ export default function Autorizaciones() {
     (row: AutorizacionRow) =>
       (row.tipo === "pedido" && canApprovePedidos) ||
       (row.tipo === "traslado" && canApproveTraslados) ||
-      (row.tipo === "postventa" && canManagePostventa),
-    [canApprovePedidos, canApproveTraslados, canManagePostventa],
+      (row.tipo === "postventa" && canManagePostventa) ||
+      (row.tipo === "ajuste_pago" && canApproveAdjustments),
+    [canApproveAdjustments, canApprovePedidos, canApproveTraslados, canManagePostventa],
   );
+
+  const estaPendiente = (row: AutorizacionRow) => ["pendiente", "pendiente_segunda_aprobacion"].includes(row.estado);
 
   const columns = useMemo<GridColDef<AutorizacionRow>[]>(
     () => [
@@ -185,7 +197,7 @@ export default function Autorizaciones() {
             <Button size="small" onClick={() => setSelected(row)}>
               Ver
             </Button>
-            {puedeResolver(row) && row.estado === "pendiente" && (
+            {puedeResolver(row) && estaPendiente(row) && (
               <Button size="small" color="success" disabled={resolviendo} onClick={() => void resolver(row, "aprobar")}>
                 Aprobar
               </Button>
@@ -243,6 +255,12 @@ export default function Autorizaciones() {
         </Grid>
         <Grid size={{ xs: 12, sm: 4, md: 3 }}>
           <Paper variant="outlined" sx={{ p: 2 }}>
+            <Typography variant="caption" color="text.secondary">Ajustes de pago</Typography>
+            <Typography variant="h5">{stats.ajuste_pago || 0}</Typography>
+          </Paper>
+        </Grid>
+        <Grid size={{ xs: 12, sm: 4, md: 3 }}>
+          <Paper variant="outlined" sx={{ p: 2 }}>
             <Typography variant="caption" color="text.secondary">Reemplazadas</Typography>
             <Typography variant="h5">{stats.reemplazada || 0}</Typography>
           </Paper>
@@ -255,12 +273,15 @@ export default function Autorizaciones() {
           <MenuItem value="pedido">Pedidos</MenuItem>
           <MenuItem value="traslado">Traslados</MenuItem>
           <MenuItem value="postventa">Postventa</MenuItem>
+          <MenuItem value="ajuste_pago">Ajustes de pago</MenuItem>
         </TextField>
         <TextField select size="small" label="Estado" value={estado} onChange={(e) => setEstado(e.target.value)} sx={{ minWidth: 180 }}>
           <MenuItem value="pendiente">Pendientes</MenuItem>
           <MenuItem value="todos">Todos</MenuItem>
           <MenuItem value="aprobado">Aprobados</MenuItem>
           <MenuItem value="rechazado">Rechazados</MenuItem>
+          <MenuItem value="aplicado">Aplicados</MenuItem>
+          <MenuItem value="pendiente_segunda_aprobacion">Pendientes de segunda aprobacion</MenuItem>
           <MenuItem value="reemplazada">Reemplazadas</MenuItem>
         </TextField>
         <Button variant="contained" onClick={() => void cargar()} disabled={loading}>
@@ -292,6 +313,19 @@ export default function Autorizaciones() {
               </Stack>
               <Typography variant="h6">{selected.referencia}</Typography>
               <Typography>{selected.resumen}</Typography>
+              {selected.tipo === "ajuste_pago" && (
+                <Paper variant="outlined" sx={{ p: 2 }}>
+                  <Grid container spacing={2}>
+                    <Grid size={{ xs: 12, sm: 4 }}><Typography variant="caption" color="text.secondary">Monto registrado</Typography><Typography>{formatCurrency(Number(selected.payload?.montoRegistrado || 0))}</Typography></Grid>
+                    <Grid size={{ xs: 12, sm: 4 }}><Typography variant="caption" color="text.secondary">Monto correcto</Typography><Typography>{formatCurrency(Number(selected.payload?.montoCorrecto || 0))}</Typography></Grid>
+                    <Grid size={{ xs: 12, sm: 4 }}><Typography variant="caption" color="text.secondary">Diferencia</Typography><Typography color={Number(selected.payload?.diferencia || 0) < 0 ? "error" : "success.main"}>{formatCurrency(Number(selected.payload?.diferencia || 0))}</Typography></Grid>
+                    <Grid size={{ xs: 12, sm: 4 }}><Typography variant="caption" color="text.secondary">Fecha real</Typography><Typography>{dateLabel(selected.payload?.fechaPagoReal)}</Typography></Grid>
+                    <Grid size={{ xs: 12, sm: 4 }}><Typography variant="caption" color="text.secondary">Metodo / referencia</Typography><Typography>{selected.payload?.metodo || "N/D"} / {selected.payload?.referenciaPago || "N/D"}</Typography></Grid>
+                    <Grid size={{ xs: 12, sm: 4 }}><Typography variant="caption" color="text.secondary">Evidencia</Typography><Typography>{selected.payload?.evidenciaReferencia || "N/D"}</Typography></Grid>
+                    <Grid size={{ xs: 12 }}><Typography variant="caption" color="text.secondary">Aprobaciones</Typography><Typography>{selected.payload?.primeraAprobacion || "Pendiente"}{Number(selected.payload?.aprobacionesRequeridas || 1) > 1 ? ` / ${selected.payload?.segundaAprobacion || "Segunda pendiente"}` : ""}</Typography></Grid>
+                  </Grid>
+                </Paper>
+              )}
               {selected.tipo === "pedido" && Array.isArray(selected.payload?.detalle) && selected.payload.detalle.length > 0 && (
                 <Paper variant="outlined" sx={{ overflowX: "auto" }}>
                   <Box component="table" sx={{ width: "100%", borderCollapse: "collapse", "& th, & td": { p: 1, borderBottom: "1px solid", borderColor: "divider", fontSize: 13 } }}>
@@ -374,7 +408,7 @@ export default function Autorizaciones() {
               Abrir modulo
             </Button>
           )}
-          {selected && puedeResolver(selected) && selected.estado === "pendiente" && (
+          {selected && puedeResolver(selected) && estaPendiente(selected) && (
             <>
               <Button startIcon={<CloseOutlined />} color="error" disabled={resolviendo} onClick={() => void resolver(selected, "rechazar")}>
                 Rechazar

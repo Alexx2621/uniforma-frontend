@@ -244,12 +244,13 @@ const getReporteDiarioTotal = (data: any) => {
     };
   });
   const tiendaAutoRows = asArray(data?.tiendaAutoRows);
+  const ajustes = asArray(data?.ajustesPosteriores).reduce((sum, row) => sum + Number(row?.monto || 0), 0);
   return [
     ...(tiendaAutoRows.length ? tiendaAutoRows : ventasSnapshotRows),
     ...asArray(data?.tiendaManualRows),
   ].reduce(
     (sum, row) => sum + getTiendaRowTotal(row),
-    capital + departamento,
+    capital + departamento + ajustes,
   );
 };
 

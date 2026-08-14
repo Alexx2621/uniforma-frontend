@@ -18,6 +18,8 @@ import {
   MenuItem,
   Menu,
   ListItemIcon,
+  Alert,
+  Divider,
 } from "@mui/material";
 import { DataGrid, GridColDef } from "@mui/x-data-grid";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
@@ -28,6 +30,7 @@ import AccountBalanceOutlined from "@mui/icons-material/AccountBalanceOutlined";
 import PaidOutlined from "@mui/icons-material/PaidOutlined";
 import StoreOutlined from "@mui/icons-material/StoreOutlined";
 import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
+import EditNoteOutlined from "@mui/icons-material/EditNoteOutlined";
 import Swal from "sweetalert2";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/axios";
@@ -87,6 +90,28 @@ const prettyLabel = (value?: string | null) =>
     .replace(/_/g, " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 
+interface AjusteForm {
+  montoCorrecto: string;
+  fechaPagoReal: string;
+  metodo: string;
+  referencia: string;
+  banco: string;
+  ubicacion: string;
+  motivo: string;
+  evidenciaReferencia: string;
+}
+
+const emptyAjusteForm: AjusteForm = {
+  montoCorrecto: "",
+  fechaPagoReal: "",
+  metodo: "efectivo",
+  referencia: "",
+  banco: "",
+  ubicacion: "",
+  motivo: "",
+  evidenciaReferencia: "",
+};
+
 export default function PagosRecibidos() {
   const { usuario, usuarioCorrelativo, rol, rolId, permisos } = useAuthStore();
   const { vendedorDropdownRoleIds, vendedorDropdownBodegaIds, fetchConfig } = useSystemConfigStore();
@@ -111,6 +136,9 @@ export default function PagosRecibidos() {
   const [relationModalOpen, setRelationModalOpen] = useState(false);
   const [relationModalTitle, setRelationModalTitle] = useState("Relaciones de pago");
   const [relationModalData, setRelationModalData] = useState<{ nodes: RelationNode[]; edges: RelationEdge[] } | null>(null);
+  const [ajustePago, setAjustePago] = useState<PagoRecibido | null>(null);
+  const [ajusteForm, setAjusteForm] = useState<AjusteForm>(emptyAjusteForm);
+  const [enviandoAjuste, setEnviandoAjuste] = useState(false);
 
   const cargarPagos = async () => {
     try {
@@ -296,6 +324,57 @@ export default function PagosRecibidos() {
     setContextMenuPago(null);
   };
 
+  const abrirAjuste = (pago: PagoRecibido) => {
+    setSelectedPago(null);
+    setAjustePago(pago);
+    setAjusteForm({
+      ...emptyAjusteForm,
+      montoCorrecto: Number(pago.monto || 0).toFixed(2),
+      fechaPagoReal: `${pago.fecha || ""}`.slice(0, 10),
+      metodo: `${pago.metodo || "efectivo"}`.toLowerCase().replace(/[\s.-]+/g, "_"),
+      referencia: pago.referenciaPago || "",
+      banco: pago.banco || "",
+      ubicacion: pago.ubicacion || "",
+    });
+  };
+
+  const actualizarAjuste = (field: keyof AjusteForm, value: string) => {
+    setAjusteForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const enviarAjuste = async () => {
+    if (!ajustePago || enviandoAjuste) return;
+    try {
+      setEnviandoAjuste(true);
+      const randomId = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const { data } = await api.post("/ajustes-pagos-pedidos", {
+        requestId: randomId,
+        pedidoId: ajustePago.pedidoId,
+        pagoOriginalId: ajustePago.id,
+        montoCorrecto: Number(ajusteForm.montoCorrecto),
+        fechaPagoReal: ajusteForm.fechaPagoReal,
+        metodo: ajusteForm.metodo,
+        referencia: ajusteForm.referencia,
+        banco: ajusteForm.banco,
+        ubicacion: ajusteForm.ubicacion,
+        motivo: ajusteForm.motivo,
+        evidenciaReferencia: ajusteForm.evidenciaReferencia,
+      });
+      setAjustePago(null);
+      await Swal.fire({
+        title: "Solicitud creada",
+        html: `Se genero <strong>${data?.folio || "el ajuste"}</strong>. ${Number(data?.aprobacionesRequeridas || 1) > 1 ? "Requiere dos administradores distintos para aplicarse." : "Quedo pendiente de autorizacion."}`,
+        icon: "success",
+      });
+    } catch (error: any) {
+      Swal.fire("Error", error?.response?.data?.message || "No se pudo solicitar el ajuste", "error");
+    } finally {
+      setEnviandoAjuste(false);
+    }
+  };
+
   const handleContextMenuAction = (action: "relations" | "detail" | "pedido") => {
     if (!contextMenuPago) {
       closeContextMenu();
@@ -390,6 +469,22 @@ export default function PagosRecibidos() {
       ),
     },
   ];
+
+  const diferenciaAjuste = ajustePago
+    ? Number(ajusteForm.montoCorrecto || 0) - Number(ajustePago.monto || 0)
+    : 0;
+  const referenciaRequerida = ["transferencia", "deposito_bancario", "tarjeta", "visalink"].includes(ajusteForm.metodo);
+  const ajusteValido = Boolean(
+    ajustePago &&
+    ajusteForm.fechaPagoReal &&
+    Number.isFinite(Number(ajusteForm.montoCorrecto)) &&
+    Number(ajusteForm.montoCorrecto) >= 0 &&
+    Math.abs(diferenciaAjuste) >= 0.01 &&
+    ajusteForm.motivo.trim().length >= 15 &&
+    ajusteForm.evidenciaReferencia.trim().length >= 5 &&
+    (!referenciaRequerida || ajusteForm.referencia.trim()) &&
+    (ajusteForm.metodo !== "deposito_bancario" || ajusteForm.banco.trim())
+  );
 
   return (
     <Paper sx={{ p: 3 }}>
@@ -629,7 +724,104 @@ export default function PagosRecibidos() {
           ) : null}
         </DialogContent>
         <DialogActions>
+          {selectedPago && !`${selectedPago.tipo || ""}`.toLowerCase().startsWith("ajuste_") && (
+            <Button startIcon={<EditNoteOutlined />} color="warning" onClick={() => abrirAjuste(selectedPago)}>
+              Solicitar ajuste
+            </Button>
+          )}
           <Button onClick={() => setSelectedPago(null)}>Cerrar</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={Boolean(ajustePago)} onClose={() => !enviandoAjuste && setAjustePago(null)} fullWidth maxWidth="md">
+        <DialogTitle>Solicitar ajuste de pago historico</DialogTitle>
+        <DialogContent dividers>
+          {ajustePago && (
+            <Stack spacing={2}>
+              <Alert severity="warning">
+                Esta solicitud no modifica ni elimina el pago original. Al autorizarse se registrara la diferencia y, si ya existe un cierre para la fecha real, se creara una rectificacion vinculada sin importar la antiguedad del pedido.
+              </Alert>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                <TextField label="Pedido" value={ajustePago.pedidoFolio} fullWidth InputProps={{ readOnly: true }} />
+                <TextField label="Pago original" value={`#${ajustePago.id}`} fullWidth InputProps={{ readOnly: true }} />
+                <TextField label="Monto registrado" value={money(ajustePago.monto)} fullWidth InputProps={{ readOnly: true }} />
+              </Stack>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                <TextField
+                  label="Monto correcto"
+                  type="number"
+                  value={ajusteForm.montoCorrecto}
+                  onChange={(event) => actualizarAjuste("montoCorrecto", event.target.value)}
+                  inputProps={{ min: 0, step: 0.01 }}
+                  fullWidth
+                  required
+                />
+                <TextField
+                  label="Diferencia"
+                  value={money(diferenciaAjuste)}
+                  color={diferenciaAjuste < 0 ? "error" : "primary"}
+                  fullWidth
+                  InputProps={{ readOnly: true }}
+                />
+                <TextField
+                  label="Fecha real del pago"
+                  type="date"
+                  value={ajusteForm.fechaPagoReal}
+                  onChange={(event) => actualizarAjuste("fechaPagoReal", event.target.value)}
+                  InputLabelProps={{ shrink: true }}
+                  inputProps={{ max: new Date().toISOString().slice(0, 10) }}
+                  fullWidth
+                  required
+                />
+              </Stack>
+              <Divider />
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                <TextField select label="Metodo" value={ajusteForm.metodo} onChange={(event) => actualizarAjuste("metodo", event.target.value)} fullWidth>
+                  <MenuItem value="efectivo">Efectivo</MenuItem>
+                  <MenuItem value="transferencia">Transferencia</MenuItem>
+                  <MenuItem value="deposito_bancario">Deposito bancario</MenuItem>
+                  <MenuItem value="tarjeta">Tarjeta</MenuItem>
+                  <MenuItem value="visalink">Visalink</MenuItem>
+                </TextField>
+                <TextField
+                  label="Referencia"
+                  value={ajusteForm.referencia}
+                  onChange={(event) => actualizarAjuste("referencia", event.target.value)}
+                  required={["transferencia", "deposito_bancario", "tarjeta", "visalink"].includes(ajusteForm.metodo)}
+                  fullWidth
+                />
+                {ajusteForm.metodo === "deposito_bancario" && (
+                  <TextField label="Banco" value={ajusteForm.banco} onChange={(event) => actualizarAjuste("banco", event.target.value)} required fullWidth />
+                )}
+                <TextField label="Ubicacion" value={ajusteForm.ubicacion} onChange={(event) => actualizarAjuste("ubicacion", event.target.value)} fullWidth />
+              </Stack>
+              <TextField
+                label="Motivo del ajuste"
+                value={ajusteForm.motivo}
+                onChange={(event) => actualizarAjuste("motivo", event.target.value)}
+                helperText="Minimo 15 caracteres. Explica que ocurrio y por que el monto correcto es distinto."
+                multiline
+                minRows={3}
+                required
+                fullWidth
+              />
+              <TextField
+                label="Comprobante o evidencia"
+                value={ajusteForm.evidenciaReferencia}
+                onChange={(event) => actualizarAjuste("evidenciaReferencia", event.target.value)}
+                helperText="Numero de boleta, recibo, enlace o referencia donde se puede verificar."
+                required
+                fullWidth
+              />
+              {Math.abs(diferenciaAjuste) >= 5000 && (
+                <Alert severity="info">Por ser un ajuste de Q5,000 o mas, requerira dos aprobaciones de administradores diferentes.</Alert>
+              )}
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAjustePago(null)} disabled={enviandoAjuste}>Cancelar</Button>
+          <Button variant="contained" onClick={() => void enviarAjuste()} disabled={enviandoAjuste || !ajusteValido}>Enviar a autorizacion</Button>
         </DialogActions>
       </Dialog>
 

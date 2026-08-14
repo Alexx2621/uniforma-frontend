@@ -291,7 +291,8 @@ const getReporteDiarioTotal = (data: any) => {
     ...asArray(data?.tiendaManualRows),
   ];
   const tienda = tiendaRows.reduce((sum, row) => sum + getTiendaRowTotal(row), 0);
-  return capital + departamento + tienda;
+  const ajustes = asArray(data?.ajustesPosteriores).reduce((sum, row) => sum + Number(row?.monto || 0), 0);
+  return capital + departamento + tienda + ajustes;
 };
 
 const estadoLabel = (estado?: string | null) =>
