@@ -1,9 +1,11 @@
 // src/App.tsx
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import Login from "./pages/Login";
-import Dashboard from "./pages/Dashboard";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
 import Layout from "./layout/Layout";
+import { useTextInputStandards } from "./utils/useTextInputStandards";
+import { whatsappFeatureEnabled } from "./config/features";
+import Login from "./pages/Login";
+import Dashboard from "./pages/Dashboard";
 import Ventas from "./pages/Ventas";
 import Productos from "./pages/Productos";
 import ProductoNuevo from "./pages/ProductoNuevo";
@@ -31,6 +33,7 @@ import FacturasProveedores from "./pages/FacturasProveedores";
 import Cotizaciones from "./pages/Cotizaciones";
 import Usuarios from "./pages/Usuarios";
 import Admin from "./pages/Admin";
+import GestionCodigos from "./pages/GestionCodigos";
 import Auditoria from "./pages/Auditoria";
 import Correcciones from "./pages/Correcciones";
 import Alertas from "./pages/Alertas";
@@ -64,8 +67,6 @@ import ComparativoTiendas from "./pages/reportes/ComparativoTiendas";
 import Comisiones from "./pages/reportes/Comisiones";
 import MetasMensuales from "./pages/MetasMensuales";
 import NotFound from "./pages/NotFound";
-import { useTextInputStandards } from "./utils/useTextInputStandards";
-import { whatsappFeatureEnabled } from "./config/features";
 
 export default function App() {
   useTextInputStandards();
@@ -109,6 +110,7 @@ export default function App() {
           <Route path="/usuarios" element={<Usuarios />} />
           <Route path="/roles" element={<Roles />} />
           <Route path="/admin" element={<Admin />} />
+          <Route path="/gestion-codigos" element={<GestionCodigos />} />
           <Route path="/auditoria" element={<Auditoria />} />
           <Route path="/correcciones" element={<Correcciones />} />
           <Route path="/alertas" element={<Alertas />} />

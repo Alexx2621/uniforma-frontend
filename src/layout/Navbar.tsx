@@ -1480,13 +1480,18 @@ export default function Navbar({ sidebarWidth = 0, showMenuButton = false, onMen
         zIndex: (theme) => theme.zIndex.drawer,
         ml: `${sidebarWidth}px`,
         width: `calc(100% - ${sidebarWidth}px)`,
-        background: isDarkMode ? "#111827" : "#ffffff",
+        maxWidth: `calc(100vw - ${sidebarWidth}px)`,
+        boxSizing: "border-box",
+        background: isDarkMode ? "rgba(13, 20, 34, 0.92)" : "rgba(255, 255, 255, 0.90)",
+        backdropFilter: "blur(18px)",
         color: isDarkMode ? "#f9fafb" : "#1f2937",
         borderBottom: "1px solid",
-        borderColor: isDarkMode ? "#374151" : "#e5e7eb",
+        borderColor: isDarkMode ? "rgba(148,163,184,0.16)" : "#e8edf4",
+        boxShadow: isDarkMode ? "0 8px 24px rgba(0,0,0,0.12)" : "0 8px 24px rgba(24,54,111,0.045)",
+        transition: "margin-left 180ms ease, width 180ms ease",
       }}
     >
-      <Toolbar sx={{ minHeight: { xs: 56, md: 64 }, px: { xs: 1, sm: 2, md: 3 }, gap: { xs: 0.75, sm: 1.25 } }}>
+      <Toolbar sx={{ minHeight: { xs: 56, md: 64 }, px: { xs: 1.25, sm: 1.75, xl: 3 }, gap: { xs: 0.75, sm: 1.25 } }}>
         {showMenuButton && (
           <IconButton color="inherit" edge="start" onClick={onMenuClick} aria-label="Abrir menu" sx={{ flexShrink: 0 }}>
             <MenuRoundedIcon />

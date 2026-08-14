@@ -12,8 +12,10 @@ export default function Layout() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
-  const drawerWidth = isMobile ? 0 : sidebarOpen ? 268 : 78;
-  const sidebarWidth = isMobile ? 288 : drawerWidth;
+  const isCompactDesktop = useMediaQuery("(min-width:900px) and (max-width:1535.95px)");
+  const expandedDrawerWidth = isCompactDesktop ? 236 : 280;
+  const drawerWidth = isMobile ? 0 : sidebarOpen ? expandedDrawerWidth : 68;
+  const sidebarWidth = isMobile ? 292 : drawerWidth;
 
   return (
     <Box sx={{ display: "flex", minHeight: "100vh", width: "100%", overflowX: "hidden", backgroundColor: "background.default" }}>
@@ -33,14 +35,14 @@ export default function Layout() {
             size="small"
             sx={{
               position: "fixed",
-              top: 82,
+              top: 84,
               left: drawerWidth - 1,
               zIndex: 1300,
-              width: 22,
-              height: 34,
+              width: 24,
+              height: 36,
               borderRadius: "0 999px 999px 0",
               backgroundColor: "background.paper",
-              boxShadow: "none",
+              boxShadow: "0 6px 16px rgba(15, 23, 42, 0.10)",
               border: "1px solid",
               borderColor: "divider",
               display: "flex",
@@ -56,16 +58,23 @@ export default function Layout() {
 
       <Box
         component="main"
+        className="uniforma-main-content"
         sx={{
           flexGrow: 1,
           minWidth: 0,
+          maxWidth: isMobile ? "100%" : `calc(100vw - ${drawerWidth}px)`,
           width: isMobile ? "100%" : `calc(100% - ${drawerWidth}px)`,
-          p: { xs: 1.25, sm: 2, md: 3 },
+          boxSizing: "border-box",
+          overflowX: "hidden",
+          p: { xs: 1.25, sm: 1.75, md: 2, xl: 3 },
           mt: { xs: 7, md: 8 },
           backgroundColor: "background.default",
+          transition: "width 180ms ease",
         }}
       >
-        <Outlet />
+        <Box sx={{ minWidth: 0, maxWidth: "100%", overflowX: "hidden" }}>
+          <Outlet />
+        </Box>
       </Box>
     </Box>
   );

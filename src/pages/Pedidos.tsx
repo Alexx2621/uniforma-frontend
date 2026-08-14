@@ -27,6 +27,7 @@ import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
 import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import PictureAsPdfOutlined from "@mui/icons-material/PictureAsPdfOutlined";
+import RestartAltOutlined from "@mui/icons-material/RestartAltOutlined";
 import { useLocation, useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
 import { io, Socket } from "socket.io-client";
@@ -284,6 +285,7 @@ export default function Pedidos() {
   const [loadingPedidos, setLoadingPedidos] = useState(false);
   const pedidosRequestSeqRef = useRef(0);
   const loadingPedidosSeqRef = useRef(0);
+  const pedidosLoadAbortRef = useRef<AbortController | null>(null);
   const cargarPedidosRef = useRef<((silent?: boolean) => Promise<void>) | null>(null);
   const pedidosSocketRef = useRef<Socket | null>(null);
   const skipInitialPaginationResetRef = useRef(Boolean(restoredPedidosState));
@@ -556,6 +558,9 @@ export default function Pedidos() {
   };
 
   const cargar = useCallback(async (silent = false) => {
+    pedidosLoadAbortRef.current?.abort();
+    const requestController = new AbortController();
+    pedidosLoadAbortRef.current = requestController;
     const requestSeq = pedidosRequestSeqRef.current + 1;
     pedidosRequestSeqRef.current = requestSeq;
     if (!silent) {
@@ -566,6 +571,7 @@ export default function Pedidos() {
     try {
       const [resp, respClientes, respBodegas, respProductos, respTelas, respTallas, respColores] = await Promise.all([
         api.get("/produccion", {
+          signal: requestController.signal,
           params: {
             paginated: 1,
             page: paginationModel.page,
@@ -579,12 +585,12 @@ export default function Pedidos() {
             tipoPedido: filterTipoPedido,
           },
         }),
-        api.get("/clientes").catch(() => ({ data: [] })),
-        api.get("/bodegas").catch(() => ({ data: [] })),
-        api.get("/productos").catch(() => ({ data: [] })),
-        api.get("/telas").catch(() => ({ data: [] })),
-        api.get("/tallas").catch(() => ({ data: [] })),
-        api.get("/colores").catch(() => ({ data: [] })),
+        api.get("/clientes", { signal: requestController.signal }).catch(() => ({ data: [] })),
+        api.get("/bodegas", { signal: requestController.signal }).catch(() => ({ data: [] })),
+        api.get("/productos", { signal: requestController.signal }).catch(() => ({ data: [] })),
+        api.get("/telas", { signal: requestController.signal }).catch(() => ({ data: [] })),
+        api.get("/tallas", { signal: requestController.signal }).catch(() => ({ data: [] })),
+        api.get("/colores", { signal: requestController.signal }).catch(() => ({ data: [] })),
       ]);
       const clientes = respClientes.data || [];
       const bodegas = respBodegas.data || [];
@@ -605,11 +611,12 @@ export default function Pedidos() {
       setColores(colores);
       setRows(normalizados);
       setRowCount(Number(payload.total ?? normalizados.length));
-    } catch {
-      if (requestSeq === pedidosRequestSeqRef.current && !silent) {
+    } catch (error: any) {
+      if (error?.code !== "ERR_CANCELED" && !requestController.signal.aborted && requestSeq === pedidosRequestSeqRef.current && !silent) {
         Swal.fire("Error", "No se pudieron cargar pedidos", "error");
       }
     } finally {
+      if (pedidosLoadAbortRef.current === requestController) pedidosLoadAbortRef.current = null;
       if (!silent && requestSeq === loadingPedidosSeqRef.current) setLoadingPedidos(false);
     }
   }, [paginationModel.page, paginationModel.pageSize, filterCliente, filterFolio, filterUnificacion, busquedaDocumentoActiva, filterFechaInicio, filterFechaFin, filterBodega, filterTipoPedido, normalizarPedidos]);
@@ -617,6 +624,8 @@ export default function Pedidos() {
   useEffect(() => {
     cargarPedidosRef.current = cargar;
   }, [cargar]);
+
+  useEffect(() => () => pedidosLoadAbortRef.current?.abort(), []);
 
   useEffect(() => {
     void cargar();
@@ -748,6 +757,25 @@ export default function Pedidos() {
   }, [filterCliente, filterFolio, filterUnificacion, filterBodega, filterFechaInicio, filterFechaFin, filterTipoPedido, busquedaDocumentoActiva, canAccessAllBodegas, userBodegaId]);
 
   const filtered = useMemo(() => aplicarFiltrosLocales(rows), [rows, aplicarFiltrosLocales]);
+  const paginaResumen = useMemo(() => {
+    const total = filtered.reduce((sum, pedido) => sum + (Number(pedido.totalEstimado) || 0), 0);
+    const saldo = filtered.reduce((sum, pedido) => sum + Math.max(0, Number(pedido.saldoPendiente) || 0), 0);
+    const abiertos = filtered.filter((pedido) => !["anulado", "completado", "recibido"].includes(`${pedido.estado || ""}`.trim().toLowerCase())).length;
+    return { total, saldo, abiertos };
+  }, [filtered]);
+
+  const limpiarFiltros = () => {
+    const hoy = getTodayDateInputValue();
+    setFilterCliente("");
+    setFilterFolioInput("");
+    setFilterFolio("");
+    setFilterUnificacionInput("");
+    setFilterUnificacion("");
+    setFilterFechaInicio(hoy);
+    setFilterFechaFin(hoy);
+    setFilterTipoPedido("ambos");
+    setFilterBodega(canAccessAllBodegas ? "all" : Number(userBodegaId || 0) || "all");
+  };
 
   useEffect(() => {
     if (!busquedaDocumentoActiva || !filtered.length) return;
@@ -1224,11 +1252,15 @@ export default function Pedidos() {
   ];
 
   return (
-    <Paper sx={{ p: 3 }}>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+    <Stack spacing={2.25}>
+      <Paper variant="outlined" sx={{ p: { xs: 1.5, md: 2 } }}>
+      <Stack direction={{ xs: "column", lg: "row" }} justifyContent="space-between" alignItems={{ xs: "stretch", lg: "center" }} gap={1.5}>
         <Stack direction="row" spacing={1} alignItems="center">
           <PlaylistAddCheckOutlined color="primary" />
-          <Typography variant="h4">Pedidos de produccion</Typography>
+          <Stack spacing={0.25}>
+            <Typography variant="h4">Pedidos de produccion</Typography>
+            <Typography variant="body2" color="text.secondary">Consulta avances, saldos, unificaciones y documentos de produccion.</Typography>
+          </Stack>
         </Stack>
         <Stack direction="row" spacing={1}>
           <Button
@@ -1254,7 +1286,26 @@ export default function Pedidos() {
           </Button>
         </Stack>
       </Stack>
+      </Paper>
 
+      <Grid container spacing={1.5}>
+        {[
+          { label: "Pedidos encontrados", value: rowCount.toLocaleString("es-GT"), helper: "En el periodo filtrado" },
+          { label: "Monto de esta pagina", value: formatCurrency(paginaResumen.total), helper: `${filtered.length} pedido${filtered.length === 1 ? "" : "s"} visible${filtered.length === 1 ? "" : "s"}` },
+          { label: "Saldo de esta pagina", value: formatCurrency(paginaResumen.saldo), helper: "Pendiente por recibir" },
+          { label: "Pedidos abiertos", value: paginaResumen.abiertos.toLocaleString("es-GT"), helper: "Activos en esta pagina" },
+        ].map((item) => (
+          <Grid key={item.label} size={{ xs: 12, sm: 6, lg: 3 }}>
+            <Paper variant="outlined" sx={{ p: 1.75, height: "100%" }}>
+              <Typography variant="caption" color="text.secondary">{item.label}</Typography>
+              <Typography variant="h6" sx={{ mt: 0.25 }}>{item.value}</Typography>
+              <Typography variant="caption" color="text.secondary">{item.helper}</Typography>
+            </Paper>
+          </Grid>
+        ))}
+      </Grid>
+
+      <Paper variant="outlined" sx={{ p: { xs: 1.5, md: 2 } }}>
       <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" alignItems={{ xs: "stretch", md: "center" }} sx={{ mb: 2 }} spacing={2}>
         <ToggleButtonGroup
           exclusive
@@ -1295,7 +1346,11 @@ export default function Pedidos() {
         </Stack>
       </Stack>
 
-      <Grid container spacing={2} sx={{ mb: 2 }}>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
+        <Typography variant="h6">Filtros de consulta</Typography>
+        <Button size="small" variant="text" startIcon={<RestartAltOutlined />} onClick={limpiarFiltros}>Limpiar</Button>
+      </Stack>
+      <Grid container spacing={2}>
         <Grid size={{ xs: 12, sm: 4, md: 2 }}>
           <TextField
             label="Buscar por cliente"
@@ -1365,7 +1420,9 @@ export default function Pedidos() {
           />
         </Grid>
       </Grid>
+      </Paper>
 
+      <Paper variant="outlined" sx={{ p: 1, overflow: "hidden" }}>
       <div style={{ height: 620, width: "100%" }} onContextMenu={handleGridContextMenu}>
         <DataGrid
           apiRef={pedidosGridApiRef}
@@ -1393,6 +1450,7 @@ export default function Pedidos() {
           }}
         />
       </div>
+      </Paper>
 
       <Menu
         open={Boolean(contextMenuAnchor)}
@@ -1430,6 +1488,6 @@ export default function Pedidos() {
         onClose={closeRelationModal}
         onCardClick={handleRelationNodeClick}
       />
-    </Paper>
+    </Stack>
   );
 }

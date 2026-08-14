@@ -30,11 +30,15 @@ import {
   Alert,
   Collapse,
   IconButton,
+  Chip,
 } from "@mui/material";
 import PlaylistAddCheckOutlined from "@mui/icons-material/PlaylistAddCheckOutlined";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import DeleteOutline from "@mui/icons-material/DeleteOutline";
 import KeyboardArrowDownOutlined from "@mui/icons-material/KeyboardArrowDownOutlined";
+import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
+import TuneOutlined from "@mui/icons-material/TuneOutlined";
+import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import Swal from "sweetalert2";
 import { io, Socket } from "socket.io-client";
 import { api } from "../api/axios";
@@ -74,6 +78,9 @@ interface Producto {
   tela_id?: number | null;
   talla_id?: number | null;
   color_id?: number | null;
+  stockMax?: number | null;
+  mermaPorcentaje?: number | null;
+  categoria?: { id?: number; nombre?: string | null } | null;
 }
 
 interface Bodega {
@@ -197,6 +204,12 @@ const resolveColorNombre = (prod: Producto | undefined, colores: any[]) => {
 
 const uniqueSorted = (values: string[]) =>
   Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b));
+
+const upperText = (value: unknown, fallback = "N/D") =>
+  `${value ?? ""}`.trim().toLocaleUpperCase("es-GT") || fallback;
+
+const normalizeSearch = (value: unknown) =>
+  upperText(value, "").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
 const escapeHtml = (value?: string | number | null) =>
   `${value ?? ""}`
@@ -562,6 +575,7 @@ export default function PedidoNuevo() {
   const [cantidadInput, setCantidadInput] = useState("1");
   const [editingDetalleKey, setEditingDetalleKey] = useState<number | null>(null);
   const [filtroTipo, setFiltroTipo] = useState("");
+  const [filtrosArticuloOpen, setFiltrosArticuloOpen] = useState(false);
   const [filtroGenero, setFiltroGenero] = useState("");
   const [filtroTela, setFiltroTela] = useState("");
   const [filtroTalla, setFiltroTalla] = useState("");
@@ -1475,7 +1489,26 @@ export default function PedidoNuevo() {
     });
   }, [productosBaseFiltrados, tallas, colores, filtroTalla, filtroColor]);
 
+  const tallasBusquedaExacta = useMemo(
+    () => new Set(tallas.map((talla) => normalizeSearch(talla.nombre))),
+    [tallas],
+  );
   const productoDetectado = productosCoincidentes.length === 1 ? productosCoincidentes[0] : undefined;
+  const seleccionarProducto = (producto: Producto | null) => {
+    if (!producto) {
+      setFiltroTipo("");
+      setFiltroGenero("");
+      setFiltroTela("");
+      setFiltroTalla("");
+      setFiltroColor("");
+      return;
+    }
+    setFiltroTipo(producto.tipo || "");
+    setFiltroGenero(producto.genero || "");
+    setFiltroTela(resolveTelaNombre(producto, telas) === "N/D" ? "" : resolveTelaNombre(producto, telas));
+    setFiltroTalla(resolveTallaNombre(producto, tallas) === "N/D" ? "" : resolveTallaNombre(producto, tallas));
+    setFiltroColor(resolveColorNombre(producto, colores) === "N/D" ? "" : resolveColorNombre(producto, colores));
+  };
   const normalizarTextoProducto = (value?: string | null) =>
     `${value || ""}`
       .trim()
@@ -2611,21 +2644,29 @@ export default function PedidoNuevo() {
   }, [userId]);
 
   return (
-    <Paper sx={{ p: 3 }}>
-      <Stack direction={{ xs: "column", sm: "row" }} alignItems={{ xs: "flex-start", sm: "center" }} justifyContent="space-between" spacing={1.5} sx={{ mb: 2 }}>
-        <Stack direction="row" alignItems="center" spacing={1}>
-          <PlaylistAddCheckOutlined color="primary" />
-          <Typography variant="h4">{isEditingPedido ? `MODIFICAR ${pedidoEditFolio || "PEDIDO"}` : "NUEVO PEDIDO"}</Typography>
+    <Stack spacing={2.25}>
+      <Paper variant="outlined" sx={{ p: { xs: 1.5, md: 2 }, position: "sticky", top: { xs: 60, md: 68 }, zIndex: 10, bgcolor: "background.paper" }}>
+        <Stack direction={{ xs: "column", lg: "row" }} alignItems={{ xs: "stretch", lg: "center" }} justifyContent="space-between" spacing={1.5}>
+          <Box>
+            <Typography variant="h4" sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <PlaylistAddCheckOutlined color="primary" />
+              {isEditingPedido ? `Modificar ${pedidoEditFolio || "pedido"}` : "Nuevo pedido"}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Define la prenda, confirma el anticipo y enviala a produccion con toda la informacion necesaria.
+            </Typography>
+          </Box>
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+            <Chip label={`${detalleTableTotals.cantidad} unidad${detalleTableTotals.cantidad === 1 ? "" : "es"}`} variant="outlined" />
+            {!pedidoParaStock && <Chip label={`Total ${formatCurrency(totalsPedido.total)}`} color="primary" />}
+            {!pedidoParaStock && <Chip label={`Saldo ${formatCurrency(Math.max(0, totalsPedido.saldoPendiente))}`} variant="outlined" />}
+            <Button variant={pedidoParaStock ? "contained" : "outlined"} color={pedidoParaStock ? "success" : "primary"} onClick={togglePedidoParaStock} disabled={loadingPedidoEdit}>
+              Pedido para stock
+            </Button>
+            <Button variant="outlined" startIcon={<ArrowBackOutlined />} onClick={() => volverAlListado()}>Volver</Button>
+          </Stack>
         </Stack>
-        <Button
-          variant={pedidoParaStock ? "contained" : "outlined"}
-          color={pedidoParaStock ? "success" : "primary"}
-          onClick={togglePedidoParaStock}
-          disabled={loadingPedidoEdit}
-        >
-          Pedido para stock
-        </Button>
-      </Stack>
+      </Paper>
       {isEditingPedido && (
         <Alert severity={rol === "ADMIN" ? "info" : "warning"} sx={{ mb: 2 }}>
           {rol === "ADMIN"
@@ -2636,7 +2677,6 @@ export default function PedidoNuevo() {
       {!isEditingPedido && documentoBorradorId && (
         <Alert
           severity={borradorEstado === "error" ? "warning" : "info"}
-          sx={{ mb: 2 }}
           action={
             <Button color="inherit" size="small" onClick={descartarBorradorActual}>
               DESCARTAR
@@ -2650,8 +2690,12 @@ export default function PedidoNuevo() {
               : `Pedido preliminar PRE-${String(documentoBorradorId).padStart(6, "0")} guardado${borradorGuardadoEn ? ` (${new Date(borradorGuardadoEn).toLocaleTimeString("es-GT", { hour: "2-digit", minute: "2-digit" })})` : ""}.`}
         </Alert>
       )}
-      <Divider sx={{ mb: 2 }} />
 
+      <Paper variant="outlined" sx={{ p: { xs: 2, md: 2.5 } }}>
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
+          <Typography variant="overline" color="primary" fontWeight={700}>01</Typography>
+          <Typography variant="h6">Cliente y pedido</Typography>
+        </Stack>
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, sm: 3 }}>
           <FormControl fullWidth>
@@ -2759,8 +2803,7 @@ export default function PedidoNuevo() {
           </Grid>
         )}
       </Grid>
-
-      <Divider sx={{ my: 2 }} />
+      </Paper>
 
       {!pedidoParaStock && (
       <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
@@ -2845,13 +2888,22 @@ export default function PedidoNuevo() {
       </Paper>
       )}
 
-      <Divider sx={{ my: 2 }} />
-
-      <Typography variant="h6" sx={{ mb: 2 }}>
-        Agregar articulo
-      </Typography>
-
-      <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+      <Paper variant="outlined" sx={{ p: { xs: 2, md: 2.5 } }}>
+        <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" alignItems={{ xs: "stretch", sm: "center" }} gap={1} sx={{ mb: 2 }}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Typography variant="overline" color="primary" fontWeight={700}>02</Typography>
+            <Typography variant="h6">Agregar articulo</Typography>
+          </Stack>
+          <Button
+            size="small"
+            variant={filtrosArticuloOpen ? "contained" : "outlined"}
+            startIcon={<TuneOutlined />}
+            endIcon={<ExpandMoreOutlined sx={{ transform: filtrosArticuloOpen ? "rotate(180deg)" : "none", transition: "transform 160ms" }} />}
+            onClick={() => setFiltrosArticuloOpen((open) => !open)}
+          >
+            Filtros del producto
+          </Button>
+        </Stack>
         <Stack spacing={1.5} sx={{ mb: 2 }}>
           <Typography variant="body2" color="text.secondary">
             Selecciona la combinacion del articulo y agregalo a la lista temporal antes de guardar el pedido.
@@ -2860,7 +2912,56 @@ export default function PedidoNuevo() {
         </Stack>
 
         <Grid container spacing={2}>
-          <Grid size={{ xs: 12, md: 2 }}>
+          <Grid size={{ xs: 12 }}>
+            <Autocomplete
+              options={productos}
+              value={productoDetectado || null}
+              getOptionLabel={(producto) => `${upperText(producto.codigo)} · ${upperText(producto.nombre)} · TALLA ${upperText(resolveTallaNombre(producto, tallas))}`}
+              filterOptions={(options, { inputValue }) => {
+                const terms = normalizeSearch(inputValue).split(/\s+/).filter(Boolean);
+                if (!terms.length) return options;
+                return options.filter((producto) => {
+                  const tallaProducto = normalizeSearch(resolveTallaNombre(producto, tallas));
+                  const values = [producto.codigo, producto.nombre, producto.categoria?.nombre, producto.tipo, producto.genero, resolveTelaNombre(producto, telas), resolveTallaNombre(producto, tallas), resolveColorNombre(producto, colores)].map(normalizeSearch);
+                  const haystack = values.join(" ");
+                  return terms.every((term) => tallasBusquedaExacta.has(term) ? tallaProducto === term : haystack.includes(term));
+                });
+              }}
+              isOptionEqualToValue={(option, value) => Number(option.id) === Number(value.id)}
+              onChange={(_, value) => seleccionarProducto(value)}
+              renderOption={(props, producto) => {
+                const categoria = upperText(producto.categoria?.nombre);
+                const tipo = upperText(producto.tipo);
+                const detalles = [
+                  categoria !== tipo ? `CATEGORÍA ${categoria}` : null,
+                  `TIPO ${tipo}`,
+                  `GÉNERO ${upperText(producto.genero)}`,
+                  `TELA ${upperText(resolveTelaNombre(producto, telas))}`,
+                  `TALLA ${upperText(resolveTallaNombre(producto, tallas))}`,
+                  `COLOR ${upperText(resolveColorNombre(producto, colores))}`,
+                  producto.stockMax != null ? `STOCK MÁX. ${Number(producto.stockMax)}` : null,
+                  producto.mermaPorcentaje != null ? `MERMA ${Number(producto.mermaPorcentaje)}%` : null,
+                ].filter(Boolean);
+                return (
+                  <li {...props} key={producto.id}>
+                    <Box sx={{ width: "100%", py: 0.45 }}>
+                      <Stack direction="row" justifyContent="space-between" alignItems="center" gap={2}>
+                        <Typography variant="body2" fontWeight={500}><Box component="span" sx={{ fontWeight: 650 }}>{upperText(producto.codigo)}</Box> · {upperText(producto.nombre)} · TALLA {upperText(resolveTallaNombre(producto, tallas))}</Typography>
+                        {!pedidoParaStock && <Typography variant="body2" color="primary.main" fontWeight={600} sx={{ whiteSpace: "nowrap" }}>{formatCurrency(producto.precio)}</Typography>}
+                      </Stack>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.45, lineHeight: 1.45 }}>{detalles.join(" · ")}</Typography>
+                    </Box>
+                  </li>
+                );
+              }}
+              renderInput={(params) => <TextField {...params} label="BUSCAR PRODUCTO" placeholder="CÓDIGO, NOMBRE O VARIANTE" helperText="Busca en cualquier orden por código, nombre, talla, tela o color" inputProps={{ ...params.inputProps, style: { textTransform: "uppercase" } }} />}
+            />
+          </Grid>
+          <Grid size={{ xs: 12 }}>
+            <Collapse in={filtrosArticuloOpen} timeout="auto">
+              <Paper variant="outlined" sx={{ p: 2, bgcolor: "background.default" }}>
+                <Grid container spacing={2}>
+          <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
             <FormControl fullWidth>
               <InputLabel>Tipo</InputLabel>
               <Select label="Tipo" value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)}>
@@ -2873,7 +2974,7 @@ export default function PedidoNuevo() {
               </Select>
             </FormControl>
           </Grid>
-          <Grid size={{ xs: 12, md: 2 }}>
+          <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
             <FormControl fullWidth>
               <InputLabel>Genero</InputLabel>
               <Select label="Genero" value={filtroGenero} onChange={(e) => setFiltroGenero(e.target.value)}>
@@ -2886,7 +2987,7 @@ export default function PedidoNuevo() {
               </Select>
             </FormControl>
           </Grid>
-          <Grid size={{ xs: 12, md: 2 }}>
+          <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
             <FormControl fullWidth>
               <InputLabel>Tela</InputLabel>
               <Select label="Tela" value={filtroTela} onChange={(e) => setFiltroTela(e.target.value)}>
@@ -2899,7 +3000,7 @@ export default function PedidoNuevo() {
               </Select>
             </FormControl>
           </Grid>
-          <Grid size={{ xs: 12, md: 2 }}>
+          <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
             <FormControl fullWidth>
               <InputLabel>Talla</InputLabel>
               <Select label="Talla" value={filtroTalla} onChange={(e) => setFiltroTalla(e.target.value)}>
@@ -2912,7 +3013,7 @@ export default function PedidoNuevo() {
               </Select>
             </FormControl>
           </Grid>
-          <Grid size={{ xs: 12, md: 2 }}>
+          <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
             <FormControl fullWidth>
               <InputLabel>Color</InputLabel>
               <Select label="Color" value={filtroColor} onChange={(e) => setFiltroColor(e.target.value)}>
@@ -2925,7 +3026,7 @@ export default function PedidoNuevo() {
               </Select>
             </FormControl>
           </Grid>
-          <Grid size={{ xs: 12, md: 2 }}>
+          <Grid size={{ xs: 12 }}>
             <TextField
               label="Codigo"
               fullWidth
@@ -2941,6 +3042,10 @@ export default function PedidoNuevo() {
                       : "Codigo detectado automaticamente"
               }
             />
+          </Grid>
+                </Grid>
+              </Paper>
+            </Collapse>
           </Grid>
           <Grid size={{ xs: 12, sm: 4, md: 2 }}>
             <TextField
@@ -3260,30 +3365,29 @@ export default function PedidoNuevo() {
         </Stack>
       </Paper>
 
-      <Typography variant="h6" sx={{ mb: 1 }}>
-        Articulos agregados
-      </Typography>
-      <TableContainer component={Paper} variant="outlined">
+      <Paper variant="outlined" sx={{ p: { xs: 2, md: 2.5 } }}>
+        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Typography variant="overline" color="primary" fontWeight={700}>03</Typography>
+            <Typography variant="h6">Articulos agregados</Typography>
+          </Stack>
+          <Chip size="small" label={`${detalle.length} linea${detalle.length === 1 ? "" : "s"}`} variant="outlined" />
+        </Stack>
+      <TableContainer sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
         <Table size="small">
           <TableHead>
             <TableRow>
-              <TableCell align="center" sx={{ fontWeight: 700 }}>Codigo</TableCell>
-              <TableCell align="center" sx={{ fontWeight: 700 }}>Tipo</TableCell>
-              <TableCell align="center" sx={{ fontWeight: 700 }}>Genero</TableCell>
-              <TableCell align="center" sx={{ fontWeight: 700 }}>Tela</TableCell>
-              <TableCell align="center" sx={{ fontWeight: 700 }}>Talla</TableCell>
-              <TableCell align="center" sx={{ fontWeight: 700 }}>Color</TableCell>
+              <TableCell sx={{ fontWeight: 700, minWidth: 280 }}>Producto</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Cantidad</TableCell>
               {!pedidoParaStock && (
                 <>
-                  <TableCell align="center" sx={{ fontWeight: 700 }}>Precio</TableCell>
-                  <TableCell align="center" sx={{ fontWeight: 700 }}>Bordado</TableCell>
-                  <TableCell align="center" sx={{ fontWeight: 700 }}>Estilo especial</TableCell>
-                  <TableCell align="center" sx={{ fontWeight: 700 }}>Descuento</TableCell>
-                  <TableCell align="center" sx={{ fontWeight: 700 }}>Subtotal</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 700 }}>Precio</TableCell>
+                  <TableCell sx={{ fontWeight: 700, minWidth: 170 }}>Adicionales</TableCell>
+                  <TableCell align="center" sx={{ fontWeight: 700 }}>Desc.</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 700 }}>Subtotal</TableCell>
                 </>
               )}
-              <TableCell align="center" sx={{ fontWeight: 700 }}>Observacion</TableCell>
+              <TableCell sx={{ fontWeight: 700, minWidth: 180 }}>Observacion</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Acciones</TableCell>
             </TableRow>
           </TableHead>
@@ -3292,34 +3396,28 @@ export default function PedidoNuevo() {
               const producto = productos.find((p) => p.id === row.productoId);
               return (
                 <TableRow key={row.key}>
-                  <TableCell align="center">{producto?.codigo || row.productoId}</TableCell>
-                  <TableCell align="center">{producto?.tipo || producto?.nombre || "Producto"}</TableCell>
-                  <TableCell align="center">{producto?.genero || "N/D"}</TableCell>
-                  <TableCell align="center">{obtenerTela(producto)}</TableCell>
-                  <TableCell align="center">{obtenerTalla(producto)}</TableCell>
-                  <TableCell align="center">{obtenerColor(producto)}</TableCell>
+                  <TableCell>
+                    <Typography variant="body2" fontWeight={650}>{upperText(producto?.codigo || row.productoId)}</Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.45 }}>
+                      {[producto?.tipo || producto?.nombre || "Producto", producto?.genero, obtenerTela(producto), `TALLA ${obtenerTalla(producto)}`, obtenerColor(producto)].filter(Boolean).map((value) => upperText(value)).join(" · ")}
+                    </Typography>
+                  </TableCell>
                   <TableCell align="center">{row.cantidad}</TableCell>
                   {!pedidoParaStock && (
                     <>
-                      <TableCell align="center">{formatCurrency(row.precioUnit || 0)}</TableCell>
-                      <TableCell align="center">
-                        <Stack spacing={0.25} alignItems="center">
-                          <Typography variant="body2">{formatCurrency(row.bordado || 0)}</Typography>
-                          {row.bordados?.length ? (
-                            <Typography variant="caption" color="text.secondary">
-                              {row.bordados.length} bordado(s)
-                            </Typography>
-                          ) : null}
+                      <TableCell align="right">{formatCurrency(row.precioUnit || 0)}</TableCell>
+                      <TableCell>
+                        <Stack spacing={0.5} alignItems="flex-start">
+                          {row.bordado > 0 && <Chip size="small" color="success" variant="outlined" label={`Bordado ${formatCurrency(row.bordado)}`} />}
+                          {row.estiloEspecial && <Chip size="small" variant="outlined" label={`Estilo ${formatCurrency(row.estiloEspecialMonto || 0)}`} />}
+                          {!row.bordado && !row.estiloEspecial && <Typography variant="body2" color="text.secondary">Sin adicionales</Typography>}
                         </Stack>
                       </TableCell>
-                      <TableCell align="center">
-                        {row.estiloEspecial ? formatCurrency(row.estiloEspecialMonto || 0) : "No"}
-                      </TableCell>
                       <TableCell align="center">{`${Number(row.descuento || 0).toFixed(2)}%`}</TableCell>
-                      <TableCell align="center">{formatCurrency(calcularImportesDetallePedido(row).subtotal)}</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 650 }}>{formatCurrency(calcularImportesDetallePedido(row).subtotal)}</TableCell>
                     </>
                   )}
-                  <TableCell align="center">{renderDetalleObservaciones(row.descripcion)}</TableCell>
+                  <TableCell>{renderDetalleObservaciones(row.descripcion)}</TableCell>
                   <TableCell align="center">
                     <Stack direction="row" spacing={1} justifyContent="center">
                       <Button
@@ -3346,7 +3444,7 @@ export default function PedidoNuevo() {
             })}
             {detalle.length > 0 && (
               <TableRow sx={{ backgroundColor: "action.hover" }}>
-                <TableCell align="right" colSpan={6} sx={{ fontWeight: 700 }}>
+                <TableCell align="right" sx={{ fontWeight: 700 }}>
                   Totales
                 </TableCell>
                 <TableCell align="center" sx={{ fontWeight: 700 }}>
@@ -3354,17 +3452,14 @@ export default function PedidoNuevo() {
                 </TableCell>
                 {!pedidoParaStock && (
                   <>
-                    <TableCell align="center" sx={{ fontWeight: 700 }}>
+                    <TableCell align="right" sx={{ fontWeight: 700 }}>
                       {formatCurrency(detalleTableTotals.precio)}
                     </TableCell>
-                    <TableCell align="center" sx={{ fontWeight: 700 }}>
-                      {formatCurrency(detalleTableTotals.bordado)}
-                    </TableCell>
-                    <TableCell align="center" sx={{ fontWeight: 700 }}>
-                      {formatCurrency(detalleTableTotals.estiloEspecial)}
+                    <TableCell sx={{ fontWeight: 700 }}>
+                      {formatCurrency(detalleTableTotals.bordado + detalleTableTotals.estiloEspecial)}
                     </TableCell>
                     <TableCell align="center">-</TableCell>
-                    <TableCell align="center" sx={{ fontWeight: 700 }}>
+                    <TableCell align="right" sx={{ fontWeight: 700 }}>
                       {formatCurrency(detalleTableTotals.subtotal)}
                     </TableCell>
                   </>
@@ -3375,7 +3470,7 @@ export default function PedidoNuevo() {
             )}
             {!detalle.length && (
               <TableRow>
-                <TableCell colSpan={pedidoParaStock ? 9 : 14} align="center">
+                <TableCell colSpan={pedidoParaStock ? 4 : 8} align="center" sx={{ py: 4, color: "text.secondary" }}>
                   Aun no has agregado articulos al pedido.
                 </TableCell>
               </TableRow>
@@ -3383,14 +3478,14 @@ export default function PedidoNuevo() {
           </TableBody>
         </Table>
       </TableContainer>
+      </Paper>
 
       {!pedidoParaStock && (
-        <>
-      <Divider sx={{ my: 2 }} />
-
-      <Typography variant="h6" sx={{ mb: 2 }}>
-        Datos de pago
-      </Typography>
+        <Paper variant="outlined" sx={{ p: { xs: 2, md: 2.5 } }}>
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
+        <Typography variant="overline" color="primary" fontWeight={700}>04</Typography>
+        <Typography variant="h6">Anticipo y pago</Typography>
+      </Stack>
 
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, sm: 4 }}>
@@ -3401,8 +3496,18 @@ export default function PedidoNuevo() {
             value={emptyWhenZero(anticipo)}
             onChange={(e) => setAnticipo(parseNumberInput(e.target.value))}
             disabled={pedidoSinCobro}
-            helperText="Se calcula automaticamente como el 50% del total y puedes modificarlo"
+            error={!pedidoSinCobro && Number(anticipo || 0) > totalsPedido.total}
+            helperText={pedidoSinCobro ? "Este pedido no genera cobro" : Number(anticipo || 0) > totalsPedido.total ? "No puede superar el total del pedido" : `Saldo restante: ${formatCurrency(Math.max(0, totalsPedido.saldoPendiente))}`}
           />
+          {!pedidoSinCobro && totalsPedido.total > 0 && (
+            <Stack direction="row" spacing={0.5} sx={{ mt: 0.5 }}>
+              {[25, 50, 100].map((percent) => (
+                <Button key={percent} size="small" variant="text" onClick={() => setAnticipo(Math.round(totalsPedido.total * percent) / 100)}>
+                  {percent}%
+                </Button>
+              ))}
+            </Stack>
+          )}
         </Grid>
         <Grid size={{ xs: 12, sm: 4 }}>
           <FormControl fullWidth>
@@ -3479,8 +3584,6 @@ export default function PedidoNuevo() {
         </Grid>
       </Grid>
 
-      <Divider sx={{ my: 2 }} />
-
       <Grid container spacing={2} justifyContent="flex-end">
         <Grid size={{ xs: 12, sm: 4 }}>
           <Paper variant="outlined" sx={{ p: 2 }}>
@@ -3515,7 +3618,7 @@ export default function PedidoNuevo() {
           </Paper>
         </Grid>
       </Grid>
-        </>
+        </Paper>
       )}
 
       <Stack direction="row" justifyContent="flex-end" spacing={2} sx={{ mt: 3 }}>
@@ -3724,6 +3827,6 @@ export default function PedidoNuevo() {
           )}
         </DialogContent>
       </Dialog>
-    </Paper>
+    </Stack>
   );
 }

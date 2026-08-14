@@ -7,6 +7,9 @@ body,
 #root {
   font-family: var(--uniforma-font-family);
   min-height: 100%;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 body {
@@ -48,7 +51,41 @@ code {
 }
 
 .MuiDataGrid-root {
+  width: 100%;
+  min-width: 0;
   max-width: 100%;
+}
+
+.uniforma-main-content,
+.uniforma-main-content > div,
+.uniforma-main-content .MuiGrid-root,
+.uniforma-main-content .MuiStack-root,
+.uniforma-main-content .MuiPaper-root {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.uniforma-main-content img,
+.uniforma-main-content canvas,
+.uniforma-main-content svg {
+  max-width: 100%;
+}
+
+@media (min-width: 900px) and (max-width: 1535.95px) {
+  .uniforma-main-content .MuiFormControl-root,
+  .uniforma-main-content .MuiTextField-root {
+    max-width: 100%;
+  }
+
+  .uniforma-main-content .MuiDataGrid-root {
+    font-size: 0.78rem;
+  }
+
+  .uniforma-main-content .MuiDataGrid-columnHeader,
+  .uniforma-main-content .MuiDataGrid-cell {
+    padding-left: 7px;
+    padding-right: 7px;
+  }
 }
 
 .MuiDataGrid-virtualScroller {

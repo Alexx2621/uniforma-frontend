@@ -35,6 +35,7 @@ import NotificationsActiveOutlined from "@mui/icons-material/NotificationsActive
 import ApprovalOutlined from "@mui/icons-material/ApprovalOutlined";
 import DescriptionOutlined from "@mui/icons-material/DescriptionOutlined";
 import HealthAndSafetyOutlined from "@mui/icons-material/HealthAndSafetyOutlined";
+import QrCode2Outlined from "@mui/icons-material/QrCode2Outlined";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import { whatsappFeatureEnabled } from "../config/features";
 
@@ -136,6 +137,7 @@ export const menuSections: MenuSection[] = [
       { label: "Roles", icon: <AdminPanelSettingsOutlined />, path: "/roles" },
       { label: "Correlativos", icon: <SettingsOutlined />, path: "/correlativos" },
       { label: "Configuracion", icon: <SettingsOutlined />, path: "/admin" },
+      { label: "Gestion de codigos", icon: <QrCode2Outlined />, path: "/gestion-codigos" },
       ...(whatsappFeatureEnabled ? [{ label: "WhatsApp Business", icon: <WhatsAppIcon />, path: "/whatsapp/config" }] : []),
       { label: "Auditoria", icon: <ManageSearchOutlined />, path: "/auditoria" },
       { label: "Correcciones", icon: <FactCheckOutlined />, path: "/correcciones" },

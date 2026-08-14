@@ -27,10 +27,14 @@ import {
   Box,
   Chip,
   createFilterOptions,
+  Collapse,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import PaymentIcon from "@mui/icons-material/Payment";
+import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
+import TuneOutlined from "@mui/icons-material/TuneOutlined";
+import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import Autocomplete from "@mui/material/Autocomplete";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
@@ -97,6 +101,9 @@ interface Producto {
   tela_id?: number | null;
   talla_id?: number | null;
   color_id?: number | null;
+  stockMax?: number | null;
+  mermaPorcentaje?: number | null;
+  categoria?: { id?: number; nombre?: string | null } | null;
 }
 
 interface Bodega {
@@ -237,6 +244,12 @@ const resolveColorNombre = (prod: Producto | undefined, colores: any[]) => {
 const uniqueSorted = (values: string[]) =>
   Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b));
 
+const upperText = (value: unknown, fallback = "N/D") =>
+  `${value ?? ""}`.trim().toLocaleUpperCase("es-GT") || fallback;
+
+const normalizeSearch = (value: unknown) =>
+  upperText(value, "").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
 const bordadoTextFieldSx = {
   "& .MuiOutlinedInput-root": {
     "& fieldset": { borderColor: "success.main" },
@@ -356,6 +369,7 @@ export default function VentaNueva() {
   const [cantidadInput, setCantidadInput] = useState("1");
   const [editingDetalleKey, setEditingDetalleKey] = useState<number | null>(null);
   const [filtroTipo, setFiltroTipo] = useState("");
+  const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
   const [filtroGenero, setFiltroGenero] = useState("");
   const [filtroTela, setFiltroTela] = useState("");
   const [filtroTalla, setFiltroTalla] = useState("");
@@ -824,7 +838,27 @@ export default function VentaNueva() {
     [productosBaseFiltrados, tallas, colores, filtroTalla, filtroColor],
   );
 
+  const tallasBusquedaExacta = useMemo(
+    () => new Set(tallas.map((talla) => normalizeSearch(talla.nombre))),
+    [tallas],
+  );
   const productoDetectado = productosCoincidentes.length === 1 ? productosCoincidentes[0] : undefined;
+
+  const seleccionarProducto = (producto: Producto | null) => {
+    if (!producto) {
+      setFiltroTipo("");
+      setFiltroGenero("");
+      setFiltroTela("");
+      setFiltroTalla("");
+      setFiltroColor("");
+      return;
+    }
+    setFiltroTipo(producto.tipo || "");
+    setFiltroGenero(producto.genero || "");
+    setFiltroTela(resolveTelaNombre(producto, telas) === "N/D" ? "" : resolveTelaNombre(producto, telas));
+    setFiltroTalla(resolveTallaNombre(producto, tallas) === "N/D" ? "" : resolveTallaNombre(producto, tallas));
+    setFiltroColor(resolveColorNombre(producto, colores) === "N/D" ? "" : resolveColorNombre(producto, colores));
+  };
   const bodegaOrigenArticuloId = Number(articuloActual.bodegaId || bodegaId || 0) || null;
   const bodegaOrigenArticulo = bodegas.find((b) => Number(b.id) === Number(bodegaOrigenArticuloId)) || null;
   const controlaInventarioArticulo = Boolean(bodegaOrigenArticulo?.usaInventarioVentas);
@@ -1617,15 +1651,36 @@ export default function VentaNueva() {
   };
 
   return (
-    <Paper sx={{ p: 3 }}>
-      <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2 }}>
-        <PaymentIcon color="primary" />
-        <Typography variant="h4">Nueva venta</Typography>
-      </Stack>
+    <Stack spacing={2.25}>
+      <Paper
+        variant="outlined"
+        sx={{
+          p: { xs: 1.5, md: 2 },
+          position: "sticky",
+          top: { xs: 60, md: 68 },
+          zIndex: 10,
+          bgcolor: "background.paper",
+        }}
+      >
+        <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" alignItems={{ xs: "stretch", sm: "center" }} gap={1.5}>
+          <Box>
+            <Typography variant="h4" sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <PaymentIcon color="primary" /> Nueva venta
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Registra una venta, valida existencias y prepara el comprobante en un solo flujo.
+            </Typography>
+          </Box>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Chip label={`${detalleTableTotals.cantidad} unidad${detalleTableTotals.cantidad === 1 ? "" : "es"}`} variant="outlined" />
+            <Chip label={formatCurrency(totals.total)} color="primary" />
+            <Button variant="outlined" startIcon={<ArrowBackOutlined />} onClick={() => navigate("/ventas")}>Volver</Button>
+          </Stack>
+        </Stack>
+      </Paper>
       {documentoBorradorId && (
         <Alert
           severity={borradorEstado === "error" ? "warning" : "info"}
-          sx={{ mb: 2 }}
           action={
             <Button color="inherit" size="small" onClick={() => void descartarBorradorActual()} disabled={saving}>
               Descartar
@@ -1640,9 +1695,13 @@ export default function VentaNueva() {
               : ""}
         </Alert>
       )}
-      <Divider sx={{ mb: 2 }} />
 
-      <Grid container spacing={2}>
+      <Paper variant="outlined" sx={{ p: { xs: 2, md: 2.5 } }}>
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
+          <Typography variant="overline" color="primary" fontWeight={700}>01</Typography>
+          <Typography variant="h6">Cliente y documento</Typography>
+        </Stack>
+        <Grid container spacing={2}>
         <Grid size={{ xs: 12, sm: 4 }}>
           <FormControl fullWidth>
             <InputLabel>Bodega</InputLabel>
@@ -1798,15 +1857,25 @@ export default function VentaNueva() {
             />
           </Grid>
         )}
-      </Grid>
+        </Grid>
+      </Paper>
 
-      <Divider sx={{ my: 2 }} />
-
-      <Typography variant="h6" sx={{ mb: 2 }}>
-        Agregar articulo
-      </Typography>
-
-      <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+      <Paper variant="outlined" sx={{ p: { xs: 2, md: 2.5 } }}>
+        <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" alignItems={{ xs: "stretch", sm: "center" }} gap={1} sx={{ mb: 2 }}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Typography variant="overline" color="primary" fontWeight={700}>02</Typography>
+            <Typography variant="h6">Agregar articulo</Typography>
+          </Stack>
+          <Button
+            size="small"
+            variant={filtrosAbiertos ? "contained" : "outlined"}
+            startIcon={<TuneOutlined />}
+            endIcon={<ExpandMoreOutlined sx={{ transform: filtrosAbiertos ? "rotate(180deg)" : "none", transition: "transform 160ms" }} />}
+            onClick={() => setFiltrosAbiertos((value) => !value)}
+          >
+            Filtros del producto
+          </Button>
+        </Stack>
         <Stack spacing={1.5} sx={{ mb: 2 }}>
           <Typography variant="body2" color="text.secondary">
             Selecciona la combinacion del articulo y agregalo a la lista temporal antes de guardar la venta.
@@ -1858,7 +1927,83 @@ export default function VentaNueva() {
               </Alert>
             </Grid>
           )}
-          <Grid size={{ xs: 12, md: 2 }}>
+          <Grid size={{ xs: 12, md: requiereTrasladoArticulo ? 6 : 9 }}>
+            <Autocomplete
+              options={productos}
+              value={productoDetectado || null}
+              getOptionLabel={(producto) =>
+                `${upperText(producto.codigo)} · ${upperText(producto.nombre)} · TALLA ${upperText(resolveTallaNombre(producto, tallas))}`
+              }
+              filterOptions={(options, { inputValue }) => {
+                const terms = normalizeSearch(inputValue).split(/\s+/).filter(Boolean);
+                if (!terms.length) return options;
+                return options.filter((producto) => {
+                  const tallaProducto = normalizeSearch(resolveTallaNombre(producto, tallas));
+                  const values = [
+                    producto.codigo,
+                    producto.nombre,
+                    producto.categoria?.nombre,
+                    producto.tipo,
+                    producto.genero,
+                    resolveTelaNombre(producto, telas),
+                    resolveTallaNombre(producto, tallas),
+                    resolveColorNombre(producto, colores),
+                  ].map(normalizeSearch);
+                  const haystack = values.join(" ");
+                  return terms.every((term) =>
+                    tallasBusquedaExacta.has(term) ? tallaProducto === term : haystack.includes(term),
+                  );
+                });
+              }}
+              isOptionEqualToValue={(option, value) => Number(option.id) === Number(value.id)}
+              onChange={(_, value) => seleccionarProducto(value)}
+              renderOption={(props, producto) => {
+                const categoria = upperText(producto.categoria?.nombre);
+                const tipo = upperText(producto.tipo);
+                const detalles = [
+                  categoria !== tipo ? `CATEGORÍA ${categoria}` : null,
+                  `TIPO ${tipo}`,
+                  `GÉNERO ${upperText(producto.genero)}`,
+                  `TELA ${upperText(resolveTelaNombre(producto, telas))}`,
+                  `TALLA ${upperText(resolveTallaNombre(producto, tallas))}`,
+                  `COLOR ${upperText(resolveColorNombre(producto, colores))}`,
+                  producto.stockMax != null ? `STOCK MÁX. ${Number(producto.stockMax)}` : null,
+                  producto.mermaPorcentaje != null ? `MERMA ${Number(producto.mermaPorcentaje)}%` : null,
+                ].filter(Boolean);
+                return (
+                  <li {...props} key={producto.id}>
+                    <Box sx={{ width: "100%", py: 0.45 }}>
+                      <Stack direction="row" justifyContent="space-between" alignItems="center" gap={2}>
+                        <Typography variant="body2" fontWeight={500}>
+                          <Box component="span" sx={{ fontWeight: 650 }}>{upperText(producto.codigo)}</Box> · {upperText(producto.nombre)} · TALLA {upperText(resolveTallaNombre(producto, tallas))}
+                        </Typography>
+                        <Typography variant="body2" color="primary.main" fontWeight={600} sx={{ whiteSpace: "nowrap" }}>
+                          {formatCurrency(producto.precio)}
+                        </Typography>
+                      </Stack>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.45, fontWeight: 400, lineHeight: 1.45 }}>
+                        {detalles.join(" · ")}
+                      </Typography>
+                    </Box>
+                  </li>
+                );
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="BUSCAR PRODUCTO"
+                  placeholder="CÓDIGO, NOMBRE O VARIANTE"
+                  helperText="Busca en cualquier orden por código, nombre, talla, tela o color"
+                  inputProps={{ ...params.inputProps, style: { textTransform: "uppercase" } }}
+                />
+              )}
+            />
+          </Grid>
+          <Grid size={{ xs: 12 }}>
+            <Collapse in={filtrosAbiertos} timeout="auto">
+              <Paper variant="outlined" sx={{ p: 2, bgcolor: "background.default" }}>
+                <Grid container spacing={2}>
+          <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
             <FormControl fullWidth>
               <InputLabel>Tipo</InputLabel>
               <Select label="Tipo" value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)}>
@@ -1871,7 +2016,7 @@ export default function VentaNueva() {
               </Select>
             </FormControl>
           </Grid>
-          <Grid size={{ xs: 12, md: 2 }}>
+          <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
             <FormControl fullWidth>
               <InputLabel>Genero</InputLabel>
               <Select label="Genero" value={filtroGenero} onChange={(e) => setFiltroGenero(e.target.value)}>
@@ -1884,7 +2029,7 @@ export default function VentaNueva() {
               </Select>
             </FormControl>
           </Grid>
-          <Grid size={{ xs: 12, md: 2 }}>
+          <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
             <FormControl fullWidth>
               <InputLabel>Tela</InputLabel>
               <Select label="Tela" value={filtroTela} onChange={(e) => setFiltroTela(e.target.value)}>
@@ -1897,7 +2042,7 @@ export default function VentaNueva() {
               </Select>
             </FormControl>
           </Grid>
-          <Grid size={{ xs: 12, md: 2 }}>
+          <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
             <FormControl fullWidth>
               <InputLabel>Talla</InputLabel>
               <Select label="Talla" value={filtroTalla} onChange={(e) => setFiltroTalla(e.target.value)}>
@@ -1910,7 +2055,7 @@ export default function VentaNueva() {
               </Select>
             </FormControl>
           </Grid>
-          <Grid size={{ xs: 12, md: 2 }}>
+          <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
             <FormControl fullWidth>
               <InputLabel>Color</InputLabel>
               <Select label="Color" value={filtroColor} onChange={(e) => setFiltroColor(e.target.value)}>
@@ -1923,7 +2068,7 @@ export default function VentaNueva() {
               </Select>
             </FormControl>
           </Grid>
-          <Grid size={{ xs: 12, md: 2 }}>
+          <Grid size={{ xs: 12 }}>
             <TextField
               label="Codigo"
               fullWidth
@@ -1939,6 +2084,10 @@ export default function VentaNueva() {
                       : "Codigo detectado automaticamente"
               }
             />
+          </Grid>
+                </Grid>
+              </Paper>
+            </Collapse>
           </Grid>
           <Grid size={{ xs: 12, sm: 3, md: 2 }}>
             <TextField
@@ -2105,35 +2254,31 @@ export default function VentaNueva() {
         </Stack>
       </Paper>
 
-      <Typography variant="h6" sx={{ mb: 1 }}>
-        Articulos agregados
-      </Typography>
-      {trasladosPendientes.length > 0 && (
-        <Alert severity="warning" sx={{ mb: 1 }}>
-          {trasladosPendientes.length} articulo(s) salen de una bodega distinta a la venta. Quedan como referencia de traslado pendiente.
-        </Alert>
-      )}
-      <TableContainer component={Paper} variant="outlined">
+      <Paper variant="outlined" sx={{ p: { xs: 2, md: 2.5 } }}>
+        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Typography variant="overline" color="primary" fontWeight={700}>03</Typography>
+            <Typography variant="h6">Articulos agregados</Typography>
+          </Stack>
+          <Chip size="small" label={`${detalle.length} linea${detalle.length === 1 ? "" : "s"}`} variant="outlined" />
+        </Stack>
+        {trasladosPendientes.length > 0 && (
+          <Alert severity="warning" sx={{ mb: 1.5 }}>
+            {trasladosPendientes.length} articulo(s) salen de una bodega distinta a la venta. Quedan como referencia de traslado pendiente.
+          </Alert>
+        )}
+      <TableContainer sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
         <Table size="small">
           <TableHead>
             <TableRow>
-              <TableCell align="center" sx={{ fontWeight: 700 }}>Codigo</TableCell>
-              <TableCell align="center" sx={{ fontWeight: 700 }}>Tipo</TableCell>
-              <TableCell align="center" sx={{ fontWeight: 700 }}>Genero</TableCell>
-              <TableCell align="center" sx={{ fontWeight: 700 }}>Tela</TableCell>
-              <TableCell align="center" sx={{ fontWeight: 700 }}>Talla</TableCell>
-              <TableCell align="center" sx={{ fontWeight: 700 }}>Color</TableCell>
-              <TableCell align="center" sx={{ fontWeight: 700 }}>Bodega origen</TableCell>
-              <TableCell align="center" sx={{ fontWeight: 700 }}>Traslado</TableCell>
+              <TableCell sx={{ fontWeight: 700, minWidth: 260 }}>Producto</TableCell>
+              <TableCell sx={{ fontWeight: 700, minWidth: 170 }}>Origen</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Cantidad</TableCell>
-              <TableCell align="center" sx={{ fontWeight: 700 }}>Precio</TableCell>
-              <TableCell align="center" sx={{ fontWeight: 700 }}>Bordado</TableCell>
-              <TableCell align="center" sx={{ fontWeight: 700 }}>Detalle bordado</TableCell>
-              <TableCell align="center" sx={{ fontWeight: 700 }}>Estilo especial</TableCell>
+              <TableCell align="right" sx={{ fontWeight: 700 }}>Precio</TableCell>
+              <TableCell sx={{ fontWeight: 700, minWidth: 160 }}>Adicionales</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Desc.</TableCell>
-              {mostrarColumnaStock && <TableCell align="center" sx={{ fontWeight: 700 }}>Stock</TableCell>}
-              <TableCell align="center" sx={{ fontWeight: 700 }}>Observacion</TableCell>
-              <TableCell align="center" sx={{ fontWeight: 700 }}>Subtotal</TableCell>
+              <TableCell sx={{ fontWeight: 700, minWidth: 180 }}>Observacion</TableCell>
+              <TableCell align="right" sx={{ fontWeight: 700 }}>Subtotal</TableCell>
               <TableCell align="center" sx={{ fontWeight: 700 }}>Acciones</TableCell>
             </TableRow>
           </TableHead>
@@ -2142,31 +2287,31 @@ export default function VentaNueva() {
               const producto = productos.find((p) => p.id === row.productoId);
               return (
                 <TableRow key={row.key}>
-                  <TableCell align="center">{producto?.codigo || row.productoId}</TableCell>
-                  <TableCell align="center">{producto?.tipo || producto?.nombre || "Producto"}</TableCell>
-                  <TableCell align="center">{producto?.genero || "N/D"}</TableCell>
-                  <TableCell align="center">{obtenerTela(producto)}</TableCell>
-                  <TableCell align="center">{obtenerTalla(producto)}</TableCell>
-                  <TableCell align="center">{obtenerColor(producto)}</TableCell>
-                  <TableCell align="center">{row.bodegaNombre}</TableCell>
-                  <TableCell align="center">
-                    {row.requiereTraslado ? <Chip size="small" color="warning" label="Pendiente" /> : <Chip size="small" label="No aplica" />}
+                  <TableCell>
+                    <Typography variant="body2" fontWeight={650}>{upperText(producto?.codigo || row.productoId)}</Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.45 }}>
+                      {[producto?.tipo || producto?.nombre || "Producto", producto?.genero, obtenerTela(producto), `TALLA ${obtenerTalla(producto)}`, obtenerColor(producto)].filter(Boolean).map((value) => upperText(value)).join(" · ")}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>
+                    <Typography variant="body2">{row.bodegaNombre}</Typography>
+                    <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
+                      {row.requiereTraslado && <Chip size="small" color="warning" label="Traslado" />}
+                      {mostrarColumnaStock && <Chip size="small" variant="outlined" label={row.controlaInventario ? `Stock ${row.stock ?? "N/D"}` : "Sin control"} />}
+                    </Stack>
                   </TableCell>
                   <TableCell align="center">{row.cantidad}</TableCell>
-                  <TableCell align="center">{formatCurrency(row.precio)}</TableCell>
-                  <TableCell align="center">{formatCurrency(row.bordado)}</TableCell>
-                  <TableCell align="center">
-                    {row.bordados?.length
-                      ? `${row.bordados.length} bordado(s): ${row.bordados.map((bordado) => bordado.posicion).filter(Boolean).join(" / ")}`
-                      : [row.bordadoColor, row.bordadoTamano, row.bordadoPosicion].filter(Boolean).join(" | ") || "-"}
-                  </TableCell>
-                  <TableCell align="center">
-                    {row.estiloEspecial ? formatCurrency(row.estiloEspecialMonto || 0) : "No"}
+                  <TableCell align="right">{formatCurrency(row.precio)}</TableCell>
+                  <TableCell>
+                    <Stack spacing={0.5} alignItems="flex-start">
+                      {row.bordado > 0 && <Chip size="small" color="success" variant="outlined" label={`Bordado ${formatCurrency(row.bordado)}`} />}
+                      {row.estiloEspecial && <Chip size="small" variant="outlined" label={`Estilo ${formatCurrency(row.estiloEspecialMonto || 0)}`} />}
+                      {!row.bordado && !row.estiloEspecial && <Typography variant="body2" color="text.secondary">Sin adicionales</Typography>}
+                    </Stack>
                   </TableCell>
                   <TableCell align="center">{`${row.descuento.toFixed(2)}%`}</TableCell>
-                  {mostrarColumnaStock && <TableCell align="center">{row.controlaInventario ? row.stock ?? "N/D" : "No aplica"}</TableCell>}
-                  <TableCell align="center">{row.descripcion || "-"}</TableCell>
-                  <TableCell align="center">{formatCurrency(calcularSubtotal(row))}</TableCell>
+                  <TableCell>{row.descripcion || "-"}</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 650 }}>{formatCurrency(calcularSubtotal(row))}</TableCell>
                   <TableCell align="center">
                     <Stack direction="row" spacing={1} justifyContent="center">
                       <Button size="small" variant="text" startIcon={<EditOutlined />} onClick={() => editarArticulo(row)}>
@@ -2188,26 +2333,21 @@ export default function VentaNueva() {
             })}
             {detalle.length > 0 && (
               <TableRow sx={{ backgroundColor: "action.hover" }}>
-                <TableCell align="right" colSpan={8} sx={{ fontWeight: 700 }}>
+                <TableCell align="right" colSpan={2} sx={{ fontWeight: 700 }}>
                   Totales
                 </TableCell>
                 <TableCell align="center" sx={{ fontWeight: 700 }}>
                   {detalleTableTotals.cantidad}
                 </TableCell>
-                <TableCell align="center" sx={{ fontWeight: 700 }}>
+                <TableCell align="right" sx={{ fontWeight: 700 }}>
                   {formatCurrency(detalleTableTotals.precio)}
                 </TableCell>
-                <TableCell align="center" sx={{ fontWeight: 700 }}>
-                  {formatCurrency(detalleTableTotals.bordado)}
+                <TableCell sx={{ fontWeight: 700 }}>
+                  {formatCurrency(detalleTableTotals.bordado + detalleTableTotals.estiloEspecial)}
                 </TableCell>
                 <TableCell align="center">-</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 700 }}>
-                  {formatCurrency(detalleTableTotals.estiloEspecial)}
-                </TableCell>
                 <TableCell align="center">-</TableCell>
-                {mostrarColumnaStock && <TableCell align="center">-</TableCell>}
-                <TableCell align="center">-</TableCell>
-                <TableCell align="center" sx={{ fontWeight: 700 }}>
+                <TableCell align="right" sx={{ fontWeight: 700 }}>
                   {formatCurrency(detalleTableTotals.subtotal)}
                 </TableCell>
                 <TableCell align="center">-</TableCell>
@@ -2215,7 +2355,7 @@ export default function VentaNueva() {
             )}
             {!detalle.length && (
               <TableRow>
-                <TableCell colSpan={mostrarColumnaStock ? 18 : 17} align="center">
+                <TableCell colSpan={9} align="center" sx={{ py: 4, color: "text.secondary" }}>
                   Aun no has agregado articulos a la venta.
                 </TableCell>
               </TableRow>
@@ -2223,8 +2363,7 @@ export default function VentaNueva() {
           </TableBody>
         </Table>
       </TableContainer>
-
-      <Divider sx={{ my: 2 }} />
+      </Paper>
 
       <Grid container spacing={2} justifyContent="flex-end">
         <Grid size={{ xs: 12, sm: 4 }}>
@@ -2441,6 +2580,6 @@ export default function VentaNueva() {
           )}
         </DialogContent>
       </Dialog>
-    </Paper>
+    </Stack>
   );
 }

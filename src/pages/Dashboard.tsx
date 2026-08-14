@@ -1,16 +1,30 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  DndContext,
+  DragEndEvent,
+  DragOverlay,
+  DragStartEvent,
+  PointerSensor,
+  closestCenter,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
 import {
   Alert,
   Box,
   Button,
   Chip,
   Dialog,
+  DialogActions,
   DialogContent,
   DialogTitle,
   Divider,
   FormControl,
   Grid,
   InputLabel,
+  IconButton,
   LinearProgress,
   List,
   ListItem,
@@ -27,15 +41,23 @@ import {
   TableRow,
   ToggleButton,
   ToggleButtonGroup,
+  Tooltip,
   Typography,
 } from "@mui/material";
+import { useTheme } from "@mui/material/styles";
+import AddCircleOutlineOutlined from "@mui/icons-material/AddCircleOutlineOutlined";
 import AssignmentOutlined from "@mui/icons-material/AssignmentOutlined";
 import ChangeCircleOutlined from "@mui/icons-material/ChangeCircleOutlined";
+import CloseOutlined from "@mui/icons-material/CloseOutlined";
+import DashboardCustomizeOutlined from "@mui/icons-material/DashboardCustomizeOutlined";
+import DragIndicatorOutlined from "@mui/icons-material/DragIndicatorOutlined";
 import InventoryIcon from "@mui/icons-material/Inventory";
 import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
 import PaymentsOutlined from "@mui/icons-material/PaymentsOutlined";
 import PlaylistAddCheckOutlined from "@mui/icons-material/PlaylistAddCheckOutlined";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
+import RestartAltOutlined from "@mui/icons-material/RestartAltOutlined";
+import SaveOutlined from "@mui/icons-material/SaveOutlined";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import WhatsAppIcon from "@mui/icons-material/WhatsApp";
@@ -334,8 +356,8 @@ const MiniLineChart = ({
   const targetY = height - pad - (Number(target || 0) / max) * (height - pad * 2);
 
   return (
-    <Box sx={{ width: "100%", overflowX: "auto" }}>
-      <Box component="svg" viewBox={`0 0 ${width} ${height}`} sx={{ width: "100%", minWidth: 520, display: "block" }}>
+    <Box sx={{ width: "100%", minWidth: 0, overflow: "hidden" }}>
+      <Box component="svg" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" sx={{ width: "100%", minWidth: 0, display: "block" }}>
         <line x1={pad} y1={height - pad} x2={width - pad} y2={height - pad} stroke="#cbd5e1" />
         {target > 0 && (
           <>
@@ -359,6 +381,97 @@ const MiniLineChart = ({
       </Box>
     </Box>
   );
+};
+
+type InteractiveChartDatum = { label: string; value: number; color?: string };
+const DASHBOARD_CHART_COLORS = ["#2563eb", "#16a34a", "#f59e0b", "#dc2626", "#7c3aed", "#0891b2"];
+
+const InteractivePieChart = ({ data, valueFormatter = (value) => `${value}` }: { data: InteractiveChartDatum[]; valueFormatter?: (value: number) => string }) => {
+  const theme = useTheme();
+  const cleanData = data.filter((item) => Number(item.value || 0) > 0);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const total = cleanData.reduce((sum, item) => sum + Number(item.value || 0), 0);
+  let cursor = -Math.PI / 2;
+  const arcs = cleanData.map((item, index) => {
+    const start = cursor;
+    const angle = total > 0 ? (Number(item.value || 0) / total) * Math.PI * 2 : 0;
+    cursor += angle;
+    const end = cursor;
+    const point = (value: number) => ({ x: 90 + Math.cos(value) * 66, y: 90 + Math.sin(value) * 66 });
+    const from = point(start);
+    const to = point(end);
+    const path = angle >= Math.PI * 2 - 0.0001
+      ? "M 90 24 A 66 66 0 1 1 89.99 24 Z"
+      : `M 90 90 L ${from.x} ${from.y} A 66 66 0 ${angle > Math.PI ? 1 : 0} 1 ${to.x} ${to.y} Z`;
+    return { item, index, path, color: item.color || DASHBOARD_CHART_COLORS[index % DASHBOARD_CHART_COLORS.length] };
+  });
+  const active = activeIndex == null ? null : cleanData[activeIndex];
+
+  if (!cleanData.length) return <Typography variant="body2" color="text.secondary">No hay datos para graficar.</Typography>;
+  return (
+    <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="center">
+      <Box component="svg" viewBox="0 0 180 180" sx={{ width: 190, maxWidth: "100%", overflow: "visible" }}>
+        {arcs.map(({ item, index, path, color }) => (
+          <Box
+            component="path"
+            key={item.label}
+            d={path}
+            fill={color}
+            tabIndex={0}
+            onMouseEnter={() => setActiveIndex(index)}
+            onMouseLeave={() => setActiveIndex(null)}
+            onFocus={() => setActiveIndex(index)}
+            onBlur={() => setActiveIndex(null)}
+            sx={{
+              cursor: "pointer", transformOrigin: "90px 90px", transition: "opacity 160ms ease, transform 160ms ease, filter 160ms ease",
+              opacity: activeIndex == null || activeIndex === index ? 1 : 0.42,
+              transform: activeIndex === index ? "scale(1.035)" : "scale(1)",
+              filter: activeIndex === index ? "drop-shadow(0 5px 6px rgba(15,23,42,.24))" : "none",
+              outline: "none",
+            }}
+          ><title>{`${item.label}: ${valueFormatter(item.value)}`}</title></Box>
+        ))}
+        <circle cx="90" cy="90" r="39" fill={theme.palette.background.paper} />
+        <text x="90" y="86" textAnchor="middle" fontSize="11" fill={theme.palette.text.secondary}>{active?.label || "Total"}</text>
+        <text x="90" y="104" textAnchor="middle" fontSize="14" fontWeight="700" fill={theme.palette.text.primary}>{valueFormatter(active?.value ?? total)}</text>
+      </Box>
+      <Stack spacing={0.75} sx={{ width: "100%", minWidth: 0 }}>
+        {arcs.map(({ item, index, color }) => <Stack key={item.label} direction="row" justifyContent="space-between" spacing={1} onMouseEnter={() => setActiveIndex(index)} onMouseLeave={() => setActiveIndex(null)} sx={{ px: 0.75, py: 0.4, borderRadius: 1, bgcolor: activeIndex === index ? "action.hover" : "transparent", transition: "background-color 150ms ease" }}><Stack direction="row" spacing={0.75} alignItems="center" minWidth={0}><Box sx={{ width: 9, height: 9, borderRadius: "50%", bgcolor: color, flexShrink: 0 }} /><Typography variant="body2" noWrap>{item.label}</Typography></Stack><Typography variant="body2" fontWeight={700}>{valueFormatter(item.value)}</Typography></Stack>)}
+      </Stack>
+    </Stack>
+  );
+};
+
+const InteractiveDotChart = ({ data }: { data: { label: string; value: number }[] }) => {
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const visible = data.slice(-36);
+  if (!visible.length) return <Typography variant="body2" color="text.secondary">No hay datos para graficar.</Typography>;
+  const width = 700;
+  const height = 210;
+  const pad = 25;
+  const max = Math.max(...visible.map((item) => item.value), 1);
+  const step = visible.length > 1 ? (width - pad * 2) / (visible.length - 1) : 0;
+  return (
+    <Box sx={{ width: "100%", minWidth: 0, overflow: "hidden" }}>
+      <Box component="svg" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" sx={{ width: "100%", minWidth: 0, display: "block" }}>
+        {[0.25, 0.5, 0.75, 1].map((ratio) => <line key={ratio} x1={pad} x2={width - pad} y1={height - pad - ratio * (height - pad * 2)} y2={height - pad - ratio * (height - pad * 2)} stroke="#e2e8f0" strokeDasharray="4 5" />)}
+        {visible.map((item, index) => {
+          const x = pad + index * step;
+          const y = height - pad - (item.value / max) * (height - pad * 2);
+          const active = activeIndex === index;
+          return <Box component="circle" key={`${item.label}-${index}`} cx={x} cy={y} r={active ? 8 : 5} fill={active ? "#dc2626" : "#2563eb"} tabIndex={0} onMouseEnter={() => setActiveIndex(index)} onMouseLeave={() => setActiveIndex(null)} onFocus={() => setActiveIndex(index)} onBlur={() => setActiveIndex(null)} sx={{ cursor: "pointer", transition: "r 150ms ease, fill 150ms ease, filter 150ms ease", filter: active ? "drop-shadow(0 3px 5px rgba(220,38,38,.35))" : "none", outline: "none" }}><title>{`${item.label}: ${formatCurrency(item.value)}`}</title></Box>;
+        })}
+        {activeIndex != null && visible[activeIndex] && <><Box component="text" x={width / 2} y="16" textAnchor="middle" fontSize="12" fontWeight="700" sx={{ fill: "text.primary" }}>{visible[activeIndex].label} · {formatCurrency(visible[activeIndex].value)}</Box></>}
+      </Box>
+    </Box>
+  );
+};
+
+const InteractiveBars = ({ data, valueFormatter = formatCurrency }: { data: InteractiveChartDatum[]; valueFormatter?: (value: number) => string }) => {
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const max = Math.max(...data.map((item) => Number(item.value || 0)), 1);
+  if (!data.length) return <Typography variant="body2" color="text.secondary">No hay datos para graficar.</Typography>;
+  return <Stack spacing={1.05}>{data.slice(0, 8).map((item, index) => <Box key={item.label} tabIndex={0} onMouseEnter={() => setActiveIndex(index)} onMouseLeave={() => setActiveIndex(null)} onFocus={() => setActiveIndex(index)} onBlur={() => setActiveIndex(null)} sx={{ outline: "none" }}><Stack direction="row" justifyContent="space-between" spacing={1} sx={{ mb: 0.35 }}><Typography variant="caption" noWrap>{item.label}</Typography><Typography variant="caption" fontWeight={700}>{valueFormatter(item.value)}</Typography></Stack><Box sx={{ height: activeIndex === index ? 13 : 9, bgcolor: "action.hover", borderRadius: 4, overflow: "hidden", transition: "height 150ms ease" }}><Box sx={{ width: `${Math.max((item.value / max) * 100, item.value > 0 ? 3 : 0)}%`, height: "100%", borderRadius: 4, bgcolor: item.color || DASHBOARD_CHART_COLORS[index % DASHBOARD_CHART_COLORS.length], boxShadow: activeIndex === index ? 3 : 0, transition: "width 280ms cubic-bezier(.2,.8,.2,1), height 150ms ease, box-shadow 150ms ease" }} /></Box></Box>)}</Stack>;
 };
 
 const MetaTimeline = ({
@@ -451,6 +564,240 @@ const MetricCard = ({
   </Paper>
 );
 
+type DashboardWidgetId =
+  | "server-summary" | "monthly-goal" | "sales-range" | "production-open"
+  | "pending-balance" | "post-sale-open" | "previous-day-top" | "whatsapp"
+  | "sales-by-day" | "tasks" | "low-stock" | "recent-reports"
+  | "inventory-summary" | "top-sales" | "sales-tickets" | "average-ticket"
+  | "daily-sales-average" | "highest-sale" | "production-value" | "production-advances"
+  | "orders-without-advance" | "production-status" | "post-sale-range"
+  | "post-sale-amount" | "inventory-zero" | "inventory-health" | "reports-month"
+  | "sales-store-bars" | "sales-seller-bars" | "sales-dot-chart" | "production-pie"
+  | "post-sale-pie" | "inventory-pie" | "payment-pie";
+
+type DashboardWidgetDefinition = {
+  id: DashboardWidgetId;
+  title: string;
+  description: string;
+  size: { xs: number; sm?: number; md?: number; lg?: number };
+  permissions?: string[];
+  requireAllPermissions?: boolean;
+  content: React.ReactNode;
+};
+
+type DashboardWidgetPreferences = {
+  version: 2;
+  order: DashboardWidgetId[];
+  hidden: DashboardWidgetId[];
+  layouts: Partial<Record<DashboardWidgetId, DashboardWidgetLayout>>;
+};
+
+type DashboardWidgetLayout = { columns: number; height?: number };
+
+const DEFAULT_WIDGET_ORDER: DashboardWidgetId[] = [
+  "server-summary", "monthly-goal", "sales-range", "production-open", "pending-balance", "post-sale-open",
+  "sales-tickets", "average-ticket", "daily-sales-average", "highest-sale",
+  "production-value", "production-advances", "orders-without-advance", "production-status",
+  "post-sale-range", "post-sale-amount", "inventory-zero", "inventory-health", "reports-month",
+  "sales-store-bars", "sales-seller-bars", "sales-dot-chart", "production-pie", "post-sale-pie", "inventory-pie", "payment-pie",
+  "previous-day-top", "whatsapp", "sales-by-day", "tasks", "low-stock", "recent-reports",
+  "inventory-summary", "top-sales",
+];
+
+const mergeWidgetOrder = (saved: unknown): DashboardWidgetId[] => {
+  const incoming = Array.isArray(saved) ? saved.filter((id): id is DashboardWidgetId => DEFAULT_WIDGET_ORDER.includes(id as DashboardWidgetId)) : [];
+  return [...incoming, ...DEFAULT_WIDGET_ORDER.filter((id) => !incoming.includes(id))];
+};
+
+const getDefaultWidgetColumns = (widget: DashboardWidgetDefinition) =>
+  Math.min(12, Math.max(3, Math.round(widget.size.lg || widget.size.md || widget.size.sm || widget.size.xs || 12)));
+
+const DASHBOARD_WIDGET_MIN_HEIGHTS: Partial<Record<DashboardWidgetId, number>> = {
+  "server-summary": 118,
+  "monthly-goal": 166,
+  "sales-by-day": 270,
+  tasks: 250,
+  "low-stock": 250,
+  "recent-reports": 250,
+  "inventory-summary": 250,
+  "top-sales": 250,
+  "sales-store-bars": 260,
+  "sales-seller-bars": 260,
+  "sales-dot-chart": 270,
+  "production-pie": 250,
+  "post-sale-pie": 250,
+  "inventory-pie": 250,
+  "payment-pie": 250,
+};
+
+const getWidgetMinimumHeight = (widgetId: DashboardWidgetId) => DASHBOARD_WIDGET_MIN_HEIGHTS[widgetId] || 132;
+
+const normalizeWidgetLayout = (layout: DashboardWidgetLayout, minimumHeight: number): DashboardWidgetLayout => ({
+  columns: Math.min(12, Math.max(3, Math.round(layout.columns))),
+  height: layout.height == null ? undefined : Math.max(minimumHeight, Math.round(layout.height)),
+});
+
+function DashboardWidgetTile({
+  widget,
+  editMode,
+  layout,
+  onHide,
+  onResize,
+}: {
+  widget: DashboardWidgetDefinition;
+  editMode: boolean;
+  layout: DashboardWidgetLayout;
+  onHide: (id: DashboardWidgetId) => void;
+  onResize: (id: DashboardWidgetId, layout: DashboardWidgetLayout) => void;
+}) {
+  const minimumHeight = getWidgetMinimumHeight(widget.id);
+  const [draftLayout, setDraftLayout] = useState<DashboardWidgetLayout>(() => normalizeWidgetLayout(layout, minimumHeight));
+  const [isResizing, setIsResizing] = useState(false);
+  const draftLayoutRef = useRef(draftLayout);
+  const resizingRef = useRef(false);
+  const resizeFrameRef = useRef<number | null>(null);
+  const draggable = useDraggable({ id: widget.id, disabled: !editMode });
+  const droppable = useDroppable({ id: widget.id, disabled: !editMode });
+  const setNodeRef = useCallback((node: HTMLElement | null) => {
+    draggable.setNodeRef(node);
+    droppable.setNodeRef(node);
+  }, [draggable, droppable]);
+  const transform = draggable.transform
+    ? `translate3d(${Math.round(draggable.transform.x)}px, ${Math.round(draggable.transform.y)}px, 0)`
+    : undefined;
+
+  useEffect(() => {
+    if (resizingRef.current) return;
+    const normalized = normalizeWidgetLayout(layout, minimumHeight);
+    draftLayoutRef.current = normalized;
+    setDraftLayout(normalized);
+  }, [layout.columns, layout.height, minimumHeight]);
+
+  useEffect(() => () => {
+    if (resizeFrameRef.current != null) cancelAnimationFrame(resizeFrameRef.current);
+  }, []);
+
+  const handleResizeStart = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!editMode) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    const widgetNode = event.currentTarget.parentElement;
+    const gridNode = widgetNode?.parentElement;
+    if (!widgetNode || !gridNode) return;
+    const widgetRect = widgetNode.getBoundingClientRect();
+    const gridRect = gridNode.getBoundingClientRect();
+    const gap = 16;
+    const columnWidth = Math.max((gridRect.width - gap * 11) / 12, 1);
+    resizingRef.current = true;
+    setIsResizing(true);
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const startWidth = widgetRect.width;
+    const startHeight = widgetRect.height;
+    let pendingLayout = draftLayoutRef.current;
+    const onMove = (moveEvent: PointerEvent) => {
+      const nextWidth = Math.max(columnWidth * 3, startWidth + moveEvent.clientX - startX);
+      const nextColumns = Math.min(12, Math.max(3, Math.round((nextWidth + gap) / (columnWidth + gap))));
+      const nextHeight = Math.max(minimumHeight, Math.round(startHeight + moveEvent.clientY - startY));
+      pendingLayout = { columns: nextColumns, height: nextHeight };
+      if (resizeFrameRef.current != null) return;
+      resizeFrameRef.current = requestAnimationFrame(() => {
+        resizeFrameRef.current = null;
+        draftLayoutRef.current = pendingLayout;
+        setDraftLayout(pendingLayout);
+      });
+    };
+    const onEnd = () => {
+      if (resizeFrameRef.current != null) {
+        cancelAnimationFrame(resizeFrameRef.current);
+        resizeFrameRef.current = null;
+      }
+      draftLayoutRef.current = pendingLayout;
+      setDraftLayout(pendingLayout);
+      resizingRef.current = false;
+      setIsResizing(false);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onEnd);
+      window.removeEventListener("pointercancel", onEnd);
+      onResize(widget.id, pendingLayout);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onEnd, { once: true });
+    window.addEventListener("pointercancel", onEnd, { once: true });
+  };
+
+  return (
+    <Box
+      ref={setNodeRef}
+      sx={{
+        gridColumn: { xs: "span 12", sm: `span ${draftLayout.columns}` },
+        position: "relative",
+        minWidth: 0,
+        minHeight: minimumHeight,
+        height: draftLayout.height || "auto",
+        transform,
+        opacity: draggable.isDragging ? 0.34 : 1,
+        zIndex: draggable.isDragging ? 3 : 1,
+        transition: draggable.isDragging || isResizing ? "none" : "height 150ms cubic-bezier(.2,.8,.2,1), transform 150ms cubic-bezier(.2,.8,.2,1), box-shadow 150ms ease, opacity 150ms ease, outline-color 150ms ease",
+        willChange: draggable.isDragging ? "transform" : isResizing ? "height" : "auto",
+        borderRadius: 1,
+        outline: editMode ? "1px dashed" : "none",
+        outlineColor: editMode ? "primary.light" : "transparent",
+        outlineOffset: editMode ? 3 : 0,
+        boxShadow: editMode && droppable.isOver ? "0 0 0 4px rgba(25, 118, 210, 0.22), 0 18px 36px rgba(25, 118, 210, 0.22)" : "none",
+        "&::after": editMode && droppable.isOver ? {
+          content: '""', position: "absolute", inset: -6, border: "2px dashed", borderColor: "primary.main",
+          borderRadius: 1.5, pointerEvents: "none",
+        } : undefined,
+        "& > .MuiPaper-root": {
+          height: "100%",
+          minHeight: minimumHeight,
+          overflow: "hidden",
+          pt: editMode ? "42px !important" : undefined,
+          transition: isResizing ? "none" : "padding 150ms ease, border-color 150ms ease, box-shadow 150ms ease",
+        },
+      }}
+    >
+      {editMode && (
+        <Stack
+          direction="row"
+          alignItems="center"
+          justifyContent="space-between"
+          sx={{ position: "absolute", zIndex: 5, top: 6, left: 10, right: 7, height: 29 }}
+        >
+          <Typography variant="caption" color="text.secondary" fontWeight={700} noWrap sx={{ pr: 1 }}>{widget.title}</Typography>
+          <Stack direction="row" spacing={0.25} alignItems="center">
+            <Tooltip title="Arrastrar para mover">
+              <IconButton size="small" aria-label={`Mover ${widget.title}`} {...draggable.attributes} {...draggable.listeners} sx={{ width: 28, height: 28, cursor: draggable.isDragging ? "grabbing" : "grab" }}><DragIndicatorOutlined sx={{ fontSize: 18 }} /></IconButton>
+            </Tooltip>
+            <Tooltip title="Quitar del tablero">
+              <IconButton size="small" aria-label={`Ocultar ${widget.title}`} onClick={() => onHide(widget.id)} sx={{ width: 28, height: 28 }}><CloseOutlined sx={{ fontSize: 17 }} /></IconButton>
+            </Tooltip>
+          </Stack>
+        </Stack>
+      )}
+      {widget.content}
+      {editMode && (
+        <Tooltip title="Arrastra para cambiar ancho y alto">
+          <Box
+            role="separator"
+            aria-label={`Cambiar tamaño de ${widget.title}`}
+            onPointerDown={handleResizeStart}
+            sx={{
+              position: "absolute", zIndex: 6, right: 4, bottom: 4, width: 22, height: 22, cursor: "nwse-resize",
+              touchAction: "none",
+              borderRadius: "0 0 5px 0",
+              "&::before, &::after": { content: '""', position: "absolute", right: 3, bottom: 4, width: 11, height: 1.5, bgcolor: "primary.main", transform: "rotate(-45deg)", transformOrigin: "right center" },
+              "&::after": { right: 3, bottom: 8, width: 7 },
+            }}
+          />
+        </Tooltip>
+      )}
+    </Box>
+  );
+}
+
 export default function Dashboard() {
   const [ventas, setVentas] = useState<Venta[]>([]);
   const [pedidos, setPedidos] = useState<PedidoProduccion[]>([]);
@@ -472,6 +819,14 @@ export default function Dashboard() {
   const [vendedorFiltro, setVendedorFiltro] = useState<"all" | number>("all");
   const [saldoModalOpen, setSaldoModalOpen] = useState(false);
   const [metaModalOpen, setMetaModalOpen] = useState(false);
+  const [customizeOpen, setCustomizeOpen] = useState(false);
+  const [dashboardEditMode, setDashboardEditMode] = useState(false);
+  const [widgetOrder, setWidgetOrder] = useState<DashboardWidgetId[]>(DEFAULT_WIDGET_ORDER);
+  const [hiddenWidgets, setHiddenWidgets] = useState<DashboardWidgetId[]>([]);
+  const [widgetLayouts, setWidgetLayouts] = useState<Partial<Record<DashboardWidgetId, DashboardWidgetLayout>>>({});
+  const [activeWidgetId, setActiveWidgetId] = useState<DashboardWidgetId | null>(null);
+  const [widgetPreferencesDirty, setWidgetPreferencesDirty] = useState(false);
+  const [widgetPreferencesSavedAt, setWidgetPreferencesSavedAt] = useState("");
   const navigate = useNavigate();
   const { rol, permisos, bodegaId: userBodegaId, id: userId, nombre: userNombre, usuario: userUsuario } = useAuthStore();
   const { fetchConfig } = useSystemConfigStore();
@@ -481,6 +836,49 @@ export default function Dashboard() {
     hasPermission(rol, permisos, "sistema.selector-vendedores") || hasPermission(rol, permisos, "dashboard.filtro-vendedor");
   const canViewDashboardAll = hasPermission(rol, permisos, "dashboard.ver-todo");
   const canManageWhatsapp = rol === "ADMIN";
+  const canViewSalesWidgets = hasPermission(rol, permisos, "ventas.view");
+  const canViewProductionWidgets = hasPermission(rol, permisos, "produccion.view");
+  const canViewPostSaleWidgets = hasPermission(rol, permisos, "postventa.view");
+  const canViewInventoryWidgets =
+    hasPermission(rol, permisos, "inventario.resumen.view") || hasPermission(rol, permisos, "inventario.minimos.view");
+  const canViewReportWidgets =
+    hasPermission(rol, permisos, "reportes.reporte-diario.view")
+    || hasPermission(rol, permisos, "reportes.reporte-quincenal.view")
+    || hasPermission(rol, permisos, "reportes.ventas-diarias.view");
+  const canViewMetaWidgets = hasPermission(rol, permisos, "metas.view") || canViewSalesWidgets;
+  const widgetPreferenceKey = useMemo(
+    () => `uniforma:dashboard-widgets:v2:${userId || userUsuario || rol || "usuario"}`,
+    [rol, userId, userUsuario],
+  );
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 7 } }));
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(widgetPreferenceKey);
+      if (!saved) {
+        setWidgetOrder(DEFAULT_WIDGET_ORDER);
+        setHiddenWidgets([]);
+        setWidgetLayouts({});
+        setWidgetPreferencesDirty(false);
+        setWidgetPreferencesSavedAt("");
+        return;
+      }
+      const preferences = JSON.parse(saved) as Partial<DashboardWidgetPreferences>;
+      setWidgetOrder(mergeWidgetOrder(preferences.order));
+      setHiddenWidgets(Array.isArray(preferences.hidden)
+        ? preferences.hidden.filter((id): id is DashboardWidgetId => DEFAULT_WIDGET_ORDER.includes(id as DashboardWidgetId))
+        : []);
+      setWidgetLayouts(preferences.layouts && typeof preferences.layouts === "object" ? preferences.layouts : {});
+      setWidgetPreferencesDirty(false);
+      setWidgetPreferencesSavedAt("Preferencias cargadas");
+    } catch {
+      setWidgetOrder(DEFAULT_WIDGET_ORDER);
+      setHiddenWidgets([]);
+      setWidgetLayouts({});
+      setWidgetPreferencesDirty(false);
+      setWidgetPreferencesSavedAt("");
+    }
+  }, [widgetPreferenceKey]);
 
   const cargarWhatsapp = useCallback(async () => {
     if (!whatsappFeatureEnabled) return;
@@ -521,6 +919,10 @@ export default function Dashboard() {
   );
 
   useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+    const dashboardGet = (url: string, config: Record<string, unknown> = {}) =>
+      api.get(url, { ...config, signal: controller.signal });
     const load = async () => {
       setLoading(true);
       setLoadError("");
@@ -582,28 +984,29 @@ export default function Dashboard() {
           respUsuarios,
           respWhatsapp,
         ] = await Promise.all([
-          api.get("/dashboard/resumen", { params: resumenParams }).catch(() => ({ data: null })),
-          api.get("/ventas", { params: { lite: 1 } }).catch(() => ({ data: [] })),
-          api.get("/produccion", { params: { lite: 1 } }).catch(() => ({ data: [] })),
-          api.get("/postventa", { params: postventaParams }).catch(() => ({ data: [] })),
-          api.get("/documentos").catch(() => ({ data: [] })),
-          api.get("/documentos", { params: reportesParams }).catch(() => ({ data: [] })),
-          api
+          dashboardGet("/dashboard/resumen", { params: resumenParams }).catch(() => ({ data: null })),
+          canViewSalesWidgets ? dashboardGet("/ventas", { params: { lite: 1 } }).catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
+          canViewProductionWidgets ? dashboardGet("/produccion", { params: { lite: 1 } }).catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
+          canViewPostSaleWidgets ? dashboardGet("/postventa", { params: postventaParams }).catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
+          canViewReportWidgets ? dashboardGet("/documentos").catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
+          canViewReportWidgets ? dashboardGet("/documentos", { params: reportesParams }).catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
+          canViewReportWidgets ? api
             .get("/documentos/dashboard/top-cierres-dia-anterior", {
               params: { fecha: toDateOnly(diaAnteriorDate), _ts: Date.now() },
+              signal: controller.signal,
             })
-            .catch(() => ({ data: [] })),
-          api
-            .get("/metas/mensuales/actual", {
+            .catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
+          canViewMetaWidgets ? dashboardGet("/metas/mensuales/actual", {
               params: metaParams,
             })
-            .catch(() => ({ data: { metaMes: 0, promedioDiario: 0, source: "none" } })),
-          api.get("/inventario/reporte").catch(() => ({ data: [] })),
-          api.get("/productos").catch(() => ({ data: [] })),
-          api.get("/bodegas").catch(() => ({ data: [] })),
-          api.get("/usuarios").catch(() => ({ data: [] })),
-          whatsappFeatureEnabled ? api.get("/whatsapp/resumen").catch(() => ({ data: null })) : Promise.resolve({ data: null }),
+            .catch(() => ({ data: { metaMes: 0, promedioDiario: 0, source: "none" } })) : Promise.resolve({ data: { metaMes: 0, promedioDiario: 0, source: "none" } }),
+          canViewInventoryWidgets ? dashboardGet("/inventario/reporte").catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
+          canViewInventoryWidgets ? dashboardGet("/productos").catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
+          canAccessAllBodegas || canViewDashboardAll ? dashboardGet("/bodegas").catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
+          canFilterVendedores ? dashboardGet("/usuarios").catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
+          whatsappFeatureEnabled && canManageWhatsapp ? dashboardGet("/whatsapp/resumen").catch(() => ({ data: null })) : Promise.resolve({ data: null }),
         ]);
+        if (!active) return;
         setBackendResumen(respResumen.data || null);
         setVentas(apiRows(respVentas.data));
         setPedidos(apiRows(respPedidos.data));
@@ -622,14 +1025,22 @@ export default function Dashboard() {
         setUsuarios(respUsuarios.data || []);
         setWhatsappResumen(respWhatsapp.data || null);
       } catch (error) {
-        setLoadError("No se pudieron cargar todos los datos del dashboard.");
+        if (active) setLoadError("No se pudieron cargar todos los datos del dashboard.");
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     };
     void load();
     void fetchConfig();
-  }, [bodegaFiltro, canViewDashboardAll, cargarWhatsapp, fetchConfig, rango, userBodegaId, userId, vendedorFiltro]);
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [
+    bodegaFiltro, canAccessAllBodegas, canFilterVendedores, canViewDashboardAll, canViewInventoryWidgets,
+    canManageWhatsapp, canViewMetaWidgets, canViewPostSaleWidgets, canViewProductionWidgets, canViewReportWidgets, canViewSalesWidgets,
+    cargarWhatsapp, fetchConfig, rango, userBodegaId, userId, vendedorFiltro,
+  ]);
 
   const marcarWhatsappLeidos = async (vendedorId?: number) => {
     if (!whatsappFeatureEnabled) return;
@@ -713,6 +1124,10 @@ export default function Dashboard() {
 
     const totalVentasRango = ventasRango.reduce((sum, venta) => sum + Number(venta.total || 0), 0);
     const totalVentasHoy = ventasHoy.reduce((sum, venta) => sum + Number(venta.total || 0), 0);
+    const ticketsRango = ventasRango.length;
+    const ticketPromedio = ticketsRango > 0 ? totalVentasRango / ticketsRango : 0;
+    const promedioVentaDiaria = Number(rango) > 0 ? totalVentasRango / Number(rango) : 0;
+    const ventaMasAlta = ventasRango.reduce((max, venta) => Math.max(max, Number(venta.total || 0)), 0);
 
     const estadosAbiertos = new Set(["nuevo", "en_produccion", "pendiente", "regresado_produccion"]);
     const pedidosProduccion = pedidosFiltrados.filter((pedido) =>
@@ -728,12 +1143,26 @@ export default function Dashboard() {
       .sort((a, b) => roundMoney(b.saldoPendiente) - roundMoney(a.saldoPendiente));
     const saldoPendiente = roundMoney(pedidosSaldoOrdenados.reduce((sum, pedido) => sum + roundMoney(pedido.saldoPendiente), 0));
     const pedidosSinCobro = pedidosFiltrados.filter((pedido) => pedido.postventaCobro === "sin_cobro");
+    const valorPedidosProduccion = pedidosProduccion.reduce((sum, pedido) => sum + Number(pedido.totalEstimado || 0), 0);
+    const anticiposPedidosProduccion = pedidosProduccion.reduce((sum, pedido) => sum + Number(pedido.anticipo || 0), 0);
+    const pedidosSinAnticipo = pedidosProduccion.filter((pedido) => Number(pedido.anticipo || 0) <= 0);
+    const produccionPorEstado = Array.from(pedidosProduccion.reduce((map, pedido) => {
+      const estado = estadoLabel(pedido.estado);
+      map.set(estado, (map.get(estado) || 0) + 1);
+      return map;
+    }, new Map<string, number>()).entries()).sort((a, b) => b[1] - a[1]);
 
     const postventaAbierta = postventa.filter(
       (row) =>
         ["pendiente", "en_revision"].includes(`${row.estado || ""}`.trim().toLowerCase()) &&
         filtraVendedor([row.usuarioId, row.usuario?.id, row.usuario?.nombre, row.usuario?.usuario]),
     );
+    const postventaRango = postventa.filter((row) =>
+      new Date(row.fecha) >= desde && filtraVendedor([row.usuarioId, row.usuario?.id, row.usuario?.nombre, row.usuario?.usuario]),
+    );
+    const postventaMontoRango = postventaRango.reduce((sum, row) => sum + Number(row.monto || 0), 0);
+    const cambiosRango = postventaRango.filter((row) => row.tipo === "cambio").length;
+    const devolucionesRango = postventaRango.filter((row) => row.tipo === "devolucion").length;
 
     const reportesRecientes = documentos
       .filter(
@@ -758,6 +1187,11 @@ export default function Dashboard() {
       .filter((row) => Number(row.stockMax || 0) > 0 && Number(row.stock || 0) < Number(row.stockMax || 0))
       .sort((a, b) => Number(a.stock || 0) - Number(b.stock || 0))
       .slice(0, 6);
+    const inventarioAgotado = inventarioFiltrado.filter((row) => Number(row.stock || 0) <= 0);
+    const inventarioConMinimo = inventarioFiltrado.filter((row) => Number(row.stockMax || 0) > 0);
+    const inventarioSaludable = inventarioConMinimo.filter((row) => Number(row.stock || 0) >= Number(row.stockMax || 0));
+    const inventarioBajoConStock = inventarioConMinimo.filter((row) => Number(row.stock || 0) > 0 && Number(row.stock || 0) < Number(row.stockMax || 0));
+    const saludInventario = inventarioConMinimo.length > 0 ? (inventarioSaludable.length / inventarioConMinimo.length) * 100 : 100;
 
     const ventasPorDia = new Map<string, number>();
     for (let index = Number(rango) - 1; index >= 0; index -= 1) {
@@ -774,6 +1208,19 @@ export default function Dashboard() {
       .slice()
       .sort((a, b) => Number(b.total || 0) - Number(a.total || 0))
       .slice(0, 5);
+    const ventasPorTiendaMap = ventasRango.reduce((map, venta) => {
+      const label = venta.bodega?.nombre || `Tienda ${venta.bodegaId || "N/D"}`;
+      map.set(label, (map.get(label) || 0) + Number(venta.total || 0));
+      return map;
+    }, new Map<string, number>());
+    const ventasPorVendedorMap = ventasRango.reduce((map, venta) => {
+      const label = `${venta.vendedor || "Sin vendedor"}`.trim() || "Sin vendedor";
+      map.set(label, (map.get(label) || 0) + Number(venta.total || 0));
+      return map;
+    }, new Map<string, number>());
+    const ventasPorTienda = Array.from(ventasPorTiendaMap.entries()).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
+    const ventasPorVendedor = Array.from(ventasPorVendedorMap.entries()).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
+    const dispersionVentas = ventasRango.slice().sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime()).slice(-36).map((venta) => ({ label: `V-${venta.id}`, value: Number(venta.total || 0) }));
 
     const mesActual = new Date();
     const currentYear = mesActual.getFullYear();
@@ -861,15 +1308,34 @@ export default function Dashboard() {
       totalVentasRango,
       totalVentasHoy,
       ticketsHoy: ventasHoy.length,
+      ticketsRango,
+      ticketPromedio,
+      promedioVentaDiaria,
+      ventaMasAlta,
+      ventasPorTienda,
+      ventasPorVendedor,
+      dispersionVentas,
       pedidosProduccion,
       pedidosSaldo: pedidosSaldoOrdenados,
       saldoPendiente,
       pedidosSinCobro,
+      valorPedidosProduccion,
+      anticiposPedidosProduccion,
+      pedidosSinAnticipo,
+      produccionPorEstado,
       postventaAbierta,
+      postventaRango,
+      postventaMontoRango,
+      cambiosRango,
+      devolucionesRango,
       reportesRecientes,
       topCierresDiaAnterior,
       diaAnterior,
       bajosStock,
+      inventarioAgotado,
+      inventarioSaludable: inventarioSaludable.length,
+      inventarioBajoConStock: inventarioBajoConStock.length,
+      saludInventario,
       ventasPorDia: Array.from(ventasPorDia.entries()).map(([date, value]) => ({
         label: date.slice(5).replace("-", "/"),
         value,
@@ -922,8 +1388,180 @@ export default function Dashboard() {
   const { paginatedRows: pedidosSaldoPaginados, paginationProps: pedidosSaldoPaginationProps } =
     useTablePagination(stats.pedidosSaldo, 10);
 
+  const widgetDefinitions = useMemo<DashboardWidgetDefinition[]>(() => [
+    {
+      id: "server-summary", title: "Resumen del servidor", description: "Cifras agregadas para el rango seleccionado.",
+      size: { xs: 12 }, permissions: ["dashboard.ver-todo"],
+      content: <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 1 }}>
+        <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} alignItems={{ md: "center" }} justifyContent="space-between">
+          <Box><Typography variant="subtitle2" fontWeight={700}>Resumen calculado por servidor</Typography><Typography variant="caption" color="text.secondary">Consultas agregadas para el rango seleccionado.</Typography></Box>
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            <Chip size="small" label={`Ventas ${formatCurrency(backendResumen?.ventas?.totalRango || 0)}`} />
+            <Chip size="small" label={`Pedidos abiertos ${backendResumen?.pedidos?.abiertos || 0}`} />
+            <Chip size="small" label={`Saldo ${formatCurrency(backendResumen?.pedidos?.saldoPendiente || 0)}`} />
+            <Chip size="small" label={`Stock bajo ${backendResumen?.inventario?.bajoMinimo || 0}`} />
+          </Stack>
+        </Stack>
+      </Paper>,
+    },
+    {
+      id: "monthly-goal", title: "Meta mensual", description: "Avance de la meta del vendedor o tienda.",
+      size: { xs: 12 }, permissions: ["metas.view", "ventas.view"],
+      content: <Paper variant="outlined" onClick={() => setMetaModalOpen(true)} sx={{ p: 2, borderRadius: 1, cursor: "pointer", "&:hover": { borderColor: "primary.main", boxShadow: 2 } }}>
+        <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={2} sx={{ mb: 1.5 }}>
+          <Box><Typography variant="h6">Meta mensual</Typography><Typography variant="body2" color="text.secondary">Acumulado desde reportes diarios según los filtros activos.</Typography></Box>
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap><Chip label={stats.metaMensual.sourceLabel} color={stats.metaMensual.metaMes > 0 ? "primary" : "warning"} /><Chip variant="outlined" label={`${stats.metaMensual.reportesDiariosMes} reporte(s)`} /></Stack>
+        </Stack>
+        <Grid container spacing={2} alignItems="center">
+          <Grid size={{ xs: 12, md: 4 }}><Typography variant="caption" color="text.secondary">Meta mes</Typography><Typography variant="h5" fontWeight={700}>{formatCurrency(stats.metaMensual.metaMes)}</Typography><Typography variant="caption" color="text.secondary">Promedio diario: {formatCurrency(stats.metaMensual.promedioDiario)}</Typography></Grid>
+          <Grid size={{ xs: 12, md: 4 }}><Typography variant="caption" color="text.secondary">Acumulado</Typography><Typography variant="h5" fontWeight={700}>{formatCurrency(stats.metaMensual.acumuladoReportesDiarios)}</Typography><Typography variant="caption" color="text.secondary">Restante: {formatCurrency(stats.metaMensual.restanteMeta)}</Typography></Grid>
+          <Grid size={{ xs: 12, md: 4 }}><Stack direction="row" justifyContent="space-between"><Typography variant="caption">Avance</Typography><Typography variant="caption" fontWeight={700}>{stats.metaMensual.avanceMeta.toFixed(2)}%</Typography></Stack><LinearProgress variant="determinate" value={stats.metaMensual.avanceMeta} color={stats.metaMensual.avanceMeta >= 100 ? "success" : "primary"} sx={{ height: 10, borderRadius: 1, mt: 0.75 }} /></Grid>
+        </Grid>
+      </Paper>,
+    },
+    { id: "sales-range", title: "Ventas del rango", description: "Total vendido en el periodo.", size: { xs: 12, sm: 6, lg: 3 }, permissions: ["ventas.view"], content: <MetricCard title={`Ventas últimos ${rango} días`} value={formatCurrency(stats.totalVentasRango)} helper={`Hoy: ${formatCurrency(stats.totalVentasHoy)} | Tickets: ${stats.ticketsHoy}`} icon={<TrendingUpIcon />} tone="success" /> },
+    { id: "production-open", title: "Pedidos en producción", description: "Pedidos que siguen activos.", size: { xs: 12, sm: 6, lg: 3 }, permissions: ["produccion.view"], content: <MetricCard title="Pedidos en producción" value={stats.pedidosProduccion.length} helper={`${stats.pedidosSinCobro.length} ligados a postventa sin cobro`} icon={<PlaylistAddCheckOutlined />} tone="primary" /> },
+    { id: "pending-balance", title: "Saldo pendiente", description: "Saldo pendiente en pedidos.", size: { xs: 12, sm: 6, lg: 3 }, permissions: ["produccion.view", "pagos.view"], requireAllPermissions: true, content: <MetricCard title="Saldo pendiente" value={formatCurrency(stats.saldoPendiente)} helper={`${stats.pedidosSaldo.length} pedidos con saldo`} icon={<PaymentsOutlined />} tone="warning" onClick={() => setSaldoModalOpen(true)} /> },
+    { id: "post-sale-open", title: "Postventa abierta", description: "Cambios y devoluciones pendientes.", size: { xs: 12, sm: 6, lg: 3 }, permissions: ["postventa.view"], content: <MetricCard title="Postventa abierta" value={stats.postventaAbierta.length} helper="Pendientes o en revisión" icon={<ChangeCircleOutlined />} tone="info" /> },
+    { id: "sales-tickets", title: "Tickets del rango", description: "Cantidad de ventas registradas.", size: { xs: 12, sm: 6, lg: 3 }, permissions: ["ventas.view"], content: <MetricCard title={`Tickets en ${rango} días`} value={stats.ticketsRango} helper={`${stats.ticketsHoy} generados hoy`} icon={<ReceiptLongOutlined />} tone="info" /> },
+    { id: "average-ticket", title: "Ticket promedio", description: "Promedio monetario por venta.", size: { xs: 12, sm: 6, lg: 3 }, permissions: ["ventas.view"], content: <MetricCard title="Ticket promedio" value={formatCurrency(stats.ticketPromedio)} helper="Total vendido / número de tickets" icon={<PaymentsOutlined />} tone="success" /> },
+    { id: "daily-sales-average", title: "Promedio diario", description: "Promedio vendido por día del rango.", size: { xs: 12, sm: 6, lg: 3 }, permissions: ["ventas.view"], content: <MetricCard title="Promedio diario" value={formatCurrency(stats.promedioVentaDiaria)} helper={`Calculado sobre ${rango} días`} icon={<TrendingUpIcon />} tone="primary" /> },
+    { id: "highest-sale", title: "Venta más alta", description: "Mayor ticket del periodo.", size: { xs: 12, sm: 6, lg: 3 }, permissions: ["ventas.view"], content: <MetricCard title="Venta más alta" value={formatCurrency(stats.ventaMasAlta)} helper="Mayor ticket del rango" icon={<TrendingUpIcon />} tone="success" /> },
+    { id: "production-value", title: "Valor en producción", description: "Valor estimado de pedidos activos.", size: { xs: 12, sm: 6, lg: 3 }, permissions: ["produccion.view"], content: <MetricCard title="Valor en producción" value={formatCurrency(stats.valorPedidosProduccion)} helper={`${stats.pedidosProduccion.length} pedidos activos`} icon={<PlaylistAddCheckOutlined />} tone="primary" /> },
+    { id: "production-advances", title: "Anticipos en producción", description: "Anticipos recibidos de pedidos activos.", size: { xs: 12, sm: 6, lg: 3 }, permissions: ["produccion.view", "pagos.view"], requireAllPermissions: true, content: <MetricCard title="Anticipos en producción" value={formatCurrency(stats.anticiposPedidosProduccion)} helper="Aplicados a pedidos activos" icon={<PaymentsOutlined />} tone="success" /> },
+    { id: "orders-without-advance", title: "Pedidos sin anticipo", description: "Pedidos activos con anticipo en cero.", size: { xs: 12, sm: 6, lg: 3 }, permissions: ["produccion.view"], content: <MetricCard title="Pedidos sin anticipo" value={stats.pedidosSinAnticipo.length} helper="Requieren seguimiento de cobro" icon={<WarningAmberIcon />} tone={stats.pedidosSinAnticipo.length ? "warning" : "success"} /> },
+    {
+      id: "production-status", title: "Estados de producción", description: "Distribución de pedidos activos.", size: { xs: 12, md: 6, lg: 4 }, permissions: ["produccion.view"],
+      content: <Paper variant="outlined" sx={{ p: 2, borderRadius: 1 }}><Typography variant="h6">Estados de producción</Typography><Divider sx={{ my: 1 }} />{!stats.produccionPorEstado.length ? <Typography variant="body2" color="text.secondary">No hay pedidos activos.</Typography> : <Stack spacing={1}>{stats.produccionPorEstado.map(([estado, cantidad]) => <Stack key={estado} direction="row" justifyContent="space-between"><Typography variant="body2">{estado}</Typography><Chip size="small" label={cantidad} /></Stack>)}</Stack>}</Paper>,
+    },
+    { id: "post-sale-range", title: "Postventa del rango", description: "Cambios y devoluciones registrados.", size: { xs: 12, sm: 6, lg: 3 }, permissions: ["postventa.view"], content: <MetricCard title={`Postventa en ${rango} días`} value={stats.postventaRango.length} helper={`${stats.cambiosRango} cambios | ${stats.devolucionesRango} devoluciones`} icon={<ChangeCircleOutlined />} tone="info" /> },
+    { id: "post-sale-amount", title: "Monto de postventa", description: "Monto relacionado con postventa.", size: { xs: 12, sm: 6, lg: 3 }, permissions: ["postventa.view"], content: <MetricCard title="Monto de postventa" value={formatCurrency(stats.postventaMontoRango)} helper={`Movimientos de los últimos ${rango} días`} icon={<PaymentsOutlined />} tone="warning" /> },
+    { id: "inventory-zero", title: "Existencias agotadas", description: "Variantes con stock en cero.", size: { xs: 12, sm: 6, lg: 3 }, permissions: ["inventario.resumen.view", "inventario.minimos.view"], content: <MetricCard title="Existencias agotadas" value={stats.inventarioAgotado.length} helper="Productos/bodega con stock cero" icon={<WarningAmberIcon />} tone={stats.inventarioAgotado.length ? "error" : "success"} /> },
+    { id: "inventory-health", title: "Salud de inventario", description: "Porcentaje de variantes sobre su mínimo.", size: { xs: 12, sm: 6, lg: 3 }, permissions: ["inventario.resumen.view", "inventario.minimos.view"], content: <MetricCard title="Salud de inventario" value={`${stats.saludInventario.toFixed(1)}%`} helper="Existencias que alcanzan su stock objetivo" icon={<InventoryIcon />} tone={stats.saludInventario >= 80 ? "success" : stats.saludInventario >= 55 ? "warning" : "error"} /> },
+    { id: "reports-month", title: "Reportes del mes", description: "Reportes diarios registrados este mes.", size: { xs: 12, sm: 6, lg: 3 }, permissions: ["reportes.reporte-diario.view", "reportes.ventas-diarias.view"], content: <MetricCard title="Reportes diarios del mes" value={stats.metaMensual.reportesDiariosMes} helper={`${stats.metaMensual.diasConReporte} días con información`} icon={<ReceiptLongOutlined />} tone="primary" /> },
+    {
+      id: "sales-store-bars", title: "Ventas por tienda", description: "Comparativo interactivo de ventas por tienda.", size: { xs: 12, lg: 6 }, permissions: ["ventas.view", "dashboard.ver-todo"], requireAllPermissions: true,
+      content: <Paper variant="outlined" sx={{ p: 2, borderRadius: 1 }}><Typography variant="h6">Ventas por tienda</Typography><Typography variant="body2" color="text.secondary">Pasa el cursor por cada barra para resaltarla.</Typography><Divider sx={{ my: 1.5 }} /><InteractiveBars data={stats.ventasPorTienda} /></Paper>,
+    },
+    {
+      id: "sales-seller-bars", title: "Ventas por vendedor", description: "Ranking interactivo de vendedores.", size: { xs: 12, lg: 6 }, permissions: ["ventas.view", "dashboard.ver-todo"], requireAllPermissions: true,
+      content: <Paper variant="outlined" sx={{ p: 2, borderRadius: 1 }}><Typography variant="h6">Ventas por vendedor</Typography><Typography variant="body2" color="text.secondary">Ranking según el rango y tienda seleccionados.</Typography><Divider sx={{ my: 1.5 }} /><InteractiveBars data={stats.ventasPorVendedor} /></Paper>,
+    },
+    {
+      id: "sales-dot-chart", title: "Dispersión de tickets", description: "Gráfico de puntos de las últimas ventas.", size: { xs: 12, lg: 6 }, permissions: ["ventas.view"],
+      content: <Paper variant="outlined" sx={{ p: 2, borderRadius: 1 }}><Typography variant="h6">Dispersión de tickets</Typography><Typography variant="body2" color="text.secondary">Cada punto representa una venta; enfócalo para ver su monto.</Typography><Divider sx={{ my: 1 }} /><InteractiveDotChart data={stats.dispersionVentas} /></Paper>,
+    },
+    {
+      id: "production-pie", title: "Producción por estado", description: "Distribución interactiva de pedidos activos.", size: { xs: 12, lg: 6 }, permissions: ["produccion.view"],
+      content: <Paper variant="outlined" sx={{ p: 2, borderRadius: 1 }}><Typography variant="h6">Producción por estado</Typography><Typography variant="body2" color="text.secondary">Distribución de los pedidos que siguen activos.</Typography><Divider sx={{ my: 1 }} /><InteractivePieChart data={stats.produccionPorEstado.map(([label, value]) => ({ label, value }))} /></Paper>,
+    },
+    {
+      id: "post-sale-pie", title: "Cambios y devoluciones", description: "Distribución de movimientos de postventa.", size: { xs: 12, lg: 4 }, permissions: ["postventa.view"],
+      content: <Paper variant="outlined" sx={{ p: 2, borderRadius: 1 }}><Typography variant="h6">Cambios y devoluciones</Typography><Divider sx={{ my: 1 }} /><InteractivePieChart data={[{ label: "Cambios", value: stats.cambiosRango, color: "#2563eb" }, { label: "Devoluciones", value: stats.devolucionesRango, color: "#dc2626" }]} /></Paper>,
+    },
+    {
+      id: "inventory-pie", title: "Estado del inventario", description: "Salud, faltantes y existencias agotadas.", size: { xs: 12, lg: 4 }, permissions: ["inventario.resumen.view", "inventario.minimos.view"],
+      content: <Paper variant="outlined" sx={{ p: 2, borderRadius: 1 }}><Typography variant="h6">Estado del inventario</Typography><Divider sx={{ my: 1 }} /><InteractivePieChart data={[{ label: "Saludable", value: stats.inventarioSaludable, color: "#16a34a" }, { label: "Bajo", value: stats.inventarioBajoConStock, color: "#f59e0b" }, { label: "Agotado", value: stats.inventarioAgotado.length, color: "#dc2626" }]} /></Paper>,
+    },
+    {
+      id: "payment-pie", title: "Anticipo y saldo", description: "Composición financiera de pedidos activos.", size: { xs: 12, lg: 4 }, permissions: ["produccion.view", "pagos.view"], requireAllPermissions: true,
+      content: <Paper variant="outlined" sx={{ p: 2, borderRadius: 1 }}><Typography variant="h6">Anticipo y saldo de pedidos</Typography><Divider sx={{ my: 1 }} /><InteractivePieChart valueFormatter={formatCurrency} data={[{ label: "Anticipos", value: stats.anticiposPedidosProduccion, color: "#16a34a" }, { label: "Saldo", value: stats.saldoPendiente, color: "#f59e0b" }]} /></Paper>,
+    },
+    {
+      id: "previous-day-top", title: "Top del día anterior", description: "Mejores cierres del día anterior.", size: { xs: 12 }, permissions: ["reportes.reporte-diario.view"],
+      content: <Paper variant="outlined" sx={{ p: 2, borderRadius: 1 }}><Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" spacing={1}><Box><Typography variant="h6">Top 3 ventas del día anterior</Typography><Typography variant="body2" color="text.secondary">Ranking general basado en el cierre diario.</Typography></Box><Button size="small" endIcon={<OpenInNewOutlined />} onClick={() => navigate("/reportes/reporte-diario")}>Ver cierres</Button></Stack><Divider sx={{ my: 1 }} />{!stats.topCierresDiaAnterior.length ? <Typography variant="body2" color="text.secondary">No hay cierres para mostrar.</Typography> : <Grid container spacing={1}>{stats.topCierresDiaAnterior.map((cierre, index) => <Grid key={cierre.id} size={{ xs: 12, md: 4 }}><Box sx={{ p: 1.5, border: "1px solid", borderColor: "divider", borderRadius: 1 }}><Typography variant="caption">#{index + 1} | {cierre.correlativo}</Typography><Typography variant="h6">{formatCurrency(cierre.total)}</Typography><Typography variant="body2">{cierre.vendedor}</Typography><Typography variant="caption" color="text.secondary">{cierre.tienda}</Typography></Box></Grid>)}</Grid>}</Paper>,
+    },
+    {
+      id: "whatsapp", title: "WhatsApp Business", description: "Mensajes nuevos recibidos.", size: { xs: 12 },
+      content: <Paper variant="outlined" sx={{ p: 2, borderRadius: 1 }}><Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={1}><Box><Stack direction="row" spacing={1} alignItems="center"><WhatsAppIcon color="success" /><Typography variant="h6">Mensajes WhatsApp Business</Typography></Stack><Typography variant="body2" color="text.secondary">{canManageWhatsapp ? "Resumen por vendedor." : "Mensajes nuevos en tu número asignado."}</Typography></Box><Stack direction="row" spacing={1}><Chip color="success" label={`${whatsappResumen?.totalNuevos || 0} nuevos`} /><Chip variant="outlined" label={`${whatsappResumen?.totalHoy || 0} hoy`} /></Stack></Stack></Paper>,
+    },
+    {
+      id: "sales-by-day", title: "Ventas por día", description: "Evolución de ventas del rango.", size: { xs: 12, lg: 8 }, permissions: ["ventas.view"],
+      content: <Paper variant="outlined" sx={{ p: 2, borderRadius: 1 }}><Stack direction="row" justifyContent="space-between"><Typography variant="h6">Ventas por día</Typography><Chip size="small" label={`${rango} días`} /></Stack><Divider sx={{ my: 1.5 }} /><MiniBars data={stats.ventasPorDia} /></Paper>,
+    },
+    {
+      id: "tasks", title: "Pendientes para atender", description: "Producción y postventa que requieren atención.", size: { xs: 12, lg: 4 }, permissions: ["produccion.view", "postventa.view"],
+      content: <Paper variant="outlined" sx={{ p: 2, minHeight: 245, borderRadius: 1 }}><Typography variant="h6">Pendientes para atender</Typography><Divider sx={{ my: 1 }} />{!stats.actividad.length ? <Typography variant="body2" color="text.secondary">No hay pendientes urgentes.</Typography> : <List dense disablePadding>{stats.actividad.map((item) => <ListItem key={item.key} disableGutters secondaryAction={<Button size="small" onClick={() => navigate(item.path)}>{item.action}</Button>}><ListItemText primary={item.title} secondary={item.detail} sx={{ pr: 7 }} /></ListItem>)}</List>}</Paper>,
+    },
+    {
+      id: "low-stock", title: "Stock bajo", description: "Productos por debajo del objetivo.", size: { xs: 12, md: 6, lg: 4 }, permissions: ["inventario.resumen.view", "inventario.minimos.view"],
+      content: <Paper variant="outlined" sx={{ p: 2, minHeight: 300, borderRadius: 1 }}><Typography variant="h6">Stock bajo</Typography><Divider sx={{ my: 1 }} />{!stats.bajosStock.length ? <Typography variant="body2" color="text.secondary">No hay productos bajo el objetivo.</Typography> : <List dense disablePadding>{stats.bajosStock.map((row) => <ListItem key={`${row.productoId}-${row.bodegaId}`} disableGutters><ListItemText primary={`${row.codigo} - ${row.producto}`} secondary={`${row.bodega} | ${row.stock}/${row.stockMax}`} /></ListItem>)}</List>}</Paper>,
+    },
+    {
+      id: "recent-reports", title: "Reportes recientes", description: "Últimos reportes generados.", size: { xs: 12, md: 6, lg: 4 }, permissions: ["reportes.reporte-diario.view", "reportes.reporte-quincenal.view"],
+      content: <Paper variant="outlined" sx={{ p: 2, minHeight: 300, borderRadius: 1 }}><Typography variant="h6">Reportes recientes</Typography><Divider sx={{ my: 1 }} />{!stats.reportesRecientes.length ? <Typography variant="body2" color="text.secondary">Aún no hay reportes.</Typography> : <List dense disablePadding>{stats.reportesRecientes.map((doc) => <ListItem key={doc.id} disableGutters><ListItemText primary={doc.correlativo} secondary={`${doc.tipo} | ${new Date(doc.creadoEn).toLocaleString()}`} /></ListItem>)}</List>}</Paper>,
+    },
+    {
+      id: "inventory-summary", title: "Resumen de inventario", description: "Stock y catálogo disponible.", size: { xs: 12, md: 6, lg: 4 }, permissions: ["inventario.resumen.view"],
+      content: <Paper variant="outlined" sx={{ p: 2, minHeight: 300, borderRadius: 1 }}><Typography variant="h6">Resumen inventario</Typography><Divider sx={{ my: 1 }} /><Stack spacing={1.5}><Stack direction="row" justifyContent="space-between"><Typography color="text.secondary">Stock total</Typography><Typography fontWeight={700}>{stats.stockTotal}</Typography></Stack><Stack direction="row" justifyContent="space-between"><Typography color="text.secondary">Productos catálogo</Typography><Typography fontWeight={700}>{stats.productosActivos}</Typography></Stack><Stack direction="row" justifyContent="space-between"><Typography color="text.secondary">Existencias agotadas</Typography><Typography fontWeight={700}>{stats.inventarioAgotado.length}</Typography></Stack><Button variant="outlined" onClick={() => navigate("/inventario/resumen")}>Ver inventario</Button></Stack></Paper>,
+    },
+    {
+      id: "top-sales", title: "Ventas más altas", description: "Tickets de mayor valor del rango.", size: { xs: 12 }, permissions: ["ventas.view"],
+      content: <Paper variant="outlined" sx={{ p: 2, borderRadius: 1 }}><Stack direction="row" justifyContent="space-between"><Typography variant="h6">Ventas más altas del rango</Typography><Button size="small" onClick={() => navigate("/ventas")}>Ver ventas</Button></Stack><Divider sx={{ my: 1 }} />{!stats.topVentas.length ? <Typography variant="body2" color="text.secondary">No hay ventas en el rango.</Typography> : <Grid container spacing={1}>{stats.topVentas.map((venta) => <Grid key={venta.id} size={{ xs: 12, md: 6, lg: 2.4 }}><Box sx={{ p: 1.5, border: "1px solid", borderColor: "divider", borderRadius: 1 }}><Typography variant="subtitle2">V-{venta.id}</Typography><Typography variant="h6">{formatCurrency(venta.total)}</Typography><Typography variant="caption" color="text.secondary">{new Date(venta.fecha).toLocaleDateString()}</Typography></Box></Grid>)}</Grid>}</Paper>,
+    },
+  ], [backendResumen, canManageWhatsapp, navigate, rango, stats, whatsappResumen]);
+
+  const allowedWidgets = useMemo(() => widgetDefinitions.filter((widget) => {
+    if (widget.id === "server-summary" && !backendResumen) return false;
+    if (widget.id === "whatsapp") return whatsappFeatureEnabled && canManageWhatsapp;
+    if (!widget.permissions?.length) return true;
+    return widget.requireAllPermissions
+      ? widget.permissions.every((permission) => hasPermission(rol, permisos, permission))
+      : widget.permissions.some((permission) => hasPermission(rol, permisos, permission));
+  }), [backendResumen, canManageWhatsapp, permisos, rol, widgetDefinitions]);
+  const allowedWidgetMap = useMemo(() => new Map(allowedWidgets.map((widget) => [widget.id, widget])), [allowedWidgets]);
+  const visibleWidgets = useMemo(() => widgetOrder
+    .filter((id) => allowedWidgetMap.has(id) && !hiddenWidgets.includes(id))
+    .map((id) => allowedWidgetMap.get(id)!), [allowedWidgetMap, hiddenWidgets, widgetOrder]);
+  const hiddenAllowedWidgets = useMemo(() => allowedWidgets.filter((widget) => hiddenWidgets.includes(widget.id)), [allowedWidgets, hiddenWidgets]);
+
+  const hideWidget = (id: DashboardWidgetId) => {
+    setHiddenWidgets((current) => current.includes(id) ? current : [...current, id]);
+    setWidgetPreferencesDirty(true);
+  };
+  const showWidget = (id: DashboardWidgetId) => {
+    setHiddenWidgets((current) => current.filter((item) => item !== id));
+    setWidgetPreferencesDirty(true);
+  };
+  const saveWidgetPreferences = () => {
+    const preferences: DashboardWidgetPreferences = { version: 2, order: widgetOrder, hidden: hiddenWidgets, layouts: widgetLayouts };
+    window.localStorage.setItem(widgetPreferenceKey, JSON.stringify(preferences));
+    setWidgetPreferencesDirty(false);
+    setWidgetPreferencesSavedAt(`Guardado ${new Date().toLocaleTimeString("es-GT", { hour: "2-digit", minute: "2-digit" })}`);
+  };
+  const restoreDefaultWidgets = () => {
+    setWidgetOrder(DEFAULT_WIDGET_ORDER);
+    setHiddenWidgets([]);
+    setWidgetLayouts({});
+    setWidgetPreferencesDirty(true);
+  };
+  const resizeWidget = (id: DashboardWidgetId, layout: DashboardWidgetLayout) => {
+    setWidgetLayouts((current) => ({ ...current, [id]: layout }));
+    setWidgetPreferencesDirty(true);
+  };
+  const handleWidgetDragStart = (event: DragStartEvent) => {
+    if (!dashboardEditMode) return;
+    setActiveWidgetId(event.active.id as DashboardWidgetId);
+  };
+  const handleWidgetDragEnd = (event: DragEndEvent) => {
+    const activeId = event.active.id as DashboardWidgetId;
+    const overId = event.over?.id as DashboardWidgetId | undefined;
+    setActiveWidgetId(null);
+    if (!dashboardEditMode || !overId || activeId === overId) return;
+    setWidgetOrder((current) => {
+      const from = current.indexOf(activeId);
+      const to = current.indexOf(overId);
+      if (from < 0 || to < 0) return current;
+      const next = current.slice();
+      next.splice(from, 1);
+      next.splice(to, 0, activeId);
+      return next;
+    });
+    setWidgetPreferencesDirty(true);
+  };
+
   return (
-    <Box sx={{ p: 3, minHeight: "100%", bgcolor: "background.default" }}>
+    <Box sx={{ p: { xs: 0, xl: 0.5 }, minWidth: 0, maxWidth: "100%", minHeight: "100%", bgcolor: "background.default", overflowX: "hidden" }}>
       <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" alignItems={{ xs: "stretch", md: "center" }} spacing={2} sx={{ mb: 2 }}>
         <Stack spacing={0.5}>
           <Typography variant="h4" sx={{ fontWeight: 700 }}>Dashboard operativo</Typography>
@@ -932,7 +1570,7 @@ export default function Dashboard() {
           </Typography>
         </Stack>
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" justifyContent="flex-end">
-          <FormControl size="small" sx={{ minWidth: 220 }} disabled={!canFilterVendedores}>
+          <FormControl size="small" sx={{ minWidth: { xs: "100%", sm: 190, xl: 220 }, flex: { xs: "1 1 100%", sm: "1 1 190px" } }} disabled={!canFilterVendedores}>
             <InputLabel>Vendedor</InputLabel>
             <Select
               label="Vendedor"
@@ -947,7 +1585,7 @@ export default function Dashboard() {
               ))}
             </Select>
           </FormControl>
-          <FormControl size="small" sx={{ minWidth: 190 }} disabled={!canAccessAllBodegas}>
+          <FormControl size="small" sx={{ minWidth: { xs: "100%", sm: 165, xl: 190 }, flex: { xs: "1 1 100%", sm: "1 1 165px" } }} disabled={!canAccessAllBodegas}>
             <InputLabel>Tienda</InputLabel>
             <Select
               label="Tienda"
@@ -970,8 +1608,108 @@ export default function Dashboard() {
 
       {loading && <LinearProgress sx={{ mb: 2 }} />}
       {loadError && <Alert severity="warning" sx={{ mb: 2 }}>{loadError}</Alert>}
+
+      <Paper variant="outlined" sx={{ p: 1.25, mb: 2, borderRadius: 1 }}>
+        <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" alignItems={{ md: "center" }} gap={1.5}>
+          <Box>
+            <Typography variant="subtitle2" fontWeight={700}>Mi tablero</Typography>
+            <Typography variant="caption" color="text.secondary">
+              {dashboardEditMode
+                ? "Modo edición activo: mueve los widgets o ajusta su tamaño desde la esquina inferior derecha."
+                : "Vista personalizada según tu rol. Activa el modo edición cuando quieras reorganizarla."}
+            </Typography>
+          </Box>
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+            <Chip size="small" variant="outlined" label={`${visibleWidgets.length} widgets visibles`} />
+            {(widgetPreferencesDirty || widgetPreferencesSavedAt) && (
+              <Chip size="small" color={widgetPreferencesDirty ? "warning" : "success"} label={widgetPreferencesDirty ? "Cambios sin guardar" : widgetPreferencesSavedAt} />
+            )}
+            <Button size="small" startIcon={<DashboardCustomizeOutlined />} onClick={() => setCustomizeOpen(true)}>Personalizar</Button>
+            <Button
+              size="small"
+              variant={dashboardEditMode ? "contained" : "outlined"}
+              color={dashboardEditMode ? "warning" : "primary"}
+              onClick={() => { setDashboardEditMode((current) => !current); setActiveWidgetId(null); }}
+            >
+              {dashboardEditMode ? "Finalizar edición" : "Editar tablero"}
+            </Button>
+            <Button size="small" variant="contained" startIcon={<SaveOutlined />} disabled={!widgetPreferencesDirty} onClick={saveWidgetPreferences}>Guardar diseño</Button>
+          </Stack>
+        </Stack>
+      </Paper>
+
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleWidgetDragStart} onDragEnd={handleWidgetDragEnd} onDragCancel={() => setActiveWidgetId(null)}>
+        {visibleWidgets.length ? (
+          <Box
+            sx={{
+              display: "grid",
+              gridTemplateColumns: "repeat(12, minmax(0, 1fr))",
+              gap: 2,
+              alignItems: "start",
+              mb: 2,
+              pt: dashboardEditMode ? 0.75 : 0,
+              transition: "padding 180ms ease",
+            }}
+          >
+            {visibleWidgets.map((widget) => (
+              <DashboardWidgetTile
+                key={widget.id}
+                widget={widget}
+                editMode={dashboardEditMode}
+                layout={widgetLayouts[widget.id] || { columns: getDefaultWidgetColumns(widget) }}
+                onHide={hideWidget}
+                onResize={resizeWidget}
+              />
+            ))}
+          </Box>
+        ) : (
+          <Alert severity="info" sx={{ mb: 2 }} action={<Button color="inherit" size="small" onClick={() => setCustomizeOpen(true)}>Agregar widgets</Button>}>
+            No tienes widgets visibles. Puedes recuperarlos desde Personalizar.
+          </Alert>
+        )}
+        <DragOverlay>
+          {dashboardEditMode && activeWidgetId && allowedWidgetMap.get(activeWidgetId) ? (
+            <Paper variant="outlined" sx={{ px: 2, py: 1.25, minWidth: 240, boxShadow: 8, borderColor: "primary.main" }}>
+              <Stack direction="row" spacing={1} alignItems="center"><DragIndicatorOutlined color="primary" /><Typography fontWeight={700}>{allowedWidgetMap.get(activeWidgetId)?.title}</Typography></Stack>
+            </Paper>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
+
+      <Dialog open={customizeOpen} onClose={() => setCustomizeOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Personalizar dashboard</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2}>
+            <Alert severity="info">Solo aparecen widgets permitidos para tu rol. Las preferencias se guardan para este usuario en este dispositivo.</Alert>
+            <Box>
+              <Typography variant="subtitle2">Widgets ocultos</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>Recupera cualquier widget que hayas cerrado con la X.</Typography>
+              {!hiddenAllowedWidgets.length ? (
+                <Typography variant="body2" color="text.secondary">No tienes widgets ocultos.</Typography>
+              ) : (
+                <Stack spacing={1}>
+                  {hiddenAllowedWidgets.map((widget) => (
+                    <Paper key={widget.id} variant="outlined" sx={{ p: 1.25 }}>
+                      <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}>
+                        <Box><Typography variant="body2" fontWeight={700}>{widget.title}</Typography><Typography variant="caption" color="text.secondary">{widget.description}</Typography></Box>
+                        <Button size="small" startIcon={<AddCircleOutlineOutlined />} onClick={() => showWidget(widget.id)}>Agregar</Button>
+                      </Stack>
+                    </Paper>
+                  ))}
+                </Stack>
+              )}
+            </Box>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button startIcon={<RestartAltOutlined />} onClick={restoreDefaultWidgets}>Restaurar predeterminado</Button>
+          <Button onClick={() => setCustomizeOpen(false)}>Cerrar</Button>
+          <Button variant="contained" startIcon={<SaveOutlined />} onClick={() => { saveWidgetPreferences(); setCustomizeOpen(false); }}>Guardar</Button>
+        </DialogActions>
+      </Dialog>
+
       {backendResumen && (
-        <Paper variant="outlined" sx={{ p: 1.5, mb: 2, borderRadius: 1, bgcolor: "background.paper" }}>
+        <Paper variant="outlined" sx={{ display: "none", p: 1.5, mb: 2, borderRadius: 1, bgcolor: "background.paper" }}>
           <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} alignItems={{ xs: "stretch", md: "center" }} justifyContent="space-between">
             <Stack spacing={0.25}>
               <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
@@ -995,6 +1733,7 @@ export default function Dashboard() {
         variant="outlined"
         onClick={() => setMetaModalOpen(true)}
         sx={{
+          display: "none",
           p: 2,
           mb: 2,
           borderRadius: 1,
@@ -1246,7 +1985,7 @@ export default function Dashboard() {
         </DialogContent>
       </Dialog>
 
-      <Grid container spacing={2} sx={{ mb: 2 }}>
+      <Grid container spacing={2} sx={{ display: "none", mb: 2 }}>
         <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
           <MetricCard
             title={`Ventas ultimos ${rango} dias`}
@@ -1286,7 +2025,7 @@ export default function Dashboard() {
         </Grid>
       </Grid>
 
-      <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 1 }}>
+      <Paper variant="outlined" sx={{ display: "none", p: 2, mb: 2, borderRadius: 1 }}>
         <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" alignItems={{ xs: "flex-start", sm: "center" }} spacing={1} sx={{ mb: 1 }}>
           <Stack direction="row" spacing={1} alignItems="center">
             <ReceiptLongOutlined color="primary" />
@@ -1390,7 +2129,7 @@ export default function Dashboard() {
         </DialogContent>
       </Dialog>
 
-      {whatsappFeatureEnabled && <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 1 }}>
+      {whatsappFeatureEnabled && <Paper variant="outlined" sx={{ display: "none", p: 2, mb: 2, borderRadius: 1 }}>
         <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" alignItems={{ xs: "stretch", md: "center" }} spacing={1.5} sx={{ mb: 1 }}>
           <Stack direction="row" spacing={1} alignItems="center">
             <WhatsAppIcon color="success" />
@@ -1448,7 +2187,7 @@ export default function Dashboard() {
         )}
       </Paper>}
 
-      <Grid container spacing={2}>
+      <Grid container spacing={2} sx={{ display: "none" }}>
         <Grid size={{ xs: 12, lg: 8 }}>
           <Paper variant="outlined" sx={{ p: 2, height: "100%", borderRadius: 1 }}>
             <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>

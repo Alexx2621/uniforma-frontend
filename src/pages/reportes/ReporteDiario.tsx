@@ -1403,7 +1403,22 @@ export default function ReporteDiario() {
     const resp = await api.get(`/documentos/${doc.id}/pdf?t=${Date.now()}`, {
       responseType: "blob",
     });
-    const url = window.URL.createObjectURL(new Blob([resp.data], { type: "application/pdf" }));
+    const pdfBlob = resp.data instanceof Blob
+      ? resp.data
+      : new Blob([resp.data], { type: "application/pdf" });
+    const signature = await pdfBlob.slice(0, 5).text();
+    if (signature !== "%PDF-") {
+      const responseText = await pdfBlob.text();
+      let message = responseText || "El servidor no devolvio un archivo PDF valido";
+      try {
+        const parsed = JSON.parse(responseText);
+        message = Array.isArray(parsed?.message) ? parsed.message.join(", ") : parsed?.message || message;
+      } catch {
+        // La respuesta puede ser texto plano proveniente del servidor.
+      }
+      throw new Error(message);
+    }
+    const url = window.URL.createObjectURL(pdfBlob);
     const link = document.createElement("a");
     link.href = url;
     link.download = `Reporte diario ${doc.data?.fecha || fecha}.pdf`;
@@ -1418,8 +1433,18 @@ export default function ReporteDiario() {
     try {
       setGenerandoPdf(true);
       await descargarDocumentoPdf(doc);
-    } catch {
-      Swal.fire("Error", "No se pudo descargar el PDF del reporte diario", "error");
+    } catch (error: any) {
+      let message = error?.message || "No se pudo descargar el PDF del reporte diario";
+      const errorBlob = error?.response?.data;
+      if (errorBlob instanceof Blob) {
+        try {
+          const parsed = JSON.parse(await errorBlob.text());
+          message = Array.isArray(parsed?.message) ? parsed.message.join(", ") : parsed?.message || message;
+        } catch {
+          // Se conserva el mensaje original cuando la respuesta no es JSON.
+        }
+      }
+      Swal.fire("Error", message, "error");
     } finally {
       setGenerandoPdf(false);
     }
@@ -1462,7 +1487,16 @@ export default function ReporteDiario() {
       setLiquidacionNo(docGenerado.correlativo || liquidacionNo);
       await descargarDocumentoPdf(docGenerado);
     } catch (error: any) {
-      const msg = error?.response?.data?.message || "No se pudo generar o descargar el reporte diario";
+      let msg = error?.message || error?.response?.data?.message || "No se pudo generar o descargar el reporte diario";
+      const errorBlob = error?.response?.data;
+      if (errorBlob instanceof Blob) {
+        try {
+          const parsed = JSON.parse(await errorBlob.text());
+          msg = parsed?.message || msg;
+        } catch {
+          // Se conserva el mensaje disponible cuando la respuesta no es JSON.
+        }
+      }
       Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
       return;
     } finally {

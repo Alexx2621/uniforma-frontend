@@ -153,32 +153,32 @@ export default function Sidebar({ open, width, onToggle, mobile = false }: Props
         disabled={disabled}
         onClick={() => (hasChildren ? toggle(item.label) : item.path && goToModule(item.path))}
         sx={{
-          minHeight: 38,
-          borderRadius: 1.25,
+          minHeight: 42,
+          borderRadius: 2,
           mx: collapsed ? 0.9 : 1.5,
           my: 0.25,
-          color: itemActive ? "primary.contrastText" : "text.primary",
-          bgcolor: itemActive ? "primary.main" : "transparent",
+          color: itemActive ? "primary.main" : "text.primary",
+          bgcolor: itemActive ? "rgba(24, 54, 111, 0.08)" : "transparent",
           justifyContent: collapsed ? "center" : "flex-start",
           px: collapsed ? 1 : 1.35,
           opacity: disabled ? 0.55 : 1,
-          boxShadow: "none",
+          boxShadow: itemActive ? "inset 3px 0 0 #df1738" : "none",
           transition: "background-color 160ms ease, color 160ms ease",
           "&:hover": {
-            bgcolor: itemActive ? "primary.dark" : "rgba(15, 23, 42, 0.045)",
+            bgcolor: itemActive ? "rgba(24, 54, 111, 0.11)" : "rgba(100, 116, 139, 0.07)",
           },
           ".MuiListItemIcon-root": {
-            color: itemActive ? "primary.contrastText" : "rgba(15, 23, 42, 0.58)",
+            color: itemActive ? "primary.main" : "text.secondary",
           },
           ".MuiSvgIcon-root": {
-            color: itemActive ? "primary.contrastText" : undefined,
+            color: itemActive ? "primary.main" : undefined,
             fontSize: 19,
           },
         }}
       >
         <ListItemIcon
           sx={{
-            color: itemActive ? "primary.contrastText" : "text.secondary",
+            color: itemActive ? "primary.main" : "text.secondary",
             minWidth: collapsed ? 0 : 36,
             justifyContent: "center",
           }}
@@ -223,15 +223,15 @@ export default function Sidebar({ open, width, onToggle, mobile = false }: Props
                     borderRadius: 1.25,
                     mx: 1.5,
                     my: 0.25,
-                    backgroundColor: active ? "rgba(37, 99, 235, 0.1)" : "transparent",
-                    color: active ? "primary.main" : "text.primary",
+                    backgroundColor: active ? "rgba(24, 54, 111, 0.07)" : "transparent",
+                    color: active ? "primary.main" : "text.secondary",
                     justifyContent: "flex-start",
                     opacity: childDisabled ? 0.55 : 1,
-                    minHeight: 34,
-                    "&:hover": { backgroundColor: "rgba(15, 23, 42, 0.045)" },
+                    minHeight: 36,
+                    "&:hover": { backgroundColor: "rgba(100, 116, 139, 0.07)" },
                   }}
                   >
-                    <ListItemIcon sx={{ color: active ? "primary.main" : "rgba(15, 23, 42, 0.55)", minWidth: 32 }}>
+                    <ListItemIcon sx={{ color: active ? "primary.main" : "text.secondary", minWidth: 32 }}>
                       {child.icon}
                     </ListItemIcon>
                   <ListItemText
@@ -268,8 +268,15 @@ export default function Sidebar({ open, width, onToggle, mobile = false }: Props
           borderRight: "1px solid",
           borderRightColor: "divider",
           borderRadius: 0,
-          backgroundColor: "background.paper",
-          boxShadow: "none",
+          background: (theme) =>
+            theme.palette.mode === "dark"
+              ? "linear-gradient(180deg, #151f30 0%, #111a29 100%)"
+              : "linear-gradient(180deg, #ffffff 0%, #fafbfd 58%, #f5f7fa 100%)",
+          color: "text.primary",
+          boxShadow: (theme) =>
+            theme.palette.mode === "dark"
+              ? "8px 0 28px rgba(0, 0, 0, 0.14)"
+              : "8px 0 28px rgba(24, 54, 111, 0.045)",
           paddingTop: mobile ? 1 : 1.25,
           display: "flex",
           flexDirection: "column",
@@ -277,8 +284,15 @@ export default function Sidebar({ open, width, onToggle, mobile = false }: Props
           zIndex: (theme) => theme.zIndex.drawer + (mobile ? 4 : 2),
           overflowY: "auto",
           overflowX: "hidden",
-          "&::-webkit-scrollbar": { width: 6 },
-          "&::-webkit-scrollbar-thumb": { backgroundColor: "divider", borderRadius: 8 },
+          scrollbarWidth: "thin",
+          scrollbarColor: "rgba(100,116,139,0.28) transparent",
+          "&::-webkit-scrollbar": { width: 3 },
+          "&::-webkit-scrollbar-track": { background: "transparent" },
+          "&::-webkit-scrollbar-thumb": {
+            backgroundColor: "rgba(100,116,139,0.28)",
+            borderRadius: 999,
+          },
+          "&::-webkit-scrollbar-thumb:hover": { backgroundColor: "rgba(100,116,139,0.44)" },
         },
       }}
     >
@@ -298,7 +312,7 @@ export default function Sidebar({ open, width, onToggle, mobile = false }: Props
             src={uniformaLogo}
             alt="Uniforma"
             sx={{
-              width: collapsed ? 40 : 166,
+              width: collapsed ? 42 : 170,
               height: collapsed ? 40 : 58,
               objectFit: "contain",
               objectPosition: collapsed ? "center" : "left center",
@@ -317,10 +331,13 @@ export default function Sidebar({ open, width, onToggle, mobile = false }: Props
             sx={{
               "& .MuiOutlinedInput-root": {
                 borderRadius: 1.5,
-                bgcolor: "#f5f7fb",
+                bgcolor: (theme) => theme.palette.mode === "dark" ? "rgba(255,255,255,0.045)" : "#f3f5f8",
+                color: "text.primary",
                 fontSize: 13.5,
                 height: 42,
               },
+              "& input::placeholder": { color: "text.secondary", opacity: 0.85 },
+              "& .MuiInputAdornment-root": { color: "text.secondary" },
               "& fieldset": { borderColor: "transparent" },
               "& .MuiOutlinedInput-root:hover fieldset": { borderColor: "transparent" },
               "& .MuiOutlinedInput-root.Mui-focused fieldset": { borderColor: "primary.main" },
@@ -351,11 +368,11 @@ export default function Sidebar({ open, width, onToggle, mobile = false }: Props
                   borderRadius: 1,
                   bgcolor: "transparent",
                   fontSize: 9.5,
-                  letterSpacing: 0,
+                  letterSpacing: "0.12em",
                   fontWeight: 800,
-                  color: "rgba(15, 23, 42, 0.48)",
+                  color: "text.secondary",
                   lineHeight: "24px",
-                  textTransform: "none",
+                  textTransform: "uppercase",
                 }}
               >
                 <Typography component="span" variant="caption" sx={{ fontSize: 9.5, fontWeight: 800 }}>

@@ -17,6 +17,7 @@ import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
 import PictureAsPdfOutlined from "@mui/icons-material/PictureAsPdfOutlined";
 import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
 import OpenInNewOutlined from "@mui/icons-material/OpenInNewOutlined";
+import RestartAltOutlined from "@mui/icons-material/RestartAltOutlined";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { useNavigate } from "react-router-dom";
@@ -141,30 +142,40 @@ export default function Ventas() {
   };
 
   useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
     const cargarCatalogos = async () => {
       const [respClientes, respProductos] = await Promise.all([
-        api.get("/clientes").catch(() => ({ data: [] })),
-        api.get("/productos").catch(() => ({ data: [] })),
+        api.get("/clientes", { signal: controller.signal }).catch(() => ({ data: [] })),
+        api.get("/productos", { signal: controller.signal }).catch(() => ({ data: [] })),
       ]);
+      if (!active) return;
       setClientes(respClientes.data || []);
       setProductos(respProductos.data || []);
     };
     void cargarCatalogos();
     void fetchConfig();
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, [fetchConfig]);
 
   useEffect(() => {
-    void cargarVentas();
+    const controller = new AbortController();
+    void cargarVentas(controller.signal);
+    return () => controller.abort();
   }, [fechaDesde, fechaHasta, filterCliente, filterCodigo, paginationModel.page, paginationModel.pageSize]);
 
   useEffect(() => {
     setPaginationModel((prev) => ({ ...prev, page: 0 }));
   }, [fechaDesde, fechaHasta, filterCliente, filterCodigo]);
 
-  const cargarVentas = async () => {
+  const cargarVentas = async (signal?: AbortSignal) => {
     setLoading(true);
     try {
       const respVentas = await api.get("/ventas", {
+        signal,
         params: {
           paginated: 1,
           page: paginationModel.page,
@@ -179,14 +190,31 @@ export default function Ventas() {
       const rows = Array.isArray(payload) ? payload : payload.data || [];
       setVentas(normalizarVentas(rows, clientes));
       setRowCount(Number(payload.total ?? rows.length));
-    } catch (error) {
-      Swal.fire("Error", "No se pudo cargar ventas", "error");
+    } catch (error: any) {
+      if (error?.code !== "ERR_CANCELED" && !signal?.aborted) Swal.fire("Error", "No se pudo cargar ventas", "error");
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   };
 
   const filtered = ventas;
+  const paginaResumen = useMemo(() => {
+    const total = filtered.reduce((sum, venta) => sum + (Number(venta.total) || 0), 0);
+    const conTarjeta = filtered.filter((venta) => metodoCuentaComoTarjeta(venta.metodoPago)).length;
+    return {
+      total,
+      promedio: filtered.length ? total / filtered.length : 0,
+      conTarjeta,
+    };
+  }, [filtered]);
+
+  const limpiarFiltros = () => {
+    const hoy = toDateOnly(new Date().toISOString());
+    setFilterCliente("");
+    setFilterCodigo("");
+    setFechaDesde(hoy);
+    setFechaHasta(hoy);
+  };
 
   const cargarVentasParaCierre = async () => {
     const acumuladas: VentaRow[] = [];
@@ -747,11 +775,15 @@ export default function Ventas() {
   ];
 
   return (
-    <Paper sx={{ p: 3, height: "100%" }}>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+    <Stack spacing={2.25}>
+      <Paper variant="outlined" sx={{ p: { xs: 1.5, md: 2 } }}>
+      <Stack direction={{ xs: "column", lg: "row" }} justifyContent="space-between" alignItems={{ xs: "stretch", lg: "center" }} gap={1.5}>
         <Stack direction="row" spacing={1} alignItems="center">
           <ReceiptLongIcon color="primary" />
-          <Typography variant="h4">Ventas</Typography>
+          <Stack spacing={0.25}>
+            <Typography variant="h4">Ventas</Typography>
+            <Typography variant="body2" color="text.secondary">Consulta movimientos, genera comprobantes y realiza cierres.</Typography>
+          </Stack>
         </Stack>
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" justifyContent="flex-end">
           <TextField
@@ -786,8 +818,31 @@ export default function Ventas() {
           </Button>
         </Stack>
       </Stack>
+      </Paper>
 
-      <Grid container spacing={2} sx={{ mb: 2 }}>
+      <Grid container spacing={1.5}>
+        {[
+          { label: "Ventas encontradas", value: rowCount.toLocaleString("es-GT"), helper: "En el periodo filtrado" },
+          { label: "Monto de esta pagina", value: formatCurrency(paginaResumen.total), helper: `${filtered.length} venta${filtered.length === 1 ? "" : "s"} visible${filtered.length === 1 ? "" : "s"}` },
+          { label: "Ticket promedio", value: formatCurrency(paginaResumen.promedio), helper: "Promedio de la pagina" },
+          { label: "Pagos con tarjeta", value: paginaResumen.conTarjeta.toLocaleString("es-GT"), helper: "Tarjeta o Visalink" },
+        ].map((item) => (
+          <Grid key={item.label} size={{ xs: 12, sm: 6, lg: 3 }}>
+            <Paper variant="outlined" sx={{ p: 1.75, height: "100%" }}>
+              <Typography variant="caption" color="text.secondary">{item.label}</Typography>
+              <Typography variant="h6" sx={{ mt: 0.25 }}>{item.value}</Typography>
+              <Typography variant="caption" color="text.secondary">{item.helper}</Typography>
+            </Paper>
+          </Grid>
+        ))}
+      </Grid>
+
+      <Paper variant="outlined" sx={{ p: { xs: 1.5, md: 2 } }}>
+        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
+          <Typography variant="h6">Filtros de consulta</Typography>
+          <Button size="small" variant="text" startIcon={<RestartAltOutlined />} onClick={limpiarFiltros}>Limpiar</Button>
+        </Stack>
+      <Grid container spacing={2}>
         <Grid size={{xs: 12, sm: 3}}>
           <TextField
             label="Buscar por cliente"
@@ -829,7 +884,9 @@ export default function Ventas() {
           />
         </Grid>
       </Grid>
+      </Paper>
 
+      <Paper variant="outlined" sx={{ p: 1, overflow: "hidden" }}>
       <div style={{ height: 620, width: "100%" }} onContextMenu={handleGridContextMenu}>
         <DataGrid
           loading={loading}
@@ -843,6 +900,7 @@ export default function Ventas() {
           rowCount={rowCount}
         />
       </div>
+      </Paper>
 
       <Menu
         open={Boolean(contextMenuAnchor)}
@@ -880,6 +938,6 @@ export default function Ventas() {
           if (node.path) navigate(node.path);
         }}
       />
-    </Paper>
+    </Stack>
   );
 }

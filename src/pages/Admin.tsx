@@ -1482,7 +1482,7 @@ export default function Admin() {
         </SettingsSection>
       )}
 
-      {canManageAdmin && (
+      {false && canManageAdmin && (
         <SettingsSection
           title="Actualizacion masiva"
           description="Filtros para actualizar productos existentes por combinaciones."
@@ -1634,7 +1634,7 @@ export default function Admin() {
         </SettingsSection>
       )}
 
-      {canManageAdmin && (
+      {false && canManageAdmin && (
         <SettingsSection
           title="Creacion masiva"
           description="Crea codigos nuevos usando combinaciones de tipo, genero, tela, talla y color."
@@ -1780,7 +1780,7 @@ export default function Admin() {
         </SettingsSection>
       )}
 
-      {canManageAdmin && (
+      {false && canManageAdmin && (
         <SettingsSection
           title="Carga masiva de productos base"
           description="Reglas para generar o actualizar combinaciones base."

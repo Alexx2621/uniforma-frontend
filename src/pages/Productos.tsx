@@ -17,6 +17,7 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  Stack,
 } from "@mui/material";
 
 import { DataGrid, GridColDef } from "@mui/x-data-grid";
@@ -47,11 +48,28 @@ interface FormProducto {
   mermaPorcentaje: number;
 }
 
+type ProductListFilters = {
+  tipo: string;
+  genero: string;
+  categoriaId: string;
+  telaId: string;
+  tallaId: string;
+  colorId: string;
+};
+
+const emptyProductFilters = (): ProductListFilters => ({
+  tipo: "", genero: "", categoriaId: "", telaId: "", tallaId: "", colorId: "",
+});
+const normalize = (value: unknown) => `${value ?? ""}`.trim().toLocaleLowerCase("es-GT");
+const uniqueOptions = (values: unknown[]) => Array.from(new Set(values.map((value) => `${value ?? ""}`.trim()).filter(Boolean)))
+  .sort((a, b) => a.localeCompare(b, "es"));
+
 export default function Productos() {
   const [productos, setProductos] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [openForm, setOpenForm] = useState(false);
   const [filter, setFilter] = useState("");
+  const [listFilters, setListFilters] = useState<ProductListFilters>(emptyProductFilters);
   const [editar, setEditar] = useState(false);
   const navigate = useNavigate();
 
@@ -104,6 +122,7 @@ export default function Productos() {
         telaNombre: p.tela?.nombre ?? "",
         tallaNombre: p.talla?.nombre ?? "",
         colorNombre: p.color?.nombre ?? "",
+        categoriaNombre: p.categoria?.nombre ?? "",
       }));
       setProductos(parsed);
     } catch (error) {
@@ -244,27 +263,53 @@ export default function Productos() {
     [canManageProducts, editarProducto, eliminar]
   );
 
-  const filtrados = useMemo(
-    () =>
-      productos.filter((p) =>
-        p.codigo?.toLowerCase().includes(filter.toLowerCase())
-      ),
-    [productos, filter]
-  );
+  const typeOptions = useMemo(() => uniqueOptions(productos.map((product) => product.tipo)), [productos]);
+  const genderOptions = useMemo(() => uniqueOptions(productos.map((product) => product.genero)), [productos]);
+  const filtrados = useMemo(() => {
+    const query = normalize(filter);
+    return productos.filter((product) => {
+      const searchable = normalize([product.codigo, product.nombre, product.tipo, product.genero, product.telaNombre, product.tallaNombre, product.colorNombre, product.categoriaNombre].filter(Boolean).join(" "));
+      return (!query || searchable.includes(query))
+        && (!listFilters.tipo || normalize(product.tipo) === normalize(listFilters.tipo))
+        && (!listFilters.genero || normalize(product.genero) === normalize(listFilters.genero))
+        && (!listFilters.categoriaId || `${product.categoriaId ?? product.categoria?.id ?? ""}` === listFilters.categoriaId)
+        && (!listFilters.telaId || `${product.telaId ?? product.tela?.id ?? ""}` === listFilters.telaId)
+        && (!listFilters.tallaId || `${product.tallaId ?? product.talla?.id ?? ""}` === listFilters.tallaId)
+        && (!listFilters.colorId || `${product.colorId ?? product.color?.id ?? ""}` === listFilters.colorId);
+    });
+  }, [productos, filter, listFilters]);
+
+  const updateListFilter = (key: keyof ProductListFilters, value: string) => {
+    setListFilters((current) => ({ ...current, [key]: value }));
+  };
 
   return (
-    <Paper sx={{ p: { xs: 2, md: 3 }, height: "100%", overflow: "hidden" }}>
-      <Typography variant="h4" gutterBottom>
-        Productos
-      </Typography>
+    <Paper sx={{ p: { xs: 2, md: 3 }, overflow: "hidden" }}>
+      <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" alignItems={{ sm: "center" }} gap={1.5}>
+        <Box>
+          <Typography variant="h4">Productos</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+            {filtrados.length} de {productos.length} productos
+          </Typography>
+        </Box>
+        <Button
+          variant="contained"
+          startIcon={<AddIcon />}
+          onClick={nuevo}
+          disabled={!canManageProducts}
+          sx={{ minWidth: 190, alignSelf: { xs: "stretch", sm: "auto" } }}
+        >
+          Nuevo Producto
+        </Button>
+      </Stack>
 
-      <Divider sx={{ mb: 2 }} />
+      <Divider sx={{ my: 2 }} />
 
-      {/* HEADER */}
-      <Grid container justifyContent="space-between" alignItems="center" spacing={1.5}>
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+      <Paper variant="outlined" sx={{ p: 1.5, bgcolor: "background.default" }}>
+        <Grid container alignItems="center" spacing={1.25}>
+          <Grid size={{ xs: 12, md: 4 }}>
           <TextField
-            label="Buscar código"
+            label="Buscar código o nombre"
             size="small"
             fullWidth
             value={filter}
@@ -273,21 +318,29 @@ export default function Productos() {
               endAdornment: <SearchIcon />,
             }}
           />
+          </Grid>
+          {([
+            ["tipo", "Tipo", typeOptions.map((value) => ({ id: value, nombre: value }))],
+            ["genero", "Género", genderOptions.map((value) => ({ id: value, nombre: value }))],
+            ["categoriaId", "Categoría", categorias],
+            ["telaId", "Tela", telas],
+            ["tallaId", "Talla", tallas],
+            ["colorId", "Color", colores],
+          ] as Array<[keyof ProductListFilters, string, any[]]>).map(([key, label, options]) => (
+            <Grid key={key} size={{ xs: 6, sm: 4, md: 2 }}>
+              <TextField select size="small" fullWidth label={label} value={listFilters[key]} onChange={(event) => updateListFilter(key, event.target.value)}>
+                <MenuItem value="">Todos</MenuItem>
+                {options.map((option) => <MenuItem key={option.id} value={`${option.id}`}>{option.nombre}</MenuItem>)}
+              </TextField>
+            </Grid>
+          ))}
+          <Grid size={{ xs: 12 }}>
+            <Stack direction="row" justifyContent="flex-end">
+              <Button size="small" onClick={() => { setFilter(""); setListFilters(emptyProductFilters()); }}>Limpiar filtros</Button>
+            </Stack>
+          </Grid>
         </Grid>
-
-        <Grid size={{ xs: 12, sm: 6, md: 3 }} sx={{ display: "flex", justifyContent: { xs: "stretch", sm: "flex-end" } }}>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={nuevo}
-            disabled={!canManageProducts}
-            fullWidth
-            sx={{ maxWidth: { sm: 220 } }}
-          >
-            Nuevo Producto
-          </Button>
-        </Grid>
-      </Grid>
+      </Paper>
 
       <Divider sx={{ my: 2 }} />
 

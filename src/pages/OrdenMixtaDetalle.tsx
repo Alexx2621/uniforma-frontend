@@ -27,6 +27,14 @@ import Swal from "sweetalert2";
 import { api } from "../api/axios";
 import { formatCurrency } from "../utils/currency";
 
+const distribuirPago = (montoSolicitado: number, saldoVenta: number, saldoPedido: number) => {
+  const total = Math.max(0, saldoVenta) + Math.max(0, saldoPedido);
+  const monto = Math.min(Math.max(0, montoSolicitado), total);
+  if (total <= 0) return { venta: 0, pedido: 0 };
+  const venta = Math.round((saldoVenta > 0 && saldoPedido > 0 ? monto * saldoVenta / total : saldoVenta > 0 ? monto : 0) * 100) / 100;
+  return { venta, pedido: Math.round((monto - venta) * 100) / 100 };
+};
+
 export default function OrdenMixtaDetalle() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -66,12 +74,21 @@ export default function OrdenMixtaDetalle() {
   const saldoTotal = Number(orden?.saldoTotal || 0);
   const saldoVenta = Number(orden?.saldoVenta || 0);
   const saldoPedido = Number(orden?.saldoPedido || 0);
+  const distribucionPago = distribuirPago(Number(pago.monto || 0), saldoVenta, saldoPedido);
+  const pagosHistorial = [
+    ...(orden?.venta?.pagos || []).map((item: any) => ({ ...item, documento: "Venta", aplicado: Number(item.monto || 0) })),
+    ...(orden?.pedido?.pagos || []).map((item: any) => ({ ...item, documento: "Produccion", aplicado: Number(item.monto || 0) })),
+  ].sort((a: any, b: any) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
 
   const registrarPago = async () => {
     if (guardandoPagoRef.current) return;
-    const monto = Number(saldoTotal || 0);
+    const monto = Number(pago.monto || 0);
     if (monto <= 0) {
-      Swal.fire("Validacion", "La orden mixta no tiene saldo pendiente", "warning");
+      Swal.fire("Validacion", "Ingresa un monto mayor a cero", "warning");
+      return;
+    }
+    if (monto > saldoTotal) {
+      Swal.fire("Validacion", "El pago no puede superar el saldo pendiente", "warning");
       return;
     }
     if (metodoRequiereReferencia && !pago.referencia.trim()) {
@@ -85,7 +102,7 @@ export default function OrdenMixtaDetalle() {
 
     const confirmar = await Swal.fire({
       title: "Registrar pago",
-      text: `Se aplicaran ${formatCurrency(monto)} entre la venta y el pedido relacionados a esta orden mixta.`,
+      html: `<div style="text-align:left"><p>El sistema distribuira <b>${formatCurrency(monto)}</b> proporcionalmente:</p><div style="background:#f4f7fb;border-radius:10px;padding:12px"><b>Venta:</b> ${formatCurrency(distribucionPago.venta)}<br/><b>Produccion:</b> ${formatCurrency(distribucionPago.pedido)}<br/><b>Saldo resultante:</b> ${formatCurrency(saldoTotal - monto)}</div></div>`,
       icon: "question",
       showCancelButton: true,
       confirmButtonText: "Registrar",
@@ -192,11 +209,16 @@ export default function OrdenMixtaDetalle() {
                   fullWidth
                   type="number"
                   label="Monto"
-                  value={saldoTotal}
-                  disabled
+                  value={pago.monto}
+                  onChange={(e) => setPago((prev) => ({ ...prev, monto: Math.max(0, Number(e.target.value || 0)) }))}
                   inputProps={{ min: 0, step: "0.01" }}
-                  helperText="Saldo pendiente"
+                  helperText={`Maximo ${formatCurrency(saldoTotal)}`}
                 />
+                <Stack direction="row" spacing={0.5} sx={{ mt: 0.5 }}>
+                  {[25, 50, 100].map((percent) => (
+                    <Button key={percent} size="small" onClick={() => setPago((prev) => ({ ...prev, monto: Math.round(saldoTotal * percent) / 100 }))}>{percent}%</Button>
+                  ))}
+                </Stack>
               </Grid>
               <Grid size={{ xs: 12, md: 2 }}>
                 <FormControl fullWidth>
@@ -254,7 +276,33 @@ export default function OrdenMixtaDetalle() {
               </Grid>
             </Grid>
           )}
+          {saldoTotal > 0 && Number(pago.monto || 0) > 0 && (
+            <Alert severity="info">
+              Distribucion automatica estimada: {formatCurrency(distribucionPago.venta)} a venta y {formatCurrency(distribucionPago.pedido)} a produccion. Saldo resultante: {formatCurrency(Math.max(0, saldoTotal - Number(pago.monto || 0)))}.
+            </Alert>
+          )}
         </Stack>
+      </Paper>
+
+      <Paper sx={{ p: 2 }}>
+        <Typography variant="h6" sx={{ mb: 1.5 }}>Historial de pagos</Typography>
+        <TableContainer>
+          <Table size="small">
+            <TableHead><TableRow><TableCell>Fecha</TableCell><TableCell>Documento</TableCell><TableCell>Metodo</TableCell><TableCell>Referencia</TableCell><TableCell align="right">Monto aplicado</TableCell></TableRow></TableHead>
+            <TableBody>
+              {pagosHistorial.map((item: any, index: number) => (
+                <TableRow key={`${item.documento}-${item.id || index}`}>
+                  <TableCell>{item.fecha ? new Date(item.fecha).toLocaleString() : "—"}</TableCell>
+                  <TableCell><Chip size="small" label={item.documento} color={item.documento === "Venta" ? "primary" : "success"} variant="outlined" /></TableCell>
+                  <TableCell>{item.metodo || "—"}</TableCell>
+                  <TableCell>{item.referencia || "—"}</TableCell>
+                  <TableCell align="right">{formatCurrency(item.aplicado)}</TableCell>
+                </TableRow>
+              ))}
+              {!pagosHistorial.length && <TableRow><TableCell colSpan={5} align="center" sx={{ py: 4, color: "text.secondary" }}>Aun no hay pagos registrados.</TableCell></TableRow>}
+            </TableBody>
+          </Table>
+        </TableContainer>
       </Paper>
 
       <Paper sx={{ p: 2 }}>

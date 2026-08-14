@@ -5,6 +5,12 @@ import {
   Box,
   Button,
   Chip,
+  Collapse,
+  Checkbox,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Divider,
   FormControl,
   Grid,
@@ -28,6 +34,10 @@ import EditOutlined from "@mui/icons-material/EditOutlined";
 import SaveOutlined from "@mui/icons-material/SaveOutlined";
 import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import CallSplitOutlined from "@mui/icons-material/CallSplitOutlined";
+import Inventory2Outlined from "@mui/icons-material/Inventory2Outlined";
+import PrecisionManufacturingOutlined from "@mui/icons-material/PrecisionManufacturingOutlined";
+import TuneOutlined from "@mui/icons-material/TuneOutlined";
+import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import Swal from "sweetalert2";
 import { io, Socket } from "socket.io-client";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -46,6 +56,9 @@ type Producto = {
   precio: number;
   tipo?: string | null;
   genero?: string | null;
+  stockMax?: number | null;
+  mermaPorcentaje?: number | null;
+  categoria?: { id?: number; nombre?: string | null } | null;
   telaId?: number | null;
   tallaId?: number | null;
   colorId?: number | null;
@@ -57,6 +70,16 @@ type Producto = {
   color?: { id?: number; nombre?: string | null } | null;
 };
 
+type BordadoArticulo = {
+  key: number;
+  monto: number;
+  color: string;
+  tamano: string;
+  posicion: string;
+  observaciones: string;
+  imagenUrl: string;
+};
+
 type Linea = {
   key: number;
   productoId: number;
@@ -65,7 +88,16 @@ type Linea = {
   cantidad: number;
   precioUnit: number;
   bordado: number;
+  bordadoActivo: boolean;
+  bordados: BordadoArticulo[];
+  bordadoColor: string;
+  bordadoTamano: string;
+  bordadoPosicion: string;
+  bordadoObservaciones: string;
+  bordadoImagenUrl: string;
   descuento: number;
+  estiloEspecial?: boolean;
+  estiloEspecialMonto?: number;
   descripcion: string;
   stock: number | null;
   controlaInventario: boolean;
@@ -78,7 +110,16 @@ const lineBase: Omit<Linea, "key"> = {
   cantidad: 1,
   precioUnit: 0,
   bordado: 0,
+  bordadoActivo: false,
+  bordados: [],
+  bordadoColor: "FULL COLOR",
+  bordadoTamano: "NORMAL",
+  bordadoPosicion: "PECHO IZQUIERDO",
+  bordadoObservaciones: "",
+  bordadoImagenUrl: "",
   descuento: 0,
+  estiloEspecial: false,
+  estiloEspecialMonto: 0,
   descripcion: "",
   stock: null,
   controlaInventario: false,
@@ -111,12 +152,67 @@ const resolveColorNombre = (prod: Producto | undefined, colores: any[]) => {
   return prod.color?.nombre || (prod as any).colorNombre || colores.find((c) => Number(c.id) === Number(colorId))?.nombre || "N/D";
 };
 
-const calcularSubtotal = (linea: Pick<Linea, "cantidad" | "precioUnit" | "bordado" | "descuento">) => {
+const upperText = (value: unknown, fallback = "N/D") =>
+  `${value ?? ""}`.trim().toLocaleUpperCase("es-GT") || fallback;
+
+const normalizeSearch = (value: unknown) =>
+  upperText(value, "").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+const getBordadoKey = () => Date.now() + Math.floor(Math.random() * 1000);
+
+const buildBordadoDesdeLinea = (linea: Linea): BordadoArticulo | null => {
+  if (!linea.bordadoActivo) return null;
+  const monto = Number(linea.bordado) || 0;
+  const observaciones = `${linea.bordadoObservaciones || ""}`.trim();
+  const imagenUrl = linea.bordadoImagenUrl || "";
+  if (monto <= 0 && !observaciones && !imagenUrl) return null;
+  return {
+    key: getBordadoKey(),
+    monto,
+    color: `${linea.bordadoColor || "FULL COLOR"}`.trim(),
+    tamano: `${linea.bordadoTamano || "NORMAL"}`.trim(),
+    posicion: `${linea.bordadoPosicion || "PECHO IZQUIERDO"}`.trim(),
+    observaciones,
+    imagenUrl,
+  };
+};
+
+const bordadosIguales = (a: BordadoArticulo, b: BordadoArticulo) =>
+  Number(a.monto || 0) === Number(b.monto || 0) &&
+  upperText(a.color, "") === upperText(b.color, "") &&
+  upperText(a.tamano, "") === upperText(b.tamano, "") &&
+  upperText(a.posicion, "") === upperText(b.posicion, "") &&
+  upperText(a.observaciones, "") === upperText(b.observaciones, "") &&
+  `${a.imagenUrl || ""}` === `${b.imagenUrl || ""}`;
+
+const agregarBordadoSiNoExiste = (bordados: BordadoArticulo[], bordado: BordadoArticulo | null) =>
+  bordado && !bordados.some((item) => bordadosIguales(item, bordado)) ? [...bordados, bordado] : bordados;
+
+const getBordadoTotal = (bordados: BordadoArticulo[]) =>
+  bordados.reduce((sum, bordado) => sum + Number(bordado.monto || 0), 0);
+
+const formatDetalleObservaciones = (descripcion: string, bordados: BordadoArticulo[]) => {
+  const posiciones = Array.from(new Set(bordados.map((bordado) => upperText(bordado.posicion, "")).filter(Boolean)));
+  const prefix = posiciones.length ? `BORDADO ${posiciones.join(" / ")}.` : "";
+  const texto = `${descripcion || ""}`.trim().replace(/^BORDADO\b.*?\.\s*/i, "");
+  return [prefix, texto].filter(Boolean).join(" ");
+};
+
+const fileToDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(`${reader.result || ""}`);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+
+const calcularSubtotal = (linea: Pick<Linea, "cantidad" | "precioUnit" | "bordado" | "descuento" | "estiloEspecial" | "estiloEspecialMonto">) => {
   const cantidad = Number(linea.cantidad || 0);
   const precio = Number(linea.precioUnit || 0);
   const bordado = Number(linea.bordado || 0);
+  const estiloEspecial = linea.estiloEspecial ? Number(linea.estiloEspecialMonto || 0) : 0;
   const descuento = 1 - Number(linea.descuento || 0) / 100;
-  return Math.round(cantidad * (precio * descuento + bordado) * 100) / 100;
+  return Math.round(cantidad * ((precio + estiloEspecial) * descuento + bordado) * 100) / 100;
 };
 
 export default function OrdenMixtaNueva() {
@@ -145,10 +241,13 @@ export default function OrdenMixtaNueva() {
   const [editingKey, setEditingKey] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [filtroTipo, setFiltroTipo] = useState("");
+  const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
   const [filtroGenero, setFiltroGenero] = useState("");
   const [filtroTela, setFiltroTela] = useState("");
   const [filtroTalla, setFiltroTalla] = useState("");
   const [filtroColor, setFiltroColor] = useState("");
+  const [bordadosModalOpen, setBordadosModalOpen] = useState(false);
+  const [bordadoPreviewOpen, setBordadoPreviewOpen] = useState(false);
   const [documentoBorradorId, setDocumentoBorradorId] = useState<number | null>(null);
   const [borradorGuardadoEn, setBorradorGuardadoEn] = useState("");
   const [borradorEstado, setBorradorEstado] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -159,6 +258,7 @@ export default function OrdenMixtaNueva() {
   const savingRef = useRef(false);
   const autorizacionSocketRef = useRef<Socket | null>(null);
   const autorizacionPendienteRef = useRef<number | null>(null);
+  const complementoSugeridoProductoIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     const cargar = async () => {
@@ -224,10 +324,11 @@ export default function OrdenMixtaNueva() {
       setLinea({
         ...lineBase,
         ...(data?.capturaLinea || {}),
+        bordados: Array.isArray(data?.capturaLinea?.bordados) ? data.capturaLinea.bordados : [],
         key: Number(data?.capturaLinea?.key || Date.now()),
         bodegaId: data?.capturaLinea?.bodegaId || encabezado.bodegaId || (auth.bodegaId ? Number(auth.bodegaId) : ""),
       });
-      setLineas(Array.isArray(data?.lineas) ? data.lineas : []);
+      setLineas(Array.isArray(data?.lineas) ? data.lineas.map((item: any) => ({ ...lineBase, ...item, bordados: Array.isArray(item?.bordados) ? item.bordados : [] })) : []);
       setEditingKey(data?.editingKey ?? null);
       setFiltroTipo(`${filtros.tipo || ""}`);
       setFiltroGenero(`${filtros.genero || ""}`);
@@ -326,7 +427,7 @@ export default function OrdenMixtaNueva() {
   const bodegaOrigenLineaId = Number(linea.bodegaId || bodegaId || 0) || null;
   const bodegaOrigenLinea = bodegas.find((bodega) => Number(bodega.id) === Number(bodegaOrigenLineaId)) || null;
   const controlaInventarioLinea = linea.tipoOperacion === "venta" && Boolean(bodegaOrigenLinea?.usaInventarioVentas);
-  const requiereReferencia = metodoPago !== "efectivo";
+  const requiereReferencia = Number(anticipoTotal || 0) > 0 && metodoPago !== "efectivo" && metodoPago !== "orden_compra";
   const subtotalVenta = useMemo(
     () => lineas.filter((item) => item.tipoOperacion === "venta").reduce((sum, item) => sum + calcularSubtotal(item), 0),
     [lineas],
@@ -347,7 +448,14 @@ export default function OrdenMixtaNueva() {
         : 0;
   const anticipoPedido = Math.max(0, Math.round((Number(anticipoTotal || 0) - anticipoVenta) * 100) / 100);
   const saldoTotal = Math.max(0, total - Number(anticipoTotal || 0));
+  const anticipoExcedeTotal = Number(anticipoTotal || 0) > total;
   const pedidoSinAnticipo = subtotalPedido > 0 && anticipoPedido <= 0 && metodoPago !== "orden_compra";
+
+  useEffect(() => {
+    if (total >= 0 && Number(anticipoTotal || 0) > total) {
+      setAnticipoTotal(Math.round(total * 100) / 100);
+    }
+  }, [total, anticipoTotal]);
   const puedeCrearProduccionSinAutorizacion =
     auth.rol === "ADMIN" ||
     hasPermission(auth.rol, auth.permisos, "produccion.autorizar-pedidos") ||
@@ -553,6 +661,10 @@ export default function OrdenMixtaNueva() {
     () => filtrarProductos({ tipo: filtroTipo, genero: filtroGenero, tela: filtroTela, talla: filtroTalla, color: filtroColor }),
     [filtrarProductos, filtroTipo, filtroGenero, filtroTela, filtroTalla, filtroColor],
   );
+  const tallasBusquedaExacta = useMemo(
+    () => new Set(tallas.map((talla) => normalizeSearch(talla.nombre))),
+    [tallas],
+  );
   const productoDetectado = productosCoincidentes.length === 1 ? productosCoincidentes[0] : undefined;
 
   useEffect(() => {
@@ -641,7 +753,111 @@ export default function OrdenMixtaNueva() {
     }
   };
 
-  const agregarLinea = () => {
+  const seleccionarProducto = (producto: Producto | null) => {
+    if (!producto) {
+      setFiltroTipo("");
+      setFiltroGenero("");
+      setFiltroTela("");
+      setFiltroTalla("");
+      setFiltroColor("");
+      return;
+    }
+    setFiltroTipo(producto.tipo || "");
+    setFiltroGenero(producto.genero || "");
+    setFiltroTela(resolveTelaNombre(producto, telas) === "N/D" ? "" : resolveTelaNombre(producto, telas));
+    setFiltroTalla(resolveTallaNombre(producto, tallas) === "N/D" ? "" : resolveTallaNombre(producto, tallas));
+    setFiltroColor(resolveColorNombre(producto, colores) === "N/D" ? "" : resolveColorNombre(producto, colores));
+  };
+
+  const getTipoComplementario = (tipo?: string | null) => {
+    const normalized = normalizeSearch(tipo);
+    if (normalized.includes("FILIPINA")) return "PANTALON";
+    if (normalized.includes("PANTALON")) return "FILIPINA";
+    return "";
+  };
+
+  const buscarProductoComplementario = (producto?: Producto) => {
+    const tipoComplementario = getTipoComplementario(producto?.tipo);
+    if (!producto || !tipoComplementario) return null;
+    return productos.find((candidate) =>
+      normalizeSearch(candidate.tipo) === tipoComplementario &&
+      normalizeSearch(candidate.genero) === normalizeSearch(producto.genero) &&
+      normalizeSearch(resolveTelaNombre(candidate, telas)) === normalizeSearch(resolveTelaNombre(producto, telas)) &&
+      normalizeSearch(resolveTallaNombre(candidate, tallas)) === normalizeSearch(resolveTallaNombre(producto, tallas)) &&
+      normalizeSearch(resolveColorNombre(candidate, colores)) === normalizeSearch(resolveColorNombre(producto, colores)),
+    ) || null;
+  };
+
+  const sugerirProductoComplementario = async (producto?: Producto, captura?: Linea) => {
+    const complementario = buscarProductoComplementario(producto);
+    if (!complementario || !captura) return;
+    const result = await Swal.fire({
+      title: `Agregar ${getTipoComplementario(producto?.tipo).toLowerCase()}?`,
+      text: `Se encontro ${complementario.codigo}. Puedo rellenar la captura con la misma operacion, tela, talla, color y genero para que lo revises antes de agregarlo.`,
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "Rellenar campos",
+      cancelButtonText: "No",
+      confirmButtonColor: "#1f3f87",
+    });
+    if (!result.isConfirmed) return;
+    complementoSugeridoProductoIdRef.current = Number(complementario.id);
+    setLinea({
+      ...lineBase,
+      key: Date.now(),
+      tipoOperacion: captura.tipoOperacion,
+      bodegaId: captura.bodegaId || bodegaId || "",
+      cantidad: captura.cantidad,
+      descuento: captura.descuento,
+    });
+    setEditingKey(null);
+    setFiltroTipo(complementario.tipo || "");
+    setFiltroGenero(complementario.genero || "");
+    setFiltroTela(resolveTelaNombre(complementario, telas) === "N/D" ? "" : resolveTelaNombre(complementario, telas));
+    setFiltroTalla(resolveTallaNombre(complementario, tallas) === "N/D" ? "" : resolveTallaNombre(complementario, tallas));
+    setFiltroColor(resolveColorNombre(complementario, colores) === "N/D" ? "" : resolveColorNombre(complementario, colores));
+  };
+
+  const limpiarBordadoActual = () => setLinea((prev) => ({
+    ...prev,
+    bordado: 0,
+    bordadoColor: "FULL COLOR",
+    bordadoTamano: "NORMAL",
+    bordadoPosicion: "PECHO IZQUIERDO",
+    bordadoObservaciones: "",
+    bordadoImagenUrl: "",
+  }));
+
+  const agregarBordadoActual = () => {
+    const bordado = buildBordadoDesdeLinea(linea);
+    if (!bordado) {
+      void Swal.fire("Validacion", "Ingresa un monto, una imagen u observaciones antes de agregar el bordado", "warning");
+      return;
+    }
+    if (!bordado.color || !bordado.tamano || !bordado.posicion) {
+      void Swal.fire("Validacion", "Color, tamano y posicion de bordado son obligatorios", "warning");
+      return;
+    }
+    if (linea.bordados.some((item) => bordadosIguales(item, bordado))) {
+      void Swal.fire("Bordado duplicado", "Este bordado ya esta agregado a la prenda", "info");
+      return;
+    }
+    setLinea((prev) => ({ ...prev, bordados: [...prev.bordados, bordado], bordadoActivo: true, bordado: 0, bordadoObservaciones: "", bordadoImagenUrl: "" }));
+  };
+
+  const editarBordadoActual = (bordado: BordadoArticulo) => setLinea((prev) => ({
+    ...prev,
+    bordadoActivo: true,
+    bordado: bordado.monto,
+    bordadoColor: bordado.color,
+    bordadoTamano: bordado.tamano,
+    bordadoPosicion: bordado.posicion,
+    bordadoObservaciones: bordado.observaciones,
+    bordadoImagenUrl: bordado.imagenUrl,
+    bordados: prev.bordados.filter((item) => item.key !== bordado.key),
+  }));
+
+  const agregarLinea = async () => {
     if (!linea.productoId) {
       void Swal.fire("Producto requerido", "Selecciona un producto para agregarlo.", "warning");
       return;
@@ -676,10 +892,31 @@ export default function OrdenMixtaNueva() {
         return;
       }
     }
+    const bordadoEnCaptura = buildBordadoDesdeLinea(linea);
+    const bordadosFinales = agregarBordadoSiNoExiste(linea.bordados || [], bordadoEnCaptura);
+    const tieneBordado = linea.bordadoActivo || bordadosFinales.length > 0;
+    if (tieneBordado && (!bordadosFinales.length || bordadosFinales.some((bordado) => !bordado.color || !bordado.tamano || !bordado.posicion))) {
+      void Swal.fire("Validacion", "Agrega al menos un bordado con color, tamano y posicion", "warning");
+      return;
+    }
+    const lineaFinal: Linea = {
+      ...linea,
+      bordadoActivo: tieneBordado,
+      bordados: bordadosFinales,
+      bordado: getBordadoTotal(bordadosFinales),
+      bordadoColor: bordadosFinales[0]?.color || "",
+      bordadoTamano: bordadosFinales[0]?.tamano || "",
+      bordadoPosicion: bordadosFinales[0]?.posicion || "",
+      bordadoObservaciones: bordadosFinales[0]?.observaciones || "",
+      bordadoImagenUrl: bordadosFinales[0]?.imagenUrl || "",
+      descripcion: formatDetalleObservaciones(linea.descripcion, bordadosFinales),
+    };
+    const productoAgregado = productos.find((producto) => Number(producto.id) === Number(linea.productoId));
+    const debeSugerir = editingKey == null && complementoSugeridoProductoIdRef.current !== Number(linea.productoId);
     setLineas((prev) =>
       editingKey == null
-        ? [...prev, { ...linea, key: Date.now() }]
-        : prev.map((row) => (row.key === editingKey ? { ...linea, key: editingKey } : row)),
+        ? [...prev, { ...lineaFinal, key: Date.now() }]
+        : prev.map((row) => (row.key === editingKey ? { ...lineaFinal, key: editingKey } : row)),
     );
     setLinea({ ...lineBase, key: Date.now(), bodegaId: bodegaId || "" });
     setEditingKey(null);
@@ -688,6 +925,8 @@ export default function OrdenMixtaNueva() {
     setFiltroTela("");
     setFiltroTalla("");
     setFiltroColor("");
+    complementoSugeridoProductoIdRef.current = null;
+    if (debeSugerir) await sugerirProductoComplementario(productoAgregado, lineaFinal);
   };
 
   const editarLinea = (item: Linea) => {
@@ -711,11 +950,15 @@ export default function OrdenMixtaNueva() {
       void Swal.fire("Bodega requerida", "Selecciona la bodega del documento.", "warning");
       return;
     }
+    if (anticipoExcedeTotal) {
+      void Swal.fire("Anticipo invalido", "El anticipo no puede superar el total de la orden.", "warning");
+      return;
+    }
     if (requiereReferencia && !referenciaPago.trim()) {
       void Swal.fire("Referencia requerida", "Ingresa la referencia del pago.", "warning");
       return;
     }
-    if (metodoPago === "deposito_bancario" && !bancoPago.trim()) {
+    if (Number(anticipoTotal || 0) > 0 && metodoPago === "deposito_bancario" && !bancoPago.trim()) {
       void Swal.fire("Banco requerido", "Ingresa el banco del depósito.", "warning");
       return;
     }
@@ -806,11 +1049,24 @@ export default function OrdenMixtaNueva() {
 
     const confirm = await Swal.fire({
       title: "Generar orden mixta",
-      text: "Se creara una venta para inventario y un pedido para producción según el detalle.",
+      html: `<div style="text-align:left;line-height:1.55">
+        <p style="color:#64748b;margin-top:0">El sistema distribuira automaticamente el anticipo de forma proporcional entre venta y produccion.</p>
+        <table style="width:100%;border-collapse:collapse">
+          <tr><td style="padding:7px;border-bottom:1px solid #e5e7eb">Venta desde inventario</td><td style="padding:7px;text-align:right;border-bottom:1px solid #e5e7eb"><b>${formatCurrency(subtotalVenta)}</b></td></tr>
+          <tr><td style="padding:7px;border-bottom:1px solid #e5e7eb">Pedido de produccion</td><td style="padding:7px;text-align:right;border-bottom:1px solid #e5e7eb"><b>${formatCurrency(subtotalPedido)}</b></td></tr>
+          <tr><td style="padding:7px;border-bottom:1px solid #e5e7eb">Envio</td><td style="padding:7px;text-align:right;border-bottom:1px solid #e5e7eb"><b>${formatCurrency(envioMonto)}</b></td></tr>
+          <tr><td style="padding:9px 7px">Total</td><td style="padding:9px 7px;text-align:right"><b>${formatCurrency(total)}</b></td></tr>
+        </table>
+        <div style="background:#f4f7fb;border-radius:10px;padding:12px;margin-top:12px">
+          <b>Anticipo: ${formatCurrency(anticipoTotal)}</b><br/>
+          <span style="color:#475569">Venta: ${formatCurrency(anticipoVenta)} · Produccion: ${formatCurrency(anticipoPedido)} · Saldo: ${formatCurrency(saldoTotal)}</span>
+        </div>
+      </div>`,
       icon: "question",
       showCancelButton: true,
       confirmButtonText: "Generar",
       cancelButtonText: "Cancelar",
+      width: 680,
     });
     if (!confirm.isConfirmed) return;
     if (savingRef.current) return;
@@ -853,8 +1109,9 @@ export default function OrdenMixtaNueva() {
   };
 
   return (
-    <Stack spacing={2}>
-      <Stack direction="row" justifyContent="space-between" alignItems="center">
+    <Stack spacing={2.25}>
+      <Paper variant="outlined" sx={{ p: { xs: 1.5, md: 2 }, position: "sticky", top: { xs: 60, md: 68 }, zIndex: 10, bgcolor: "background.paper" }}>
+      <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" alignItems={{ xs: "stretch", sm: "center" }} gap={1.5}>
         <div>
           <Typography variant="h4" sx={{ display: "flex", alignItems: "center", gap: 1 }}>
             <CallSplitOutlined /> Nueva orden mixta
@@ -863,10 +1120,13 @@ export default function OrdenMixtaNueva() {
             Usa venta para lo que sale de stock y pedido para lo que debe producirse.
           </Typography>
         </div>
-        <Button variant="outlined" startIcon={<ArrowBackOutlined />} onClick={() => navigate("/orden-mixta")}>
-          Volver
-        </Button>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Chip label={`${lineas.length} articulo${lineas.length === 1 ? "" : "s"}`} variant="outlined" />
+          <Chip label={formatCurrency(total)} color="primary" />
+          <Button variant="outlined" startIcon={<ArrowBackOutlined />} onClick={() => navigate("/orden-mixta")}>Volver</Button>
+        </Stack>
       </Stack>
+      </Paper>
 
       {documentoBorradorId && (
         <Alert
@@ -886,8 +1146,8 @@ export default function OrdenMixtaNueva() {
         </Alert>
       )}
 
-      <Paper sx={{ p: 2 }}>
-        <Typography variant="h6" sx={{ mb: 2 }}>Datos del documento</Typography>
+      <Paper variant="outlined" sx={{ p: { xs: 2, md: 2.5 } }}>
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}><Typography variant="overline" color="primary" fontWeight={700}>01</Typography><Typography variant="h6">Cliente y documento</Typography></Stack>
         <Grid container spacing={2}>
           <Grid size={{ xs: 12, md: 4 }}>
             <Autocomplete
@@ -945,7 +1205,25 @@ export default function OrdenMixtaNueva() {
             </FormControl>
           </Grid>
           <Grid size={{ xs: 12, md: 3 }}>
-            <TextField fullWidth type="number" label="Anticipo total" value={emptyWhenZero(anticipoTotal)} onChange={(event) => setAnticipoTotal(parseNumberInput(event.target.value))} />
+            <TextField
+              fullWidth
+              type="number"
+              label="Anticipo total"
+              value={emptyWhenZero(anticipoTotal)}
+              error={anticipoExcedeTotal}
+              helperText={anticipoExcedeTotal ? "No puede superar el total" : total > 0 ? `Maximo ${formatCurrency(total)}` : "Agrega articulos para calcularlo"}
+              inputProps={{ min: 0, max: total, step: "0.01" }}
+              onChange={(event) => setAnticipoTotal(Math.max(0, parseNumberInput(event.target.value)))}
+            />
+            {total > 0 && (
+              <Stack direction="row" spacing={0.5} sx={{ mt: 0.5 }}>
+                {[25, 50, 100].map((percent) => (
+                  <Button key={percent} size="small" variant="text" onClick={() => setAnticipoTotal(Math.round(total * percent) / 100)}>
+                    {percent}%
+                  </Button>
+                ))}
+              </Stack>
+            )}
           </Grid>
           <Grid size={{ xs: 12, md: 3 }}>
             <TextField fullWidth type="number" label="Envio" value={emptyWhenZero(envio)} onChange={(event) => setEnvio(parseNumberInput(event.target.value))} />
@@ -963,8 +1241,11 @@ export default function OrdenMixtaNueva() {
         </Grid>
       </Paper>
 
-      <Paper sx={{ p: 2 }}>
-        <Typography variant="h6" sx={{ mb: 2 }}>Agregar artículo</Typography>
+      <Paper variant="outlined" sx={{ p: { xs: 2, md: 2.5 } }}>
+        <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" alignItems={{ xs: "stretch", sm: "center" }} gap={1} sx={{ mb: 2 }}>
+          <Stack direction="row" spacing={1} alignItems="center"><Typography variant="overline" color="primary" fontWeight={700}>02</Typography><Typography variant="h6">Agregar articulo</Typography></Stack>
+          <Button size="small" variant={filtrosAbiertos ? "contained" : "outlined"} startIcon={<TuneOutlined />} endIcon={<ExpandMoreOutlined sx={{ transform: filtrosAbiertos ? "rotate(180deg)" : "none", transition: "transform 160ms" }} />} onClick={() => setFiltrosAbiertos((value) => !value)}>Filtros del producto</Button>
+        </Stack>
         <Stack spacing={1.5} sx={{ mb: 2 }}>
           {bodegaOrigenLinea && linea.tipoOperacion === "venta" && !controlaInventarioLinea ? (
             <Alert severity="warning">
@@ -980,16 +1261,18 @@ export default function OrdenMixtaNueva() {
           )}
         </Stack>
         <Grid container spacing={2} alignItems="flex-start">
-          <Grid size={{ xs: 12, sm: 6, md: 2 }}>
-            <FormControl fullWidth>
-              <InputLabel>Operacion</InputLabel>
-              <Select label="Operacion" value={linea.tipoOperacion} onChange={(event) => setLinea((prev) => ({ ...prev, tipoOperacion: event.target.value as "venta" | "pedido" }))}>
-                <MenuItem value="venta">Venta desde stock</MenuItem>
-                <MenuItem value="pedido">Pedido producción</MenuItem>
-              </Select>
-            </FormControl>
+          <Grid size={{ xs: 12 }}>
+            <Grid container spacing={1.5}>
+              <Grid size={{ xs: 12, sm: 6 }}><Button fullWidth variant="outlined" startIcon={<Inventory2Outlined />} onClick={() => setLinea((prev) => ({ ...prev, tipoOperacion: "venta" }))} sx={{ justifyContent: "flex-start", textAlign: "left", p: 1.5, borderWidth: linea.tipoOperacion === "venta" ? 2 : 1, borderColor: linea.tipoOperacion === "venta" ? "primary.main" : "divider", bgcolor: linea.tipoOperacion === "venta" ? "rgba(24,54,111,.05)" : "transparent", color: "text.primary" }}><Box><Typography fontWeight={650}>Venta desde inventario</Typography><Typography variant="caption" color="text.secondary">Entrega disponible desde una bodega</Typography></Box></Button></Grid>
+              <Grid size={{ xs: 12, sm: 6 }}><Button fullWidth variant="outlined" startIcon={<PrecisionManufacturingOutlined />} onClick={() => setLinea((prev) => ({ ...prev, tipoOperacion: "pedido" }))} sx={{ justifyContent: "flex-start", textAlign: "left", p: 1.5, borderWidth: linea.tipoOperacion === "pedido" ? 2 : 1, borderColor: linea.tipoOperacion === "pedido" ? "success.main" : "divider", bgcolor: linea.tipoOperacion === "pedido" ? "rgba(22,163,74,.05)" : "transparent", color: "text.primary" }}><Box><Typography fontWeight={650}>Pedido de produccion</Typography><Typography variant="caption" color="text.secondary">Producto que debe fabricarse</Typography></Box></Button></Grid>
+            </Grid>
           </Grid>
-          <Grid size={{ xs: 12, sm: 6, md: 2 }}>
+          <Grid size={{ xs: 12 }}>
+            <Grid container spacing={2} alignItems="flex-start">
+              <Grid size={{ xs: 12, lg: 9 }}>
+                <Paper variant="outlined" sx={{ p: 2, bgcolor: "background.default" }}>
+                  <Grid container spacing={1.5}>
+          <Grid size={{ xs: 12, sm: 4 }}>
             <FormControl fullWidth>
               <InputLabel>Bodega origen</InputLabel>
               <Select
@@ -1012,7 +1295,74 @@ export default function OrdenMixtaNueva() {
               </Select>
             </FormControl>
           </Grid>
-          <Grid size={{ xs: 12, sm: 6, md: 2 }}>
+          <Grid size={{ xs: 12, sm: 8 }}>
+            <Autocomplete
+              options={productos}
+              value={productoDetectado || null}
+              getOptionLabel={(producto) =>
+                `${upperText(producto.codigo)} · ${upperText(producto.nombre)} · TALLA ${upperText(resolveTallaNombre(producto, tallas))}`
+              }
+              filterOptions={(options, { inputValue }) => {
+                const terms = normalizeSearch(inputValue).split(/\s+/).filter(Boolean);
+                if (!terms.length) return options;
+                return options.filter((producto) => {
+                  const tallaProducto = normalizeSearch(resolveTallaNombre(producto, tallas));
+                  const values = [
+                    producto.codigo,
+                    producto.nombre,
+                    producto.categoria?.nombre,
+                    producto.tipo,
+                    producto.genero,
+                    resolveTelaNombre(producto, telas),
+                    resolveTallaNombre(producto, tallas),
+                    resolveColorNombre(producto, colores),
+                  ].map(normalizeSearch);
+                  const haystack = values.join(" ");
+                  return terms.every((term) =>
+                    tallasBusquedaExacta.has(term) ? tallaProducto === term : haystack.includes(term),
+                  );
+                });
+              }}
+              isOptionEqualToValue={(option, value) => Number(option.id) === Number(value.id)}
+              onChange={(_, value) => seleccionarProducto(value)}
+              renderOption={(props, producto) => {
+                const categoria = upperText(producto.categoria?.nombre);
+                const tipo = upperText(producto.tipo);
+                const detalles = [
+                  categoria !== tipo ? `CATEGORÍA ${categoria}` : null,
+                  `TIPO ${tipo}`,
+                  `GÉNERO ${upperText(producto.genero)}`,
+                  `TELA ${upperText(resolveTelaNombre(producto, telas))}`,
+                  `TALLA ${upperText(resolveTallaNombre(producto, tallas))}`,
+                  `COLOR ${upperText(resolveColorNombre(producto, colores))}`,
+                  `STOCK MÁX. ${Number(producto.stockMax || 0)}`,
+                  `MERMA ${Number(producto.mermaPorcentaje || 0)}%`,
+                ].filter(Boolean);
+                return (
+                  <li {...props} key={producto.id}>
+                    <Box sx={{ width: "100%", py: 0.45 }}>
+                      <Stack direction="row" justifyContent="space-between" alignItems="center" gap={2}>
+                        <Typography variant="body2" fontWeight={500}>
+                          <Box component="span" sx={{ fontWeight: 650 }}>{upperText(producto.codigo)}</Box> · {upperText(producto.nombre)} · TALLA {upperText(resolveTallaNombre(producto, tallas))}
+                        </Typography>
+                        <Typography variant="body2" color="primary.main" fontWeight={600} sx={{ whiteSpace: "nowrap" }}>
+                          {formatCurrency(producto.precio)}
+                        </Typography>
+                      </Stack>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.45, fontWeight: 400, lineHeight: 1.45 }}>
+                        {detalles.join(" · ")}
+                      </Typography>
+                    </Box>
+                  </li>
+                );
+              }}
+              renderInput={(params) => <TextField {...params} label="BUSCAR PRODUCTO" placeholder="CÓDIGO, NOMBRE O VARIANTE" helperText="Busca por código, nombre, talla, tela o color" inputProps={{ ...params.inputProps, style: { textTransform: "uppercase" } }} />}
+            />
+          </Grid>
+          <Grid size={{ xs: 12 }}>
+            <Collapse in={filtrosAbiertos} timeout="auto">
+              <Paper variant="outlined" sx={{ p: 2, bgcolor: "background.default" }}><Grid container spacing={2}>
+          <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
             <FormControl fullWidth>
               <InputLabel>Tipo</InputLabel>
               <Select label="Tipo" value={filtroTipo} onChange={(event) => setFiltroTipo(event.target.value)}>
@@ -1023,7 +1373,7 @@ export default function OrdenMixtaNueva() {
               </Select>
             </FormControl>
           </Grid>
-          <Grid size={{ xs: 12, sm: 6, md: 2 }}>
+          <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
             <FormControl fullWidth>
               <InputLabel>Genero</InputLabel>
               <Select label="Genero" value={filtroGenero} onChange={(event) => setFiltroGenero(event.target.value)}>
@@ -1034,7 +1384,7 @@ export default function OrdenMixtaNueva() {
               </Select>
             </FormControl>
           </Grid>
-          <Grid size={{ xs: 12, sm: 6, md: 2 }}>
+          <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
             <FormControl fullWidth>
               <InputLabel>Tela</InputLabel>
               <Select label="Tela" value={filtroTela} onChange={(event) => setFiltroTela(event.target.value)}>
@@ -1045,7 +1395,7 @@ export default function OrdenMixtaNueva() {
               </Select>
             </FormControl>
           </Grid>
-          <Grid size={{ xs: 12, sm: 6, md: 2 }}>
+          <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
             <FormControl fullWidth>
               <InputLabel>Talla</InputLabel>
               <Select label="Talla" value={filtroTalla} onChange={(event) => setFiltroTalla(event.target.value)}>
@@ -1056,7 +1406,7 @@ export default function OrdenMixtaNueva() {
               </Select>
             </FormControl>
           </Grid>
-          <Grid size={{ xs: 12, sm: 6, md: 2 }}>
+          <Grid size={{ xs: 12, sm: 6, md: 2.4 }}>
             <FormControl fullWidth>
               <InputLabel>Color</InputLabel>
               <Select label="Color" value={filtroColor} onChange={(event) => setFiltroColor(event.target.value)}>
@@ -1067,7 +1417,7 @@ export default function OrdenMixtaNueva() {
               </Select>
             </FormControl>
           </Grid>
-          <Grid size={{ xs: 12, sm: 6, md: 2 }}>
+          <Grid size={{ xs: 12 }}>
             <TextField
               label="Codigo"
               fullWidth
@@ -1084,32 +1434,125 @@ export default function OrdenMixtaNueva() {
               }
             />
           </Grid>
-          <Grid size={{ xs: 6, sm: 3, md: 1 }}>
-            <TextField fullWidth type="number" label="Cant." value={emptyWhenZero(linea.cantidad)} onChange={(event) => setLinea((prev) => ({ ...prev, cantidad: parseNumberInput(event.target.value) }))} />
-          </Grid>
-          <Grid size={{ xs: 6, sm: 3, md: 1 }}>
-            <TextField fullWidth type="number" label="Precio" value={linea.precioUnit} disabled helperText="Catalogo" />
-          </Grid>
-          <Grid size={{ xs: 6, sm: 3, md: 1 }}>
-            <TextField fullWidth type="number" label="Bordado" value={emptyWhenZero(linea.bordado)} onChange={(event) => setLinea((prev) => ({ ...prev, bordado: parseNumberInput(event.target.value) }))} />
-          </Grid>
-          <Grid size={{ xs: 6, sm: 3, md: 1 }}>
-            <TextField fullWidth type="number" label="Desc. %" value={emptyWhenZero(linea.descuento)} onChange={(event) => setLinea((prev) => ({ ...prev, descuento: parseNumberInput(event.target.value) }))} />
-          </Grid>
-          <Grid size={{ xs: 12, sm: 3, md: 2 }}>
-            <Button fullWidth variant="contained" startIcon={<AddIcon />} onClick={agregarLinea} sx={{ minHeight: 40, mt: "8px" }}>
-              {editingKey == null ? "Agregar" : "Guardar"}
-            </Button>
+              </Grid></Paper>
+            </Collapse>
           </Grid>
           <Grid size={{ xs: 12 }}>
-            <TextField fullWidth label="Observación de línea" value={linea.descripcion} onChange={(event) => setLinea((prev) => ({ ...prev, descripcion: event.target.value }))} />
+            <Box
+              sx={{
+                display: "grid",
+                gridTemplateColumns: {
+                  xs: "1fr",
+                  sm: "repeat(2, minmax(0, 1fr))",
+                  xl: "110px 130px minmax(285px, 320px) 125px minmax(240px, 1fr)",
+                },
+                gap: 1.5,
+                alignItems: "start",
+                justifyContent: "start",
+                maxWidth: "100%",
+              }}
+            >
+              <TextField fullWidth type="number" label="Cant." value={emptyWhenZero(linea.cantidad)} onChange={(event) => setLinea((prev) => ({ ...prev, cantidad: parseNumberInput(event.target.value) }))} />
+              <TextField fullWidth type="number" label="Precio" value={linea.precioUnit} disabled helperText="Catalogo" />
+              <Paper
+                variant="outlined"
+                sx={{
+                  minWidth: 0,
+                  minHeight: 56,
+                  px: 1,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 1,
+                  borderColor: linea.bordadoActivo ? "success.main" : "divider",
+                }}
+              >
+                <Stack direction="row" alignItems="center" spacing={0.5} sx={{ minWidth: 0 }}>
+                  <Checkbox
+                    checked={linea.bordadoActivo}
+                    onChange={(event) => setLinea((prev) => ({
+                      ...prev,
+                      bordadoActivo: event.target.checked,
+                      bordado: event.target.checked ? prev.bordado : 0,
+                      bordados: event.target.checked ? prev.bordados : [],
+                    }))}
+                    sx={{ p: 0.5 }}
+                  />
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography variant="body2" fontWeight={650}>Bordado</Typography>
+                    <Typography variant="caption" color="text.secondary" noWrap display="block">{linea.bordados.length} item(s) · {formatCurrency(getBordadoTotal(linea.bordados))}</Typography>
+                  </Box>
+                </Stack>
+                <Button size="small" variant="outlined" disabled={!linea.bordadoActivo} onClick={() => setBordadosModalOpen(true)} sx={{ flexShrink: 0, minWidth: 84 }}>Gestionar</Button>
+              </Paper>
+              <TextField fullWidth type="number" label="Desc. %" value={emptyWhenZero(linea.descuento)} onChange={(event) => setLinea((prev) => ({ ...prev, descuento: parseNumberInput(event.target.value) }))} />
+              <TextField fullWidth label="Observación de línea" value={linea.descripcion} onChange={(event) => setLinea((prev) => ({ ...prev, descripcion: event.target.value }))} sx={{ gridColumn: { xs: "1 / -1", xl: "auto" } }} />
+            </Box>
+          </Grid>
+                  </Grid>
+                </Paper>
+              </Grid>
+              <Grid size={{ xs: 12, lg: 3 }}>
+                <Paper
+                  variant="outlined"
+                  sx={{
+                    p: 2,
+                    bgcolor: "background.default",
+                  }}
+                >
+                  <Stack spacing={1.1}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="center">
+                      <Typography variant="overline" color="text.secondary" fontWeight={700}>Resumen de linea</Typography>
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        color={linea.tipoOperacion === "venta" ? "primary" : "success"}
+                        label={linea.tipoOperacion === "venta" ? "Inventario" : "Produccion"}
+                      />
+                    </Stack>
+                    <Divider />
+                    <Typography variant="caption" color="text.secondary">
+                      {Number(linea.cantidad || 0)} × {formatCurrency(linea.precioUnit)}
+                      {Number(linea.bordado || 0) > 0 ? ` · Bordado ${formatCurrency(linea.bordado)}` : ""}
+                      {Number(linea.descuento || 0) > 0 ? ` · Desc. ${linea.descuento}%` : ""}
+                    </Typography>
+                    <Stack direction="row" justifyContent="space-between" alignItems="baseline" gap={2}>
+                      <Typography variant="body2" color="text.secondary">Subtotal</Typography>
+                      <Typography variant="h5" color="primary.main" fontWeight={750}>{formatCurrency(calcularSubtotal(linea))}</Typography>
+                    </Stack>
+                  </Stack>
+                </Paper>
+              </Grid>
+          <Grid size={{ xs: 12 }}>
+            <Stack alignItems="center" sx={{ mt: 0.5 }}>
+              <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={agregarLinea}
+                sx={{
+                  minHeight: 42,
+                  minWidth: 170,
+                  px: 3,
+                  bgcolor: "#dc2f2f",
+                  boxShadow: "0 6px 16px rgba(220, 47, 47, 0.24)",
+                  "&:hover": { bgcolor: "#b91f1f", boxShadow: "0 7px 18px rgba(185, 31, 31, 0.28)" },
+                }}
+              >
+                {editingKey == null ? "Agregar" : "Guardar cambios"}
+              </Button>
+            </Stack>
+          </Grid>
+            </Grid>
           </Grid>
         </Grid>
       </Paper>
 
-      <Paper sx={{ p: 2 }}>
+      <Paper variant="outlined" sx={{ p: { xs: 2, md: 2.5 } }}>
         <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
-          <Typography variant="h6">Artículos agregados</Typography>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Typography variant="overline" color="primary" fontWeight={700}>03</Typography>
+            <Typography variant="h6">Artículos agregados</Typography>
+          </Stack>
           <Stack direction="row" spacing={1}>
             <Chip label={`Venta: ${formatCurrency(subtotalVenta)}`} color="primary" variant="outlined" />
             <Chip label={`Producción: ${formatCurrency(subtotalPedido)}`} color="success" variant="outlined" />
@@ -1119,22 +1562,13 @@ export default function OrdenMixtaNueva() {
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>Codigo</TableCell>
-                <TableCell>Tipo</TableCell>
-                <TableCell>Genero</TableCell>
-                <TableCell>Tela</TableCell>
-                <TableCell>Talla</TableCell>
-                <TableCell>Color</TableCell>
-                <TableCell>Bodega origen</TableCell>
-                <TableCell>Traslado</TableCell>
-                <TableCell>Cantidad</TableCell>
-                <TableCell>Precio</TableCell>
-                <TableCell>Bordado</TableCell>
-                <TableCell>Detalle bordado</TableCell>
-                <TableCell>Estilo especial</TableCell>
-                <TableCell>Desc.</TableCell>
-                <TableCell>Observacion</TableCell>
-                <TableCell>Subtotal</TableCell>
+                <TableCell>Operacion</TableCell>
+                <TableCell>Producto</TableCell>
+                <TableCell>Variante</TableCell>
+                <TableCell>Origen</TableCell>
+                <TableCell align="center">Cantidad</TableCell>
+                <TableCell>Precio y ajustes</TableCell>
+                <TableCell align="right">Subtotal</TableCell>
                 <TableCell align="right">Acciones</TableCell>
               </TableRow>
             </TableHead>
@@ -1146,35 +1580,45 @@ export default function OrdenMixtaNueva() {
                   item.tipoOperacion === "venta" &&
                   Boolean(bodegaId && item.bodegaId) &&
                   Number(item.bodegaId) !== Number(bodegaId);
-                const detalleBordado = Number(item.bordado || 0) > 0 ? formatCurrency(item.bordado) : "No";
                 return (
-                  <TableRow key={item.key}>
-                    <TableCell>{producto?.codigo || item.productoId}</TableCell>
-                    <TableCell>{producto?.tipo || producto?.nombre || "Producto"}</TableCell>
-                    <TableCell>{producto?.genero || "N/D"}</TableCell>
-                    <TableCell>{resolveTelaNombre(producto, telas)}</TableCell>
-                    <TableCell>{resolveTallaNombre(producto, tallas)}</TableCell>
-                    <TableCell>{resolveColorNombre(producto, colores)}</TableCell>
-                    <TableCell>{item.tipoOperacion === "venta" ? bodegaOrigen?.nombre || "N/D" : "Produccion"}</TableCell>
+                  <TableRow key={item.key} hover>
                     <TableCell>
-                      {requiereTraslado ? <Chip size="small" color="warning" label="Pendiente" /> : <Chip size="small" label="No aplica" />}
+                      <Chip
+                        size="small"
+                        color={item.tipoOperacion === "venta" ? "primary" : "success"}
+                        variant="outlined"
+                        label={item.tipoOperacion === "venta" ? "Inventario" : "Produccion"}
+                      />
                     </TableCell>
-                    <TableCell>{item.cantidad}</TableCell>
-                    <TableCell>{formatCurrency(item.precioUnit)}</TableCell>
-                    <TableCell>{formatCurrency(item.bordado)}</TableCell>
-                    <TableCell>{detalleBordado}</TableCell>
-                    <TableCell>No</TableCell>
-                    <TableCell>{item.descuento}%</TableCell>
-                    <TableCell>{item.descripcion || "-"}</TableCell>
-                    <TableCell>{formatCurrency(calcularSubtotal(item))}</TableCell>
+                    <TableCell>
+                      <Typography variant="body2" fontWeight={700}>{producto?.codigo || item.productoId}</Typography>
+                      <Typography variant="caption" color="text.secondary">{producto?.nombre || producto?.tipo || "Producto"}</Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2">{producto?.genero || "N/D"} · {resolveTelaNombre(producto, telas)}</Typography>
+                      <Typography variant="caption" color="text.secondary">{resolveTallaNombre(producto, tallas)} · {resolveColorNombre(producto, colores)}</Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2">{item.tipoOperacion === "venta" ? bodegaOrigen?.nombre || "N/D" : "Produccion"}</Typography>
+                      {requiereTraslado && <Chip size="small" color="warning" variant="outlined" label="Requiere traslado" sx={{ mt: 0.5 }} />}
+                    </TableCell>
+                    <TableCell align="center"><Typography fontWeight={700}>{item.cantidad}</Typography></TableCell>
+                    <TableCell>
+                      <Typography variant="body2">{formatCurrency(item.precioUnit)} c/u</Typography>
+                      {(Number(item.bordado || 0) > 0 || Number(item.descuento || 0) > 0) && (
+                        <Typography variant="caption" color="text.secondary">
+                          {Number(item.bordado || 0) > 0 ? `Bordado ${formatCurrency(item.bordado)}` : ""}
+                          {Number(item.bordado || 0) > 0 && Number(item.descuento || 0) > 0 ? " · " : ""}
+                          {Number(item.descuento || 0) > 0 ? `Descuento ${item.descuento}%` : ""}
+                        </Typography>
+                      )}
+                      {item.descripcion && <Typography variant="caption" display="block" color="text.secondary">{item.descripcion}</Typography>}
+                    </TableCell>
+                    <TableCell align="right"><Typography fontWeight={700}>{formatCurrency(calcularSubtotal(item))}</Typography></TableCell>
                     <TableCell align="right">
                       <Stack direction="row" spacing={0.5} justifyContent="flex-end">
-                        <Button size="small" startIcon={<EditOutlined />} onClick={() => editarLinea(item)}>
-                          Editar
-                        </Button>
-                        <Button color="error" size="small" startIcon={<DeleteOutline />} onClick={() => setLineas((prev) => prev.filter((row) => row.key !== item.key))}>
-                          Quitar
-                        </Button>
+                        <Button size="small" aria-label="Editar articulo" onClick={() => editarLinea(item)} sx={{ minWidth: 36, px: 1 }}><EditOutlined fontSize="small" /></Button>
+                        <Button color="error" size="small" aria-label="Quitar articulo" onClick={() => setLineas((prev) => prev.filter((row) => row.key !== item.key))} sx={{ minWidth: 36, px: 1 }}><DeleteOutline fontSize="small" /></Button>
                       </Stack>
                     </TableCell>
                   </TableRow>
@@ -1182,7 +1626,10 @@ export default function OrdenMixtaNueva() {
               })}
               {!lineas.length && (
                 <TableRow>
-                  <TableCell colSpan={17} align="center" sx={{ py: 4 }}>Aun no has agregado articulos a la orden mixta.</TableCell>
+                  <TableCell colSpan={8} align="center" sx={{ py: 5 }}>
+                    <Typography color="text.secondary">Aun no has agregado articulos.</Typography>
+                    <Typography variant="caption" color="text.secondary">Busca un producto arriba y completa su cantidad.</Typography>
+                  </TableCell>
                 </TableRow>
               )}
             </TableBody>
@@ -1190,7 +1637,11 @@ export default function OrdenMixtaNueva() {
         </TableContainer>
       </Paper>
 
-      <Paper sx={{ p: 2 }}>
+      <Paper variant="outlined" sx={{ p: { xs: 2, md: 2.5 } }}>
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
+          <Typography variant="overline" color="primary" fontWeight={700}>04</Typography>
+          <Typography variant="h6">Resumen y confirmacion</Typography>
+        </Stack>
         <Grid container spacing={2}>
           <Grid size={{ xs: 12, md: 8 }}>
             {subtotalVenta > 0 && subtotalPedido > 0 && (
@@ -1208,7 +1659,7 @@ export default function OrdenMixtaNueva() {
             )}
           </Grid>
           <Grid size={{ xs: 12, md: 4 }}>
-            <Box sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
+            <Box sx={{ border: "1px solid", borderColor: "divider", borderRadius: 2, bgcolor: "background.default", overflow: "hidden" }}>
               {[
                 ["Venta desde inventario", subtotalVenta],
                 ["Pedido producción", subtotalPedido],
@@ -1218,7 +1669,7 @@ export default function OrdenMixtaNueva() {
                 ["Anticipo aplicado a pedido", anticipoPedido],
                 ["Saldo total", saldoTotal],
               ].map(([label, value]) => (
-                <Stack key={String(label)} direction="row" justifyContent="space-between" sx={{ px: 2, py: 1 }}>
+                <Stack key={String(label)} direction="row" justifyContent="space-between" sx={{ px: 2, py: 1, borderBottom: label === "Saldo total" ? 0 : "1px solid", borderColor: "divider" }}>
                   <Typography variant="body2">{label}</Typography>
                   <Typography variant="body2" fontWeight={600}>{formatCurrency(Number(value))}</Typography>
                 </Stack>
@@ -1234,6 +1685,60 @@ export default function OrdenMixtaNueva() {
           </Button>
         </Stack>
       </Paper>
+
+      <Dialog open={bordadosModalOpen} onClose={() => setBordadosModalOpen(false)} maxWidth="lg" fullWidth>
+        <DialogTitle>Gestionar bordados de la prenda</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2}>
+            <Grid container spacing={2}>
+              <Grid size={{ xs: 12, md: 3 }}><TextField fullWidth type="number" label="Monto" value={emptyWhenZero(linea.bordado)} onChange={(event) => setLinea((prev) => ({ ...prev, bordado: parseNumberInput(event.target.value) }))} /></Grid>
+              <Grid size={{ xs: 12, md: 3 }}><TextField fullWidth required label="Color de bordado" value={linea.bordadoColor} onChange={(event) => setLinea((prev) => ({ ...prev, bordadoColor: event.target.value }))} /></Grid>
+              <Grid size={{ xs: 12, md: 3 }}><TextField fullWidth required label="Tamano de bordado" value={linea.bordadoTamano} onChange={(event) => setLinea((prev) => ({ ...prev, bordadoTamano: event.target.value }))} /></Grid>
+              <Grid size={{ xs: 12, md: 3 }}><TextField fullWidth required label="Posicion de bordado" value={linea.bordadoPosicion} onChange={(event) => setLinea((prev) => ({ ...prev, bordadoPosicion: event.target.value }))} /></Grid>
+              <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label="Observaciones especiales" value={linea.bordadoObservaciones} onChange={(event) => setLinea((prev) => ({ ...prev, bordadoObservaciones: event.target.value }))} /></Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                  <Button variant="outlined" component="label" color="success">
+                    Imagen de bordado
+                    <input hidden type="file" accept="image/*" onChange={async (event) => {
+                      const file = event.target.files?.[0];
+                      if (!file) return;
+                      if (!file.type.startsWith("image/")) { void Swal.fire("Validacion", "Selecciona un archivo de imagen", "warning"); return; }
+                      const dataUrl = await fileToDataUrl(file);
+                      setLinea((prev) => ({ ...prev, bordadoImagenUrl: dataUrl }));
+                      setBordadoPreviewOpen(true);
+                      event.target.value = "";
+                    }} />
+                  </Button>
+                  <Button variant="text" disabled={!linea.bordadoImagenUrl} onClick={() => setBordadoPreviewOpen(true)}>Vista previa</Button>
+                  {linea.bordadoImagenUrl && <Button variant="text" color="error" onClick={() => setLinea((prev) => ({ ...prev, bordadoImagenUrl: "" }))}>Quitar imagen</Button>}
+                </Stack>
+              </Grid>
+            </Grid>
+            <Stack direction="row" justifyContent="space-between" alignItems="center">
+              <Box><Typography variant="subtitle2">Bordados agregados: {linea.bordados.length}</Typography><Typography variant="caption" color="text.secondary">Agrega uno por cada posicion o diseño diferente.</Typography></Box>
+              <Stack direction="row" spacing={1}><Button variant="contained" color="success" onClick={agregarBordadoActual}>Agregar bordado</Button><Button variant="text" onClick={limpiarBordadoActual}>Limpiar captura</Button></Stack>
+            </Stack>
+            <TableContainer sx={{ border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
+              <Table size="small">
+                <TableHead><TableRow><TableCell>Posicion</TableCell><TableCell>Color</TableCell><TableCell>Tamano</TableCell><TableCell align="right">Monto</TableCell><TableCell>Imagen</TableCell><TableCell>Observaciones</TableCell><TableCell align="center">Acciones</TableCell></TableRow></TableHead>
+                <TableBody>
+                  {linea.bordados.map((bordado) => <TableRow key={bordado.key}><TableCell>{bordado.posicion}</TableCell><TableCell>{bordado.color}</TableCell><TableCell>{bordado.tamano}</TableCell><TableCell align="right">{formatCurrency(bordado.monto)}</TableCell><TableCell>{bordado.imagenUrl ? "Si" : "No"}</TableCell><TableCell>{bordado.observaciones || "-"}</TableCell><TableCell align="center"><Button size="small" onClick={() => editarBordadoActual(bordado)}>Editar</Button><Button size="small" color="error" onClick={() => setLinea((prev) => ({ ...prev, bordados: prev.bordados.filter((item) => item.key !== bordado.key) }))}>Quitar</Button></TableCell></TableRow>)}
+                  {!linea.bordados.length && <TableRow><TableCell colSpan={7} align="center" sx={{ py: 3, color: "text.secondary" }}>Aun no has agregado bordados.</TableCell></TableRow>}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Stack>
+        </DialogContent>
+        <DialogActions><Button onClick={() => setBordadosModalOpen(false)}>Cerrar</Button></DialogActions>
+      </Dialog>
+
+      <Dialog open={bordadoPreviewOpen} onClose={() => setBordadoPreviewOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Vista previa de imagen de bordado</DialogTitle>
+        <DialogContent dividers>
+          {linea.bordadoImagenUrl ? <Box component="img" src={linea.bordadoImagenUrl} alt="Imagen de bordado" sx={{ width: "100%", maxHeight: 420, objectFit: "contain" }} /> : <Typography color="text.secondary">No hay imagen seleccionada.</Typography>}
+        </DialogContent>
+      </Dialog>
     </Stack>
   );
 }
