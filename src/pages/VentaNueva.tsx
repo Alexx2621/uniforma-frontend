@@ -358,6 +358,7 @@ export default function VentaNueva() {
   const [clienteId, setClienteId] = useState<number | "">(CLIENTE_CF_ID);
   const [clienteTelefono, setClienteTelefono] = useState("");
   const [clienteNombre, setClienteNombre] = useState("CF");
+  const [autorizacionClienteId, setAutorizacionClienteId] = useState<number | null>(null);
   const [bodegaId, setBodegaId] = useState<number | "">("");
   const [metodoPago, setMetodoPago] = useState<string>("efectivo");
   const [ubicacion, setUbicacion] = useState<string>("TIENDA");
@@ -634,19 +635,26 @@ export default function VentaNueva() {
   const clientePerteneceCartera = (cliente: Cliente) =>
     cliente.id === CLIENTE_CF_ID || rol === "ADMIN" || Number(cliente.usuarioId || 0) === Number(userId || 0);
 
-  const alertarClienteFueraCartera = (cliente: Cliente) => {
-    Swal.fire(
-      "Cliente fuera de cartera",
-      `El cliente "${cliente.nombre}" pertenece a ${cliente.usuario?.nombre || cliente.usuario?.usuario || "otro usuario"}. No puedes seleccionarlo.`,
-      "warning"
-    );
+  const solicitarClienteFueraCartera = async (cliente: Cliente) => {
+    try {
+      const { data } = await api.post("/autorizaciones-clientes", { clienteId: cliente.id, motivo: `Autorizacion para una venta a ${cliente.nombre}` });
+      if (data?.estado === "aprobado") {
+        setAutorizacionClienteId(Number(data.id));
+        setClienteId(cliente.id); setClienteNombre(cliente.nombre || "CF"); setClienteTelefono(`${cliente.telefono || ""}`.trim());
+        await Swal.fire("Autorizado", "La autorizacion esta vigente y se consumira con esta venta.", "success");
+        return true;
+      }
+      await Swal.fire("Solicitud enviada", `Se solicito autorizacion a ${cliente.usuario?.nombre || cliente.usuario?.usuario || "su vendedor"}. Intenta seleccionarlo nuevamente cuando sea aprobada.`, "info");
+    } catch (error: any) { Swal.fire("Error", error?.response?.data?.message || "No se pudo solicitar autorizacion", "error"); }
+    return false;
   };
 
   const sincronizarCliente = (cliente: Cliente) => {
     if (!clientePerteneceCartera(cliente)) {
-      alertarClienteFueraCartera(cliente);
+      void solicitarClienteFueraCartera(cliente);
       return;
     }
+    setAutorizacionClienteId(null);
     setClienteId(cliente.id);
     setClienteNombre(cliente.nombre || "CF");
     setClienteTelefono(`${cliente.telefono || ""}`.trim());
@@ -1500,8 +1508,7 @@ export default function VentaNueva() {
 
     if (existente) {
       if (!clientePerteneceCartera(existente)) {
-        alertarClienteFueraCartera(existente);
-        return false;
+        if (!autorizacionClienteId || Number(clienteId) !== existente.id) return await solicitarClienteFueraCartera(existente) ? { id: existente.id, nombre: existente.nombre, telefono: existente.telefono || null } : false;
       }
       sincronizarCliente(existente);
       return {
@@ -1611,6 +1618,7 @@ export default function VentaNueva() {
       clienteId: clienteParaVenta.id && Number(clienteParaVenta.id) > 0 ? Number(clienteParaVenta.id) : null,
       clienteNombre: clienteParaVenta.nombre,
       clienteTelefono: clienteParaVenta.telefono || null,
+      autorizacionClienteId,
       bodegaId: Number(bodegaId),
       ubicacion,
       metodoPago,
@@ -1667,6 +1675,17 @@ export default function VentaNueva() {
     }
   };
 
+  const revisarSolicitudesCartera = async () => {
+    const { data } = await api.get("/autorizaciones-clientes/pendientes");
+    const rows = Array.isArray(data) ? data : [];
+    if (!rows.length) return void Swal.fire("Sin solicitudes", "No tienes solicitudes pendientes de otros vendedores.", "info");
+    for (const row of rows) {
+      const result = await Swal.fire({ title: "Autorizar venta por esta ocasion", text: `${row.solicitante?.nombre || row.solicitante?.usuario || "Otro vendedor"} solicita vender a ${row.cliente?.nombre || "tu cliente"}.`, icon: "question", showDenyButton: true, showCancelButton: true, confirmButtonText: "Autorizar", denyButtonText: "Rechazar", cancelButtonText: "Después" });
+      if (result.isDismissed) break;
+      await api.post(`/autorizaciones-clientes/${row.id}/${result.isConfirmed ? "aprobar" : "rechazar"}`, {});
+    }
+  };
+
   return (
     <Stack spacing={2.25}>
       <Paper
@@ -1691,6 +1710,7 @@ export default function VentaNueva() {
           <Stack direction="row" spacing={1} alignItems="center">
             <Chip label={`${detalleTableTotals.cantidad} unidad${detalleTableTotals.cantidad === 1 ? "" : "es"}`} variant="outlined" />
             <Chip label={formatCurrency(totals.total)} color="primary" />
+            <Button variant="outlined" onClick={() => void revisarSolicitudesCartera()}>Solicitudes de cartera</Button>
             <Button variant="outlined" startIcon={<ArrowBackOutlined />} onClick={() => navigate("/ventas")}>Volver</Button>
           </Stack>
         </Stack>
