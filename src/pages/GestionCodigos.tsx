@@ -142,6 +142,7 @@ export default function GestionCodigos() {
   const [unusedFilters, setUnusedFilters] = useState<UnusedFilters>(emptyUnusedFilters);
   const [unusedPage, setUnusedPage] = useState(0);
   const [unusedRowsPerPage, setUnusedRowsPerPage] = useState(25);
+  const [selectedUnusedIds, setSelectedUnusedIds] = useState<Set<number>>(() => new Set());
 
   const createPayload = () => ({
     filtros: { ...Object.fromEntries(Object.entries(createFilters).map(([key, value]) => [key, csv(value)])), categoria: createExtra.categoria, tipoAbreviacion: createExtra.abreviacion, codigoEspecial: createExtra.especial },
@@ -184,7 +185,14 @@ export default function GestionCodigos() {
   };
 
   const loadUnused = async () => {
-    try { setLoading(true); const { data } = await api.get("/productos/gestion/codigos-sin-uso"); setUnused(data?.productos || []); }
+    try {
+      setLoading(true);
+      const { data } = await api.get("/productos/gestion/codigos-sin-uso");
+      const products: UnusedProduct[] = data?.productos || [];
+      const availableIds = new Set(products.map((item) => item.id));
+      setUnused(products);
+      setSelectedUnusedIds((current) => new Set([...current].filter((id) => availableIds.has(id))));
+    }
     catch (error) { Swal.fire("Error", getMessage(error, "No se pudieron revisar los codigos"), "error"); }
     finally { setLoading(false); }
   };
@@ -193,7 +201,16 @@ export default function GestionCodigos() {
   const removeUnused = async (product: UnusedProduct) => {
     const result = await Swal.fire({ title: `Eliminar ${product.codigo}`, text: "Solo se eliminara si continua sin stock ni historial relacionado.", icon: "warning", showCancelButton: true, confirmButtonText: "Eliminar codigo", confirmButtonColor: "#d32f2f" });
     if (!result.isConfirmed) return;
-    try { await api.delete(`/productos/${product.id}`); setUnused((items) => items.filter((item) => item.id !== product.id)); Swal.fire("Eliminado", "El codigo fue eliminado.", "success"); }
+    try {
+      await api.delete(`/productos/${product.id}`);
+      setUnused((items) => items.filter((item) => item.id !== product.id));
+      setSelectedUnusedIds((current) => {
+        const next = new Set(current);
+        next.delete(product.id);
+        return next;
+      });
+      Swal.fire("Eliminado", "El codigo fue eliminado.", "success");
+    }
     catch (error) { Swal.fire("No se pudo eliminar", getMessage(error, "El codigo tiene referencias relacionadas"), "error"); }
   };
   const unusedOptions = useMemo(() => ({
@@ -221,6 +238,29 @@ export default function GestionCodigos() {
     () => visibleUnused.slice(unusedPage * unusedRowsPerPage, unusedPage * unusedRowsPerPage + unusedRowsPerPage),
     [visibleUnused, unusedPage, unusedRowsPerPage],
   );
+  const currentPageUnusedIds = useMemo(
+    () => paginatedUnused.map((item) => item.id),
+    [paginatedUnused],
+  );
+  const allCurrentPageSelected = currentPageUnusedIds.length > 0
+    && currentPageUnusedIds.every((id) => selectedUnusedIds.has(id));
+  const someCurrentPageSelected = currentPageUnusedIds.some((id) => selectedUnusedIds.has(id));
+  const toggleCurrentPageSelection = () => {
+    setSelectedUnusedIds((current) => {
+      const next = new Set(current);
+      if (allCurrentPageSelected) currentPageUnusedIds.forEach((id) => next.delete(id));
+      else currentPageUnusedIds.forEach((id) => next.add(id));
+      return next;
+    });
+  };
+  const toggleUnusedSelection = (id: number) => {
+    setSelectedUnusedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
   useEffect(() => {
     const lastPage = Math.max(0, Math.ceil(visibleUnused.length / unusedRowsPerPage) - 1);
     if (unusedPage > lastPage) setUnusedPage(lastPage);
@@ -290,8 +330,10 @@ export default function GestionCodigos() {
                   <Stack direction={{ xs: "column", sm: "row" }} gap={1} justifyContent="space-between" alignItems={{ sm: "center" }}>
                     <Typography variant="body2" color="text.secondary">
                       {visibleUnused.length} de {unused.length} códigos sin uso
+                      {selectedUnusedIds.size > 0 && ` · ${selectedUnusedIds.size} seleccionado${selectedUnusedIds.size === 1 ? "" : "s"}`}
                     </Typography>
                     <Stack direction="row" gap={1}>
+                      {selectedUnusedIds.size > 0 && <Button size="small" onClick={() => setSelectedUnusedIds(new Set())}>Deseleccionar todo</Button>}
                       <Button size="small" onClick={() => { setSearch(""); setUnusedFilters(emptyUnusedFilters()); setUnusedPage(0); }}>Limpiar filtros</Button>
                       <Button size="small" startIcon={<RefreshOutlined />} onClick={() => void loadUnused()} disabled={loading}>Revisar nuevamente</Button>
                     </Stack>
@@ -300,9 +342,9 @@ export default function GestionCodigos() {
               </Grid>
             </Paper>
             <Paper variant="outlined" sx={{ overflow: "hidden" }}>
-              <TableContainer sx={{ maxHeight: 540 }}><Table stickyHeader size="small"><TableHead><TableRow><TableCell>Código</TableCell><TableCell>Producto</TableCell><TableCell>Tipo y género</TableCell><TableCell>Combinación</TableCell><TableCell align="right">Precio</TableCell><TableCell align="right">Acciones</TableCell></TableRow></TableHead><TableBody>
-                {paginatedUnused.map((item) => <TableRow key={item.id} hover><TableCell sx={{ fontFamily: "monospace", fontWeight: 700, color: "primary.main" }}>{item.codigo}</TableCell><TableCell><Typography variant="body2">{item.nombre}</Typography>{item.categoria && normalize(item.categoria) !== normalize(item.nombre) && <Typography variant="caption" color="text.secondary">{item.categoria}</Typography>}</TableCell><TableCell>{[item.tipo, item.genero].filter(Boolean).join(" / ") || "—"}</TableCell><TableCell>{[item.tela, item.talla, item.color].filter(Boolean).join(" / ") || "—"}</TableCell><TableCell align="right">Q {Number(item.precio).toFixed(2)}</TableCell><TableCell align="right"><Button color="error" size="small" startIcon={<DeleteOutlineOutlined />} onClick={() => void removeUnused(item)}>Eliminar</Button></TableCell></TableRow>)}
-                {!visibleUnused.length && <TableRow><TableCell colSpan={6} align="center" sx={{ py: 6, color: "text.secondary" }}>No hay códigos sin uso que coincidan con los filtros.</TableCell></TableRow>}
+              <TableContainer sx={{ maxHeight: 540 }}><Table stickyHeader size="small"><TableHead><TableRow><TableCell padding="checkbox"><Checkbox color="primary" checked={allCurrentPageSelected} indeterminate={!allCurrentPageSelected && someCurrentPageSelected} disabled={!currentPageUnusedIds.length} onChange={toggleCurrentPageSelection} inputProps={{ "aria-label": allCurrentPageSelected ? "Deseleccionar todos los códigos de esta página" : "Seleccionar todos los códigos de esta página" }} /></TableCell><TableCell>Código</TableCell><TableCell>Producto</TableCell><TableCell>Tipo y género</TableCell><TableCell>Combinación</TableCell><TableCell align="right">Precio</TableCell><TableCell align="right">Acciones</TableCell></TableRow></TableHead><TableBody>
+                {paginatedUnused.map((item) => <TableRow key={item.id} hover selected={selectedUnusedIds.has(item.id)}><TableCell padding="checkbox"><Checkbox color="primary" checked={selectedUnusedIds.has(item.id)} onChange={() => toggleUnusedSelection(item.id)} inputProps={{ "aria-label": `Seleccionar código ${item.codigo}` }} /></TableCell><TableCell sx={{ fontFamily: "monospace", fontWeight: 700, color: "primary.main" }}>{item.codigo}</TableCell><TableCell><Typography variant="body2">{item.nombre}</Typography>{item.categoria && normalize(item.categoria) !== normalize(item.nombre) && <Typography variant="caption" color="text.secondary">{item.categoria}</Typography>}</TableCell><TableCell>{[item.tipo, item.genero].filter(Boolean).join(" / ") || "—"}</TableCell><TableCell>{[item.tela, item.talla, item.color].filter(Boolean).join(" / ") || "—"}</TableCell><TableCell align="right">Q {Number(item.precio).toFixed(2)}</TableCell><TableCell align="right"><Button color="error" size="small" startIcon={<DeleteOutlineOutlined />} onClick={() => void removeUnused(item)}>Eliminar</Button></TableCell></TableRow>)}
+                {!visibleUnused.length && <TableRow><TableCell colSpan={7} align="center" sx={{ py: 6, color: "text.secondary" }}>No hay códigos sin uso que coincidan con los filtros.</TableCell></TableRow>}
               </TableBody></Table></TableContainer>
               <TablePagination
                 component="div"

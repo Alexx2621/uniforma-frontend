@@ -46,6 +46,7 @@ import { hasPermission } from "../auth/permissions";
 import { useAuthStore } from "../auth/useAuthStore";
 import { formatCurrency } from "../utils/currency";
 import { emptyWhenZero, parseNumberInput } from "../utils/numberInputs";
+import { createProductSearchEntry, filterIndexedProducts } from "../utils/productSearch";
 
 type Cliente = { id: number; nombre: string; telefono?: string | null };
 type Bodega = { id: number; nombre: string; tipo?: string | null; usaInventarioVentas?: boolean };
@@ -664,6 +665,22 @@ export default function OrdenMixtaNueva() {
   const tallasBusquedaExacta = useMemo(
     () => new Set(tallas.map((talla) => normalizeSearch(talla.nombre))),
     [tallas],
+  );
+  const productoSearchIndex = useMemo(
+    () => new Map(productos.map((producto) => {
+      const talla = resolveTallaNombre(producto, tallas);
+      return [producto, createProductSearchEntry([
+        producto.codigo,
+        producto.nombre,
+        producto.categoria?.nombre,
+        producto.tipo,
+        producto.genero,
+        resolveTelaNombre(producto, telas),
+        talla,
+        resolveColorNombre(producto, colores),
+      ], talla)];
+    })),
+    [productos, telas, tallas, colores],
   );
   const productoDetectado = productosCoincidentes.length === 1 ? productosCoincidentes[0] : undefined;
 
@@ -1302,27 +1319,12 @@ export default function OrdenMixtaNueva() {
               getOptionLabel={(producto) =>
                 `${upperText(producto.codigo)} · ${upperText(producto.nombre)} · TALLA ${upperText(resolveTallaNombre(producto, tallas))}`
               }
-              filterOptions={(options, { inputValue }) => {
-                const terms = normalizeSearch(inputValue).split(/\s+/).filter(Boolean);
-                if (!terms.length) return options;
-                return options.filter((producto) => {
-                  const tallaProducto = normalizeSearch(resolveTallaNombre(producto, tallas));
-                  const values = [
-                    producto.codigo,
-                    producto.nombre,
-                    producto.categoria?.nombre,
-                    producto.tipo,
-                    producto.genero,
-                    resolveTelaNombre(producto, telas),
-                    resolveTallaNombre(producto, tallas),
-                    resolveColorNombre(producto, colores),
-                  ].map(normalizeSearch);
-                  const haystack = values.join(" ");
-                  return terms.every((term) =>
-                    tallasBusquedaExacta.has(term) ? tallaProducto === term : haystack.includes(term),
-                  );
-                });
-              }}
+              filterOptions={(options, { inputValue }) => filterIndexedProducts(
+                options,
+                productoSearchIndex,
+                inputValue,
+                tallasBusquedaExacta,
+              )}
               isOptionEqualToValue={(option, value) => Number(option.id) === Number(value.id)}
               onChange={(_, value) => seleccionarProducto(value)}
               renderOption={(props, producto) => {
