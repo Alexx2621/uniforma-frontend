@@ -594,6 +594,11 @@ type DashboardWidgetPreferences = {
 
 type DashboardWidgetLayout = { columns: number; height?: number };
 
+type DashboardPreferencesResponse = {
+  preferences?: unknown;
+  updatedAt?: string | null;
+};
+
 const DEFAULT_WIDGET_ORDER: DashboardWidgetId[] = [
   "server-summary", "monthly-goal", "sales-range", "production-open", "pending-balance", "post-sale-open",
   "sales-tickets", "average-ticket", "daily-sales-average", "highest-sale",
@@ -607,6 +612,31 @@ const DEFAULT_WIDGET_ORDER: DashboardWidgetId[] = [
 const mergeWidgetOrder = (saved: unknown): DashboardWidgetId[] => {
   const incoming = Array.isArray(saved) ? saved.filter((id): id is DashboardWidgetId => DEFAULT_WIDGET_ORDER.includes(id as DashboardWidgetId)) : [];
   return [...incoming, ...DEFAULT_WIDGET_ORDER.filter((id) => !incoming.includes(id))];
+};
+
+const normalizeSavedWidgetPreferences = (saved: unknown): DashboardWidgetPreferences | null => {
+  if (!saved || typeof saved !== "object" || Array.isArray(saved)) return null;
+  const input = saved as Partial<DashboardWidgetPreferences>;
+  if (input.version !== 2) return null;
+
+  const hidden = Array.isArray(input.hidden)
+    ? input.hidden.filter((id): id is DashboardWidgetId => DEFAULT_WIDGET_ORDER.includes(id as DashboardWidgetId))
+    : [];
+  const layouts: Partial<Record<DashboardWidgetId, DashboardWidgetLayout>> = {};
+  if (input.layouts && typeof input.layouts === "object" && !Array.isArray(input.layouts)) {
+    Object.entries(input.layouts).forEach(([id, rawLayout]) => {
+      if (!DEFAULT_WIDGET_ORDER.includes(id as DashboardWidgetId) || !rawLayout || typeof rawLayout !== "object") return;
+      const columns = Number(rawLayout.columns);
+      const rawHeight = rawLayout.height == null ? undefined : Number(rawLayout.height);
+      if (!Number.isFinite(columns)) return;
+      layouts[id as DashboardWidgetId] = {
+        columns: Math.min(12, Math.max(3, Math.round(columns))),
+        ...(Number.isFinite(rawHeight) ? { height: Math.max(100, Math.min(2_000, Math.round(rawHeight!))) } : {}),
+      };
+    });
+  }
+
+  return { version: 2, order: mergeWidgetOrder(input.order), hidden, layouts };
 };
 
 const getDefaultWidgetColumns = (widget: DashboardWidgetDefinition) =>
@@ -827,6 +857,9 @@ export default function Dashboard() {
   const [activeWidgetId, setActiveWidgetId] = useState<DashboardWidgetId | null>(null);
   const [widgetPreferencesDirty, setWidgetPreferencesDirty] = useState(false);
   const [widgetPreferencesSavedAt, setWidgetPreferencesSavedAt] = useState("");
+  const [widgetPreferencesReady, setWidgetPreferencesReady] = useState(false);
+  const [widgetPreferencesSaving, setWidgetPreferencesSaving] = useState(false);
+  const [widgetPreferencesSyncError, setWidgetPreferencesSyncError] = useState("");
   const navigate = useNavigate();
   const { rol, permisos, bodegaId: userBodegaId, id: userId, nombre: userNombre, usuario: userUsuario } = useAuthStore();
   const { fetchConfig } = useSystemConfigStore();
@@ -853,31 +886,62 @@ export default function Dashboard() {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 7 } }));
 
   useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem(widgetPreferenceKey);
-      if (!saved) {
-        setWidgetOrder(DEFAULT_WIDGET_ORDER);
-        setHiddenWidgets([]);
-        setWidgetLayouts({});
-        setWidgetPreferencesDirty(false);
-        setWidgetPreferencesSavedAt("");
-        return;
+    let active = true;
+    setWidgetPreferencesReady(false);
+    setWidgetPreferencesSyncError("");
+
+    const applyPreferences = (preferences: DashboardWidgetPreferences | null) => {
+      if (!active) return;
+      setWidgetOrder(preferences?.order || DEFAULT_WIDGET_ORDER);
+      setHiddenWidgets(preferences?.hidden || []);
+      setWidgetLayouts(preferences?.layouts || {});
+      setWidgetPreferencesDirty(false);
+    };
+
+    const readLocalPreferences = () => {
+      try {
+        const saved = window.localStorage.getItem(widgetPreferenceKey);
+        return saved ? normalizeSavedWidgetPreferences(JSON.parse(saved)) : null;
+      } catch {
+        return null;
       }
-      const preferences = JSON.parse(saved) as Partial<DashboardWidgetPreferences>;
-      setWidgetOrder(mergeWidgetOrder(preferences.order));
-      setHiddenWidgets(Array.isArray(preferences.hidden)
-        ? preferences.hidden.filter((id): id is DashboardWidgetId => DEFAULT_WIDGET_ORDER.includes(id as DashboardWidgetId))
-        : []);
-      setWidgetLayouts(preferences.layouts && typeof preferences.layouts === "object" ? preferences.layouts : {});
-      setWidgetPreferencesDirty(false);
-      setWidgetPreferencesSavedAt("Preferencias cargadas");
-    } catch {
-      setWidgetOrder(DEFAULT_WIDGET_ORDER);
-      setHiddenWidgets([]);
-      setWidgetLayouts({});
-      setWidgetPreferencesDirty(false);
-      setWidgetPreferencesSavedAt("");
-    }
+    };
+
+    void (async () => {
+      const localPreferences = readLocalPreferences();
+      try {
+        const { data } = await api.get<DashboardPreferencesResponse>("/dashboard/preferencias");
+        if (!active) return;
+        const remotePreferences = normalizeSavedWidgetPreferences(data?.preferences);
+
+        if (remotePreferences) {
+          applyPreferences(remotePreferences);
+          window.localStorage.setItem(widgetPreferenceKey, JSON.stringify(remotePreferences));
+          setWidgetPreferencesSavedAt("Sincronizado con tu cuenta");
+          return;
+        }
+
+        applyPreferences(localPreferences);
+        if (localPreferences) {
+          await api.put("/dashboard/preferencias", localPreferences);
+          if (active) setWidgetPreferencesSavedAt("Diseño anterior sincronizado");
+        } else {
+          setWidgetPreferencesSavedAt("");
+        }
+      } catch {
+        applyPreferences(localPreferences);
+        if (active) {
+          setWidgetPreferencesSavedAt(localPreferences ? "Diseño local cargado" : "");
+          setWidgetPreferencesSyncError("No se pudo sincronizar el diseño con tu cuenta");
+        }
+      } finally {
+        if (active) setWidgetPreferencesReady(true);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
   }, [widgetPreferenceKey]);
 
   const cargarWhatsapp = useCallback(async () => {
@@ -1523,11 +1587,24 @@ export default function Dashboard() {
     setHiddenWidgets((current) => current.filter((item) => item !== id));
     setWidgetPreferencesDirty(true);
   };
-  const saveWidgetPreferences = () => {
+  const saveWidgetPreferences = async () => {
     const preferences: DashboardWidgetPreferences = { version: 2, order: widgetOrder, hidden: hiddenWidgets, layouts: widgetLayouts };
     window.localStorage.setItem(widgetPreferenceKey, JSON.stringify(preferences));
-    setWidgetPreferencesDirty(false);
-    setWidgetPreferencesSavedAt(`Guardado ${new Date().toLocaleTimeString("es-GT", { hour: "2-digit", minute: "2-digit" })}`);
+    setWidgetPreferencesSaving(true);
+    setWidgetPreferencesSyncError("");
+    try {
+      await api.put("/dashboard/preferencias", preferences);
+      setWidgetPreferencesDirty(false);
+      setWidgetPreferencesSavedAt(`Guardado en tu cuenta ${new Date().toLocaleTimeString("es-GT", { hour: "2-digit", minute: "2-digit" })}`);
+      return true;
+    } catch {
+      setWidgetPreferencesDirty(true);
+      setWidgetPreferencesSavedAt("Diseño guardado solo en este dispositivo");
+      setWidgetPreferencesSyncError("No se pudo guardar el diseño en tu cuenta. Intenta nuevamente.");
+      return false;
+    } finally {
+      setWidgetPreferencesSaving(false);
+    }
   };
   const restoreDefaultWidgets = () => {
     setWidgetOrder(DEFAULT_WIDGET_ORDER);
@@ -1621,8 +1698,12 @@ export default function Dashboard() {
           </Box>
           <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
             <Chip size="small" variant="outlined" label={`${visibleWidgets.length} widgets visibles`} />
-            {(widgetPreferencesDirty || widgetPreferencesSavedAt) && (
-              <Chip size="small" color={widgetPreferencesDirty ? "warning" : "success"} label={widgetPreferencesDirty ? "Cambios sin guardar" : widgetPreferencesSavedAt} />
+            {(widgetPreferencesDirty || widgetPreferencesSavedAt || widgetPreferencesSaving) && (
+              <Chip
+                size="small"
+                color={widgetPreferencesSyncError ? "error" : widgetPreferencesDirty ? "warning" : "success"}
+                label={widgetPreferencesSaving ? "Guardando diseño..." : widgetPreferencesSyncError || (widgetPreferencesDirty ? "Cambios sin sincronizar" : widgetPreferencesSavedAt)}
+              />
             )}
             <Button size="small" startIcon={<DashboardCustomizeOutlined />} onClick={() => setCustomizeOpen(true)}>Personalizar</Button>
             <Button
@@ -1633,7 +1714,7 @@ export default function Dashboard() {
             >
               {dashboardEditMode ? "Finalizar edición" : "Editar tablero"}
             </Button>
-            <Button size="small" variant="contained" startIcon={<SaveOutlined />} disabled={!widgetPreferencesDirty} onClick={saveWidgetPreferences}>Guardar diseño</Button>
+            <Button size="small" variant="contained" startIcon={<SaveOutlined />} disabled={!widgetPreferencesDirty || !widgetPreferencesReady || widgetPreferencesSaving} onClick={() => void saveWidgetPreferences()}>Guardar diseño</Button>
           </Stack>
         </Stack>
       </Paper>
@@ -1680,7 +1761,7 @@ export default function Dashboard() {
         <DialogTitle>Personalizar dashboard</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2}>
-            <Alert severity="info">Solo aparecen widgets permitidos para tu rol. Las preferencias se guardan para este usuario en este dispositivo.</Alert>
+            <Alert severity="info">Solo aparecen widgets permitidos para tu rol. El diseño se guarda en tu cuenta y estará disponible en cualquier computadora.</Alert>
             <Box>
               <Typography variant="subtitle2">Widgets ocultos</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>Recupera cualquier widget que hayas cerrado con la X.</Typography>
@@ -1704,7 +1785,14 @@ export default function Dashboard() {
         <DialogActions>
           <Button startIcon={<RestartAltOutlined />} onClick={restoreDefaultWidgets}>Restaurar predeterminado</Button>
           <Button onClick={() => setCustomizeOpen(false)}>Cerrar</Button>
-          <Button variant="contained" startIcon={<SaveOutlined />} onClick={() => { saveWidgetPreferences(); setCustomizeOpen(false); }}>Guardar</Button>
+          <Button
+            variant="contained"
+            startIcon={<SaveOutlined />}
+            disabled={!widgetPreferencesReady || widgetPreferencesSaving}
+            onClick={() => void saveWidgetPreferences().then((saved) => { if (saved) setCustomizeOpen(false); })}
+          >
+            {widgetPreferencesSaving ? "Guardando..." : "Guardar"}
+          </Button>
         </DialogActions>
       </Dialog>
 
