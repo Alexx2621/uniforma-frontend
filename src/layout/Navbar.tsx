@@ -94,16 +94,18 @@ interface ServerStatus {
     ok?: boolean;
     state?: ServerState;
     latencyMs?: number;
+    // Uso de conexiones frente al tope del plan: superarlo tumba la aplicacion.
+    conexiones?: { enUso: number; limite: number; porcentaje: number } | null;
+    conexionesAlLimite?: boolean;
     message?: string;
   };
-  railway?: {
+  pdfRenderer?: {
     ok?: boolean;
-    reachable?: boolean;
+    configurado?: boolean;
     state?: ServerState;
-    severity?: string;
     label?: string;
     latencyMs?: number;
-    statusPageUrl?: string;
+    url?: string;
     message?: string;
   };
   message?: string;
@@ -434,10 +436,34 @@ function ServerStatusWidget({
             </Stack>
             <Stack direction="row" justifyContent="space-between" spacing={2}>
               <Typography variant="body2" color="text.secondary">
-                Railway
+                Conexiones MySQL
               </Typography>
-              <Typography variant="body2" sx={{ fontWeight: 700, textAlign: "right" }}>
-                {serverStatus.railway?.label || "N/D"}
+              <Typography
+                variant="body2"
+                sx={{
+                  fontWeight: 700,
+                  textAlign: "right",
+                  color: serverStatus.database?.conexionesAlLimite ? "warning.main" : undefined,
+                }}
+              >
+                {serverStatus.database?.conexiones
+                  ? `${serverStatus.database.conexiones.enUso} / ${serverStatus.database.conexiones.limite}`
+                  : "N/D"}
+              </Typography>
+            </Stack>
+            <Stack direction="row" justifyContent="space-between" spacing={2}>
+              <Typography variant="body2" color="text.secondary">
+                Renderizador PDF
+              </Typography>
+              <Typography
+                variant="body2"
+                sx={{
+                  fontWeight: 700,
+                  textAlign: "right",
+                  color: serverStatus.pdfRenderer?.ok === false ? "error.main" : undefined,
+                }}
+              >
+                {serverStatus.pdfRenderer?.label || "N/D"}
               </Typography>
             </Stack>
             <Stack direction="row" justifyContent="space-between" spacing={2}>
@@ -449,10 +475,10 @@ function ServerStatusWidget({
               </Typography>
             </Stack>
           </Stack>
-          {(serverStatus.message || serverStatus.database?.message || serverStatus.railway?.message) && (
+          {(serverStatus.message || serverStatus.database?.message || serverStatus.pdfRenderer?.message) && (
             <Box sx={{ mt: 1.5, p: 1.25, borderRadius: 1, backgroundColor: "action.hover" }}>
               <Typography variant="caption" color="text.secondary">
-                {serverStatus.message || serverStatus.database?.message || serverStatus.railway?.message}
+                {serverStatus.message || serverStatus.database?.message || serverStatus.pdfRenderer?.message}
               </Typography>
             </Box>
           )}
@@ -526,9 +552,11 @@ function ServerStatusWidget({
         </Box>
         <Divider />
         <Box sx={{ px: 2, py: 1.25, display: "flex", justifyContent: "flex-end", gap: 1 }}>
-          <Button size="small" onClick={() => window.open(serverStatus.railway?.statusPageUrl || "https://status.railway.com", "_blank")}>
-            Abrir Railway
-          </Button>
+          {serverStatus.pdfRenderer?.url && (
+            <Button size="small" onClick={() => window.open(serverStatus.pdfRenderer?.url, "_blank")}>
+              Probar renderizador
+            </Button>
+          )}
         </Box>
       </Menu>
     </>
