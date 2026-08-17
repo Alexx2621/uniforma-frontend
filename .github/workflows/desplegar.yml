@@ -1,0 +1,83 @@
+# Despliegue automatico a cPanel al hacer push a main.
+#
+# El frontend es estatico: se compila aqui y se copian los archivos al
+# subdominio. La transferencia va por SFTP porque el hosting tiene el shell
+# deshabilitado.
+name: Desplegar a cPanel
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  SERVIDOR: 192.250.227.20
+  USUARIO: unirfoma
+  DESTINO: /home/unirfoma/app.uniformaguatemala.com
+
+jobs:
+  desplegar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Compilar
+        # CI=false evita que los avisos de ESLint se traten como errores.
+        env:
+          CI: false
+        run: npm run build
+
+      - name: Verificar que apunta a la API correcta
+        run: |
+          if ! grep -rq 'api\.uniformaguatemala\.com' build/static/js/; then
+            echo "::error::El bundle no apunta a la API de produccion. Revisa .env.production."
+            exit 1
+          fi
+          echo "URL de la API verificada en el bundle."
+
+      - name: Preparar acceso SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.CPANEL_SSH_KEY }}" > ~/.ssh/id_despliegue
+          chmod 600 ~/.ssh/id_despliegue
+          ssh-keyscan -H "$SERVIDOR" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Subir compilado
+        # No se toca el .htaccess del servidor: lleva el enrutado del SPA, el
+        # forzado de HTTPS y las reglas de cache, y no vive en el repositorio.
+        run: |
+          cd build
+          rm -f serve.json
+          sftp -i ~/.ssh/id_despliegue -o BatchMode=yes "$USUARIO@$SERVIDOR" <<EOF
+          cd $DESTINO
+          put -r static
+          put index.html
+          put asset-manifest.json
+          put manifest.json
+          put favicon.ico
+          put favicon.png
+          put logo192.png
+          put logo512.png
+          put robots.txt
+          quit
+          EOF
+
+      - name: Comprobar que el bundle desplegado es el compilado
+        run: |
+          esperado=$(ls build/static/js/ | grep -oE '^main\.[a-f0-9]+\.js$' | head -1)
+          servido=$(curl -s --max-time 30 https://app.uniformaguatemala.com/ | grep -oE 'main\.[a-f0-9]+\.js' | head -1)
+          echo "compilado: $esperado"
+          echo "servido  : $servido"
+          if [ "$esperado" != "$servido" ]; then
+            echo "::error::El bundle servido no coincide con el compilado."
+            exit 1
+          fi
+          echo "Frontend desplegado correctamente."
