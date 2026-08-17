@@ -45,6 +45,12 @@ interface AlertaInterna {
     pedidoId?: number;
     autorizacionPedidoId?: number;
     autorizacionTipo?: string | null;
+    // Autorizacion para vender a un cliente de la cartera de otro vendedor.
+    autorizacionClienteId?: number;
+    modulo?: string;
+    solicitante?: string | null;
+    solicitanteId?: number;
+    aprobado?: boolean;
     ordenMixtaId?: number;
     estado?: string;
     prioridad?: "baja" | "normal" | "alta" | "urgente";
@@ -1000,6 +1006,67 @@ function useNavbarController() {
     };
   }, [usuario, syncSession]);
 
+  const gestionarAutorizacionCliente = useCallback(
+    async (alerta: AlertaInterna) => {
+      const autorizacionId = Number(alerta.payload?.autorizacionClienteId || 0);
+      if (!Number.isFinite(autorizacionId) || autorizacionId <= 0) return;
+
+      const payload = alerta.payload || {};
+      const modulo = `${payload.modulo || "venta"}`;
+      const etiqueta = modulo === "pedido" ? "un pedido" : modulo === "orden_mixta" ? "una orden mixta" : "una venta";
+
+      const result = await Swal.fire({
+        title: alerta.titulo || "Autorizacion de cliente",
+        html: `
+          <div style="text-align:left;font-size:13px;line-height:1.45;">
+            <p style="margin:0 0 10px 0;">${escapeHtml(alerta.mensaje)}</p>
+            <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:0 0 12px 0;">
+              <div style="border:1px solid #e5e7eb;border-radius:6px;padding:8px;">
+                <div style="font-size:11px;color:#6b7280;">Cliente</div>
+                <div style="font-weight:700;">${escapeHtml(payload.cliente || "N/D")}</div>
+              </div>
+              <div style="border:1px solid #e5e7eb;border-radius:6px;padding:8px;">
+                <div style="font-size:11px;color:#6b7280;">Solicita</div>
+                <div style="font-weight:700;">${escapeHtml(payload.solicitante || "N/D")}</div>
+              </div>
+            </div>
+            <p style="margin:0 0 8px 0;color:#6b7280;">Autorizar permite generar ${escapeHtml(etiqueta)} a este cliente de tu cartera, una sola vez.</p>
+          </div>
+        `,
+        input: "textarea",
+        inputLabel: "Comentario (opcional)",
+        inputAttributes: { "aria-label": "Comentario" },
+        showDenyButton: true,
+        showCancelButton: true,
+        confirmButtonText: "Autorizar",
+        denyButtonText: "Rechazar",
+        cancelButtonText: "Cerrar",
+        confirmButtonColor: "#16a34a",
+        denyButtonColor: "#dc2626",
+        width: 620,
+      });
+
+      if (result.isDismissed) return;
+
+      const comentario = `${result.value || ""}`.trim();
+      const accion = result.isConfirmed ? "aprobar" : "rechazar";
+      try {
+        await api.post(`/autorizaciones-clientes/${autorizacionId}/${accion}`, { comentario });
+        await marcarLeida(alerta.id);
+        await Swal.fire(
+          result.isConfirmed ? "Autorizacion concedida" : "Solicitud rechazada",
+          result.isConfirmed
+            ? "El vendedor ya puede continuar con la operacion."
+            : "Se notifico al solicitante.",
+          result.isConfirmed ? "success" : "info",
+        );
+      } catch (error: any) {
+        await Swal.fire("Error", error?.response?.data?.message || "No se pudo resolver la solicitud", "error");
+      }
+    },
+    [],
+  );
+
   const gestionarAutorizacionPedido = useCallback(
     async (alerta: AlertaInterna) => {
       const autorizacionId = Number(alerta.payload?.autorizacionPedidoId || 0);
@@ -1363,6 +1430,14 @@ function useNavbarController() {
   };
 
   const abrirDetalleAlerta = async (alerta: AlertaInterna) => {
+    // Solicitud de autorizacion sobre un cliente de la cartera propia: se
+    // resuelve desde la propia alerta, sin salir de la pantalla actual.
+    if (alerta.payload?.autorizacionClienteId) {
+      cerrarAlertas();
+      await gestionarAutorizacionCliente(alerta);
+      return;
+    }
+
     if (alerta.payload?.autorizacionPedidoId && alerta.payload?.estado !== "aprobado" && alerta.payload?.estado !== "rechazado") {
       cerrarAlertas();
       await gestionarAutorizacionPedido(alerta);
