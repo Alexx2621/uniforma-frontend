@@ -751,31 +751,72 @@ export default function PedidoNuevo() {
     [],
   );
 
+  /**
+   * Carga los catalogos de forma independiente.
+   *
+   * Antes usaba Promise.all, asi que el fallo de una sola peticion descartaba
+   * las otras seis y dejaba la pantalla inservible. El 18/08, con la base de
+   * datos al limite de conexiones, eso impidio crear pedidos aunque casi todo
+   * cargaba bien. Con allSettled cada catalogo entra por su cuenta y solo se
+   * bloquea si falta alguno sin el que de verdad no se puede trabajar.
+   */
   const cargarCatalogos = async () => {
-    try {
-      const [respCli, respProd, respBod, respTelas, respTallas, respColores, respPostventa] = await Promise.all([
-        api.get("/clientes/todos"),
-        api.get("/productos"),
-        api.get("/bodegas"),
-        api.get("/telas").catch(() => ({ data: [] })),
-        api.get("/tallas").catch(() => ({ data: [] })),
-        api.get("/colores").catch(() => ({ data: [] })),
-        api.get("/postventa").catch(() => ({ data: [] })),
-      ]);
-      setClientes(respCli.data || []);
-      setProductos(respProd.data || []);
-      setBodegas(respBod.data || []);
-      setTelas(respTelas.data || []);
-      setTallas(respTallas.data || []);
-      setColores(respColores.data || []);
-      setPostventaDocs(
-        (Array.isArray(respPostventa.data) ? respPostventa.data : []).filter(
-          (doc: RegistroPostventa) => `${doc.estado || ""}`.toLowerCase() !== "anulado",
-        ),
-      );
-    } catch {
-      Swal.fire("Error", "No se pudieron cargar catalogos", "error");
+    const peticiones = [
+      { nombre: "clientes", esencial: true, promesa: api.get("/clientes/todos") },
+      { nombre: "productos", esencial: true, promesa: api.get("/productos") },
+      { nombre: "bodegas", esencial: true, promesa: api.get("/bodegas") },
+      { nombre: "telas", esencial: false, promesa: api.get("/telas") },
+      { nombre: "tallas", esencial: false, promesa: api.get("/tallas") },
+      { nombre: "colores", esencial: false, promesa: api.get("/colores") },
+      { nombre: "postventa", esencial: false, promesa: api.get("/postventa") },
+    ];
+
+    const resultados = await Promise.allSettled(peticiones.map((p) => p.promesa));
+    const datos = (i: number): any[] => {
+      const r = resultados[i];
+      if (r.status !== "fulfilled") return [];
+      return Array.isArray(r.value?.data) ? r.value.data : [];
+    };
+
+    setClientes(datos(0));
+    setProductos(datos(1));
+    setBodegas(datos(2));
+    setTelas(datos(3));
+    setTallas(datos(4));
+    setColores(datos(5));
+    setPostventaDocs(
+      datos(6).filter((doc: RegistroPostventa) => `${doc.estado || ""}`.toLowerCase() !== "anulado"),
+    );
+
+    const fallidos = peticiones.filter((_, i) => resultados[i].status === "rejected");
+    if (!fallidos.length) return;
+
+    const esenciales = fallidos.filter((f) => f.esencial).map((f) => f.nombre);
+    const opcionales = fallidos.filter((f) => !f.esencial).map((f) => f.nombre);
+
+    if (esenciales.length) {
+      const resultado = await Swal.fire({
+        icon: "error",
+        title: "Faltan datos para crear el pedido",
+        html: `No se pudieron cargar: <b>${esenciales.join(", ")}</b>.<br/><br/>` +
+          "Suele ser un problema temporal del servidor. Puedes reintentar sin perder lo que ya escribiste.",
+        showCancelButton: true,
+        confirmButtonText: "Reintentar",
+        cancelButtonText: "Continuar igual",
+      });
+      if (resultado.isConfirmed) await cargarCatalogos();
+      return;
     }
+
+    // Solo fallaron catalogos accesorios: se avisa sin interrumpir el trabajo.
+    Swal.fire({
+      icon: "warning",
+      title: "Algunos catalogos no cargaron",
+      text: `Puedes continuar, pero faltan: ${opcionales.join(", ")}.`,
+      timer: 4000,
+      timerProgressBar: true,
+      showConfirmButton: false,
+    });
   };
 
   useEffect(() => {
