@@ -30,6 +30,7 @@ import DeleteIcon from "@mui/icons-material/Delete";
 import AddIcon from "@mui/icons-material/Add";
 import EditOutlined from "@mui/icons-material/EditOutlined";
 import SwapHorizIcon from "@mui/icons-material/SwapHoriz";
+import SendOutlinedIcon from "@mui/icons-material/SendOutlined";
 import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
 import PrintOutlined from "@mui/icons-material/PrintOutlined";
 import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
@@ -109,7 +110,10 @@ interface SolicitudTrasladoRegistro {
   estado: string;
   responsable?: string | null;
   observaciones?: string | null;
+  solicitanteId?: number | null;
   venta?: { id: number; folio?: string | null; clienteNombre?: string | null } | null;
+  desdeBodegaId: number;
+  haciaBodegaId: number;
   desdeBodega?: Bodega | null;
   haciaBodega?: Bodega | null;
   detalle?: Array<{
@@ -176,7 +180,7 @@ const formatDateTime = (value?: string | null) => {
 
 export default function Traslados() {
   const today = useMemo(() => toInputDate(new Date()), []);
-  const [vista, setVista] = useState<"listado" | "nuevo">("listado");
+  const [vista, setVista] = useState<"listado" | "nuevo" | "solicitar">("listado");
   const [traslados, setTraslados] = useState<TrasladoRegistro[]>([]);
   const [solicitudes, setSolicitudes] = useState<SolicitudTrasladoRegistro[]>([]);
   const [loadingTraslados, setLoadingTraslados] = useState(false);
@@ -191,6 +195,7 @@ export default function Traslados() {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [trasladoSeleccionado, setTrasladoSeleccionado] = useState<TrasladoRegistro | null>(null);
   const [bodegas, setBodegas] = useState<Bodega[]>([]);
+  const [bodegasTodas, setBodegasTodas] = useState<Bodega[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [telas, setTelas] = useState<CatalogoItem[]>([]);
   const [tallas, setTallas] = useState<CatalogoItem[]>([]);
@@ -240,14 +245,16 @@ export default function Traslados() {
 
   const cargarCatalogos = async () => {
     try {
-      const [respBod, respProd, respTelas, respTallas, respColores] = await Promise.all([
+      const [respBod, respBodTodas, respProd, respTelas, respTallas, respColores] = await Promise.all([
         api.get("/bodegas", { params: { operacion: "traslados" } }),
+        api.get("/bodegas", { params: { operacion: "solicitud-traslado" } }),
         api.get("/productos"),
         api.get("/telas").catch(() => ({ data: [] })),
         api.get("/tallas").catch(() => ({ data: [] })),
         api.get("/colores").catch(() => ({ data: [] })),
       ]);
       setBodegas(respBod.data || []);
+      setBodegasTodas(respBodTodas.data || []);
       setProductos(respProd.data || []);
       setTelas(respTelas.data || []);
       setTallas(respTallas.data || []);
@@ -267,13 +274,15 @@ export default function Traslados() {
   }, [cargarTraslados]);
 
   useEffect(() => {
+    // En modo "solicitar" el origen es la OTRA tienda: no autocompletar con la propia.
+    if (vista === "solicitar") return;
     if (userBodegaId && !canAccessAllBodegas && !desdeBodegaId) {
       const parsed = Number(userBodegaId);
       const exists = bodegas.some((b) => b.id === parsed);
       setDesdeBodegaId(exists ? parsed : "");
       setFiltroDesdeBodegaId((prev) => prev || (exists ? parsed : ""));
     }
-  }, [userBodegaId, canAccessAllBodegas, bodegas, desdeBodegaId]);
+  }, [userBodegaId, canAccessAllBodegas, bodegas, desdeBodegaId, vista]);
 
   const fetchStock = async (bodega: number, producto: number) => {
     if (!bodega || !producto) return null;
@@ -712,6 +721,52 @@ export default function Traslados() {
     }
   };
 
+  const enviarSolicitud = async () => {
+    if (guardandoTrasladoRef.current) return;
+    if (!desdeBodegaId || !haciaBodegaId) {
+      Swal.fire("Validacion", "Selecciona a que tienda le pides el producto y para cual tienda es", "warning");
+      return;
+    }
+    if (desdeBodegaId === haciaBodegaId) {
+      Swal.fire("Validacion", "No puedes pedirle un producto a tu propia tienda", "warning");
+      return;
+    }
+    if (!detalle.length) {
+      Swal.fire("Validacion", "Agrega al menos un producto con cantidad mayor a 0", "warning");
+      return;
+    }
+    if (!observaciones.trim()) {
+      Swal.fire("Validacion", "Escribe un mensaje para la tienda que recibira la solicitud", "warning");
+      return;
+    }
+
+    const payload = {
+      desdeBodegaId: Number(desdeBodegaId),
+      haciaBodegaId: Number(haciaBodegaId),
+      observaciones: observaciones.trim(),
+      responsable: usuario || null,
+      detalle: detalle.map((d) => ({ productoId: d.productoId, cantidad: d.cantidad })),
+    };
+
+    try {
+      guardandoTrasladoRef.current = true;
+      setGuardandoTraslado(true);
+      await api.post("/traslados/solicitudes", payload);
+      Swal.fire("Enviada", "La tienda recibira una alerta con tu solicitud", "success");
+      setObservaciones("");
+      setDetalle([]);
+      limpiarArticulo();
+      await cargarTraslados();
+      setVista("listado");
+    } catch (error: any) {
+      const msg = error?.response?.data?.message || error?.message || "No se pudo enviar la solicitud";
+      Swal.fire("Error", Array.isArray(msg) ? msg.join(", ") : msg, "error");
+    } finally {
+      guardandoTrasladoRef.current = false;
+      setGuardandoTraslado(false);
+    }
+  };
+
   const trasladosPaginados = traslados.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
   const totalItemsSeleccionado =
     trasladoSeleccionado?.detalle?.reduce((sum, item) => sum + Number(item.cantidad || 0), 0) || 0;
@@ -838,18 +893,34 @@ export default function Traslados() {
             <SwapHorizIcon color="primary" />
             <Typography variant="h4">Traslados entre bodegas</Typography>
           </Stack>
-          <Button
-            startIcon={<AddIcon />}
-            variant="contained"
-            onClick={() => {
-              limpiarArticulo();
-              setDetalle([]);
-              setObservaciones("");
-              setVista("nuevo");
-            }}
-          >
-            Nuevo traslado
-          </Button>
+          <Stack direction="row" spacing={1}>
+            <Button
+              startIcon={<SendOutlinedIcon />}
+              variant="outlined"
+              onClick={() => {
+                limpiarArticulo();
+                setDetalle([]);
+                setObservaciones("");
+                setDesdeBodegaId("");
+                setHaciaBodegaId(userBodegaId ? Number(userBodegaId) : "");
+                setVista("solicitar");
+              }}
+            >
+              Solicitar a otra tienda
+            </Button>
+            <Button
+              startIcon={<AddIcon />}
+              variant="contained"
+              onClick={() => {
+                limpiarArticulo();
+                setDetalle([]);
+                setObservaciones("");
+                setVista("nuevo");
+              }}
+            >
+              Nuevo traslado
+            </Button>
+          </Stack>
         </Stack>
 
         <Divider sx={{ mb: 2 }} />
@@ -954,6 +1025,10 @@ export default function Traslados() {
                 solicitudes.map((solicitud) => {
                   const items = solicitud.detalle?.reduce((sum, item) => sum + Number(item.cantidad || 0), 0) || 0;
                   const recibidos = solicitud.detalle?.reduce((sum, item) => sum + Number(item.cantidadRecibida || 0), 0) || 0;
+                  // Quien solicita no puede autorizar su propia solicitud: eso le
+                  // corresponde a la tienda dueña del stock (o a un admin).
+                  const esSoloElSolicitante =
+                    !canAccessAllBodegas && Number(userBodegaId) === solicitud.haciaBodegaId;
                   return (
                     <TableRow key={solicitud.id} hover>
                       <TableCell>
@@ -978,10 +1053,13 @@ export default function Traslados() {
                       </TableCell>
                       <TableCell align="right">
                         <Stack direction="row" spacing={0.5} justifyContent="flex-end">
-                          {solicitud.estado === "PENDIENTE_APROBACION" && (
+                          {solicitud.estado === "PENDIENTE_APROBACION" && !esSoloElSolicitante && (
                             <Button size="small" onClick={() => cambiarEstadoSolicitud(solicitud, "PENDIENTE")}>
                               Aprobar
                             </Button>
+                          )}
+                          {solicitud.estado === "PENDIENTE_APROBACION" && esSoloElSolicitante && (
+                            <Chip size="small" variant="outlined" label="Esperando autorizacion" />
                           )}
                           {solicitud.estado !== "RECIBIDO" && solicitud.estado !== "CANCELADO" && (
                             <>
@@ -1185,12 +1263,15 @@ export default function Traslados() {
     );
   }
 
+  const esSolicitud = vista === "solicitar";
+  const bodegasOrigenOpciones = esSolicitud ? bodegasTodas : bodegas;
+
   return (
     <Paper sx={{ p: 3 }}>
       <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" alignItems={{ xs: "flex-start", sm: "center" }} spacing={1} sx={{ mb: 2 }}>
         <Stack direction="row" alignItems="center" spacing={1}>
-          <SwapHorizIcon color="primary" />
-          <Typography variant="h4">Traslados entre bodegas</Typography>
+          {esSolicitud ? <SendOutlinedIcon color="primary" /> : <SwapHorizIcon color="primary" />}
+          <Typography variant="h4">{esSolicitud ? "Solicitar traslado a otra tienda" : "Traslados entre bodegas"}</Typography>
         </Stack>
         <Button startIcon={<ArrowBackOutlined />} variant="outlined" onClick={() => setVista("listado")}>
           Regresar
@@ -1198,17 +1279,23 @@ export default function Traslados() {
       </Stack>
       <Divider sx={{ mb: 2 }} />
 
+      {esSolicitud && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          La tienda que elijas como origen recibira una alerta con tu mensaje y debera autorizarla antes de preparar el traslado.
+        </Alert>
+      )}
+
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, sm: 4 }}>
           <FormControl fullWidth>
-            <InputLabel>Bodega origen</InputLabel>
+            <InputLabel>{esSolicitud ? "Tienda que tiene el producto" : "Bodega origen"}</InputLabel>
             <Select
-              label="Bodega origen"
+              label={esSolicitud ? "Tienda que tiene el producto" : "Bodega origen"}
               value={desdeBodegaId === "" ? "" : desdeBodegaId}
               onChange={(e) => void onBodegaChange("desde", Number(e.target.value))}
-              disabled={bodegas.length <= 1}
+              disabled={!esSolicitud && bodegas.length <= 1}
             >
-              {bodegas.map((b) => (
+              {bodegasOrigenOpciones.map((b) => (
                 <MenuItem key={b.id} value={b.id} disabled={Number(haciaBodegaId || 0) === b.id}>
                   {b.nombre}
                 </MenuItem>
@@ -1218,11 +1305,12 @@ export default function Traslados() {
         </Grid>
         <Grid size={{ xs: 12, sm: 4 }}>
           <FormControl fullWidth>
-            <InputLabel>Bodega destino</InputLabel>
+            <InputLabel>{esSolicitud ? "Tu tienda (recibe)" : "Bodega destino"}</InputLabel>
             <Select
-              label="Bodega destino"
+              label={esSolicitud ? "Tu tienda (recibe)" : "Bodega destino"}
               value={haciaBodegaId === "" ? "" : haciaBodegaId}
               onChange={(e) => void onBodegaChange("hacia", Number(e.target.value))}
+              disabled={esSolicitud && bodegas.length <= 1}
             >
               {bodegas.map((b) => (
                 <MenuItem key={b.id} value={b.id} disabled={Number(desdeBodegaId || 0) === b.id}>
@@ -1234,7 +1322,9 @@ export default function Traslados() {
         </Grid>
         <Grid size={{ xs: 12, sm: 4 }}>
           <TextField
-            label="Observaciones"
+            label={esSolicitud ? "Mensaje para la tienda" : "Observaciones"}
+            required={esSolicitud}
+            placeholder={esSolicitud ? "Ej. Lo necesito para un pedido urgente de hoy" : undefined}
             fullWidth
             value={observaciones}
             onChange={(e) => setObservaciones(e.target.value)}
@@ -1447,8 +1537,14 @@ export default function Traslados() {
 
       <Stack direction="row" justifyContent="space-between" sx={{ mt: 2 }}>
         <Typography>Total items: {totalItems}</Typography>
-        <Button variant="contained" color="success" onClick={guardar} disabled={guardandoTraslado}>
-          {guardandoTraslado ? "Guardando..." : "Guardar traslado"}
+        <Button
+          variant="contained"
+          color="success"
+          startIcon={esSolicitud ? <SendOutlinedIcon /> : undefined}
+          onClick={esSolicitud ? enviarSolicitud : guardar}
+          disabled={guardandoTraslado}
+        >
+          {guardandoTraslado ? "Guardando..." : esSolicitud ? "Enviar solicitud" : "Guardar traslado"}
         </Button>
       </Stack>
     </Paper>

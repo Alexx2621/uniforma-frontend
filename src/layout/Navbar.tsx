@@ -47,10 +47,18 @@ interface AlertaInterna {
     autorizacionTipo?: string | null;
     // Autorizacion para vender a un cliente de la cartera de otro vendedor.
     autorizacionClienteId?: number;
+    autorizacionClienteResueltaId?: number;
     modulo?: string;
     solicitante?: string | null;
     solicitanteId?: number;
     aprobado?: boolean;
+    // Solicitud de traslado: una tienda pide un producto que tiene otra.
+    solicitudTrasladoId?: number;
+    solicitudTrasladoResueltaId?: number;
+    desdeBodega?: string;
+    haciaBodega?: string;
+    mensaje?: string;
+    items?: Array<{ codigo?: string | null; nombre?: string | null; cantidad?: number }>;
     ordenMixtaId?: number;
     estado?: string;
     prioridad?: "baja" | "normal" | "alta" | "urgente";
@@ -1115,6 +1123,71 @@ function useNavbarController() {
     [],
   );
 
+  const gestionarSolicitudTraslado = useCallback(
+    async (alerta: AlertaInterna) => {
+      const solicitudId = Number(alerta.payload?.solicitudTrasladoId || 0);
+      if (!Number.isFinite(solicitudId) || solicitudId <= 0) return;
+
+      const payload = alerta.payload || {};
+      const items = Array.isArray(payload.items) ? payload.items : [];
+      const itemsHtml = items.length
+        ? `<ul style="margin:0;padding-left:18px;">${items
+            .map((item) => `<li>${escapeHtml(item.cantidad || 0)}x ${escapeHtml(item.nombre || "Producto")} (${escapeHtml(item.codigo || "")})</li>`)
+            .join("")}</ul>`
+        : "";
+
+      const result = await Swal.fire({
+        title: alerta.titulo || "Solicitud de traslado",
+        html: `
+          <div style="text-align:left;font-size:13px;line-height:1.45;">
+            <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:0 0 12px 0;">
+              <div style="border:1px solid #e5e7eb;border-radius:6px;padding:8px;">
+                <div style="font-size:11px;color:#6b7280;">Solicita</div>
+                <div style="font-weight:700;">${escapeHtml(payload.solicitante || "N/D")} (${escapeHtml(payload.haciaBodega || "N/D")})</div>
+              </div>
+              <div style="border:1px solid #e5e7eb;border-radius:6px;padding:8px;">
+                <div style="font-size:11px;color:#6b7280;">A tu tienda</div>
+                <div style="font-weight:700;">${escapeHtml(payload.desdeBodega || "N/D")}</div>
+              </div>
+            </div>
+            ${itemsHtml ? `<div style="margin:0 0 10px 0;">${itemsHtml}</div>` : ""}
+            ${payload.mensaje ? `<div style="border-left:4px solid #1f3f87;background:#f8fafc;padding:8px 10px;margin-bottom:12px;"><strong>Mensaje:</strong> ${escapeHtml(payload.mensaje)}</div>` : ""}
+          </div>
+        `,
+        input: "textarea",
+        inputLabel: "Comentario (opcional)",
+        inputAttributes: { "aria-label": "Comentario" },
+        showDenyButton: true,
+        showCancelButton: true,
+        confirmButtonText: "Autorizar",
+        denyButtonText: "Rechazar",
+        cancelButtonText: "Cerrar",
+        confirmButtonColor: "#16a34a",
+        denyButtonColor: "#dc2626",
+        width: 620,
+      });
+
+      if (result.isDismissed) return;
+
+      const comentario = `${result.value || ""}`.trim();
+      const estado = result.isConfirmed ? "PENDIENTE" : "CANCELADO";
+      try {
+        await api.patch(`/traslados/solicitudes/${solicitudId}/estado`, { estado, observaciones: comentario || undefined });
+        await marcarLeida(alerta.id);
+        await Swal.fire(
+          result.isConfirmed ? "Solicitud autorizada" : "Solicitud rechazada",
+          result.isConfirmed
+            ? "La otra tienda ya puede preparar y trasladar el producto."
+            : "Se notifico a quien la solicito.",
+          result.isConfirmed ? "success" : "info",
+        );
+      } catch (error: any) {
+        await Swal.fire("Error", error?.response?.data?.message || "No se pudo resolver la solicitud", "error");
+      }
+    },
+    [],
+  );
+
   const gestionarAutorizacionPedido = useCallback(
     async (alerta: AlertaInterna) => {
       const autorizacionId = Number(alerta.payload?.autorizacionPedidoId || 0);
@@ -1250,6 +1323,16 @@ function useNavbarController() {
       return;
     }
 
+    if (alerta.payload?.solicitudTrasladoId) {
+      await gestionarSolicitudTraslado(alerta);
+      return;
+    }
+
+    if (alerta.payload?.autorizacionClienteId) {
+      await gestionarAutorizacionCliente(alerta);
+      return;
+    }
+
     const prioridad = alerta.payload?.prioridad || "normal";
     const icon = prioridad === "urgente" || prioridad === "alta" ? "warning" : "info";
     const confirmButtonColor =
@@ -1274,7 +1357,7 @@ function useNavbarController() {
         // La alerta queda disponible en la campana si no se pudo marcar.
       }
     }
-  }, [gestionarAutorizacionPedido]);
+  }, [gestionarAutorizacionPedido, gestionarSolicitudTraslado, gestionarAutorizacionCliente]);
 
   const cargarAlertas = useCallback(async (options?: { emergente?: boolean }) => {
     try {
@@ -1483,6 +1566,12 @@ function useNavbarController() {
     if (alerta.payload?.autorizacionClienteId) {
       cerrarAlertas();
       await gestionarAutorizacionCliente(alerta);
+      return;
+    }
+
+    if (alerta.payload?.solicitudTrasladoId) {
+      cerrarAlertas();
+      await gestionarSolicitudTraslado(alerta);
       return;
     }
 
