@@ -194,6 +194,8 @@ export default function IngresoInventario() {
   const [articuloActual, setArticuloActual] = useState<CapturaArticulo>(detalleInicial);
   const [cantidadInput, setCantidadInput] = useState("1");
   const [editingDetalleKey, setEditingDetalleKey] = useState<number | null>(null);
+  const [codigoBusqueda, setCodigoBusqueda] = useState("");
+  const [codigoError, setCodigoError] = useState("");
   const [filtroTipo, setFiltroTipo] = useState("");
   const [filtroGenero, setFiltroGenero] = useState("");
   const [filtroTela, setFiltroTela] = useState("");
@@ -668,6 +670,31 @@ export default function IngresoInventario() {
     setFiltroTela("");
     setFiltroTalla("");
     setFiltroColor("");
+    setCodigoBusqueda("");
+    setCodigoError("");
+  };
+
+  const buscarProductoPorCodigo = () => {
+    const codigo = codigoBusqueda.trim();
+    if (!codigo) return;
+    const producto = productos.find((p) => (p.codigo || "").trim().toUpperCase() === codigo.toUpperCase());
+    if (!producto) {
+      setCodigoError(`No se encontro ningun producto con el codigo "${codigo}"`);
+      return;
+    }
+    setCodigoError("");
+    setEditingDetalleKey(null);
+    setArticuloActual((prev) => ({
+      ...prev,
+      productoId: producto.id,
+      stockMax: producto.stockMax ?? null,
+    }));
+    setFiltroTipo(producto.tipo || "");
+    setFiltroGenero(producto.genero || "");
+    setFiltroTela(obtenerTela(producto) === "N/D" ? "" : obtenerTela(producto));
+    setFiltroTalla(obtenerTalla(producto) === "N/D" ? "" : obtenerTalla(producto));
+    setFiltroColor(obtenerColor(producto) === "N/D" ? "" : obtenerColor(producto));
+    setCodigoBusqueda("");
   };
 
   const capacidadDisponibleRow = (row: Pick<DetalleRow, "stockMax" | "stockActual">) => {
@@ -1429,6 +1456,26 @@ export default function IngresoInventario() {
             <Alert severity="info">Completa los filtros del articulo para detectar automaticamente el producto.</Alert>
           )}
         </Stack>
+
+        <Grid container spacing={2} sx={{ mb: 2 }}>
+          <Grid size={{ xs: 12, sm: 8, md: 6 }}>
+            <TextField
+              label="Buscar producto por codigo"
+              fullWidth
+              placeholder="Escanea o escribe el codigo y presiona Tab"
+              value={codigoBusqueda}
+              onChange={(e) => {
+                setCodigoBusqueda(e.target.value);
+                if (codigoError) setCodigoError("");
+              }}
+              onBlur={() => buscarProductoPorCodigo()}
+              error={Boolean(codigoError)}
+              helperText={codigoError || "Tambien puedes ubicar el producto con los filtros de abajo"}
+            />
+          </Grid>
+        </Grid>
+
+        <Divider sx={{ mb: 2 }}>o selecciona manualmente</Divider>
 
         <Grid container spacing={2}>
           <Grid size={{ xs: 12, md: 2 }}>
