@@ -89,6 +89,9 @@ interface ServerStatus {
     state?: ServerState;
     uptimeSeconds?: number;
     environment?: string;
+    // CloudLinux cuenta hilos contra el limite de procesos de la cuenta.
+    hilos?: number | null;
+    memoriaMB?: number;
   };
   database?: {
     ok?: boolean;
@@ -448,6 +451,23 @@ function ServerStatusWidget({
               >
                 {serverStatus.database?.conexiones
                   ? `${serverStatus.database.conexiones.enUso} / ${serverStatus.database.conexiones.limite}`
+                  : "N/D"}
+              </Typography>
+            </Stack>
+            <Stack direction="row" justifyContent="space-between" spacing={2}>
+              <Typography variant="body2" color="text.secondary">
+                Hilos del proceso
+              </Typography>
+              <Typography
+                variant="body2"
+                sx={{
+                  fontWeight: 700,
+                  textAlign: "right",
+                  color: (serverStatus.api?.hilos ?? 0) > 25 ? "warning.main" : undefined,
+                }}
+              >
+                {serverStatus.api?.hilos != null
+                  ? `${serverStatus.api.hilos}${serverStatus.api.memoriaMB != null ? ` · ${serverStatus.api.memoriaMB} MB` : ""}`
                   : "N/D"}
               </Typography>
             </Stack>
