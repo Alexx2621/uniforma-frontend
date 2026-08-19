@@ -73,11 +73,18 @@ jobs:
       - name: Comprobar que el bundle desplegado es el compilado
         run: |
           esperado=$(ls build/static/js/ | grep -oE '^main\.[a-f0-9]+\.js$' | head -1)
-          servido=$(curl -s --max-time 30 https://app.uniformaguatemala.com/ | grep -oE 'main\.[a-f0-9]+\.js' | head -1)
           echo "compilado: $esperado"
-          echo "servido  : $servido"
-          if [ "$esperado" != "$servido" ]; then
-            echo "::error::El bundle servido no coincide con el compilado."
-            exit 1
-          fi
-          echo "Frontend desplegado correctamente."
+          # Con un solo intento esto daba falsos negativos: justo despues de
+          # subir, LiteSpeed recarga y devuelve vacio por un instante, lo que
+          # marcaba como fallido un despliegue que si habia funcionado.
+          for intento in 1 2 3 4 5 6; do
+            servido=$(curl -s --max-time 30 https://app.uniformaguatemala.com/ | grep -oE 'main\.[a-f0-9]+\.js' | head -1)
+            echo "intento $intento -> servido: ${servido:-(vacio)}"
+            if [ "$esperado" = "$servido" ]; then
+              echo "Frontend desplegado correctamente."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::El bundle servido no coincide con el compilado tras 6 intentos (esperado: $esperado, ultimo servido: ${servido:-vacio})."
+          exit 1
