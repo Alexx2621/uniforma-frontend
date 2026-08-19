@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Navigate } from "react-router-dom";
 import {
+  Alert,
   Paper,
   Typography,
   Stack,
@@ -46,6 +47,8 @@ interface Bodega {
   permiteTraslados?: boolean;
   visibleVendedores?: boolean;
   requiereAutorizacion?: boolean;
+  esTransito?: boolean;
+  permiteIngresos?: boolean;
   ordenPrioridad?: number;
   observaciones?: string | null;
   _count?: { inventario?: number; usuarios?: number; usuariosPermitidos?: number; ventas?: number };
@@ -68,6 +71,8 @@ export default function Bodegas() {
   const [permiteTraslados, setPermiteTraslados] = useState(true);
   const [visibleVendedores, setVisibleVendedores] = useState(false);
   const [requiereAutorizacion, setRequiereAutorizacion] = useState(false);
+  const [esTransito, setEsTransito] = useState(false);
+  const [permiteIngresos, setPermiteIngresos] = useState(true);
   const [ordenPrioridad, setOrdenPrioridad] = useState("100");
   const [observaciones, setObservaciones] = useState("");
   const { rol, permisos } = useAuthStore();
@@ -116,6 +121,8 @@ export default function Bodegas() {
     setPermiteTraslados(true);
     setVisibleVendedores(false);
     setRequiereAutorizacion(false);
+    setEsTransito(false);
+    setPermiteIngresos(true);
     setOrdenPrioridad("100");
     setObservaciones("");
     setOpenForm(true);
@@ -134,6 +141,8 @@ export default function Bodegas() {
     setPermiteTraslados(b.permiteTraslados !== false);
     setVisibleVendedores(Boolean(b.visibleVendedores));
     setRequiereAutorizacion(Boolean(b.requiereAutorizacion));
+    setEsTransito(Boolean(b.esTransito));
+    setPermiteIngresos(b.permiteIngresos !== false);
     setOrdenPrioridad(String(b.ordenPrioridad ?? 100));
     setObservaciones(b.observaciones || "");
     setOpenForm(true);
@@ -156,6 +165,8 @@ export default function Bodegas() {
       permiteTraslados,
       visibleVendedores,
       requiereAutorizacion,
+      esTransito,
+      permiteIngresos,
       ordenPrioridad: Number(ordenPrioridad || 100),
       observaciones: observaciones.trim() || null,
     };
@@ -265,6 +276,7 @@ export default function Bodegas() {
                 </TableCell>
                 <TableCell>
                   <Stack direction="row" spacing={0.5} flexWrap="wrap">
+                    {b.esTransito && <Chip size="small" color="warning" label="En transito" />}
                     {b.permiteVentas !== false && <Chip size="small" label="Ventas" />}
                     {b.usaInventarioVentas && <Chip size="small" color="primary" label="Inv. ventas" />}
                     {b.permitePedidos !== false && <Chip size="small" label="Pedidos" />}
@@ -351,7 +363,39 @@ export default function Bodegas() {
               <FormControlLabel control={<Checkbox checked={permiteTraslados} onChange={(e) => setPermiteTraslados(e.target.checked)} disabled={!canManage} />} label="Permite traslados" />
               <FormControlLabel control={<Checkbox checked={visibleVendedores} onChange={(e) => setVisibleVendedores(e.target.checked)} disabled={!canManage} />} label="Visible para vendedores" />
               <FormControlLabel control={<Checkbox checked={requiereAutorizacion} onChange={(e) => setRequiereAutorizacion(e.target.checked)} disabled={!canManage} />} label="Requiere autorizacion" />
+              <FormControlLabel control={<Checkbox checked={permiteIngresos} onChange={(e) => setPermiteIngresos(e.target.checked)} disabled={!canManage || esTransito} />} label="Permite ingresos de inventario" />
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={esTransito}
+                    onChange={(e) => {
+                      setEsTransito(e.target.checked);
+                      // Una bodega puente no vende, no recibe pedidos y no debe
+                      // aparecer en los desplegables ni admitir ingresos: su
+                      // inventario solo entra y sale con los traslados.
+                      if (e.target.checked) {
+                        setPermiteVentas(false);
+                        setUsaInventarioVentas(false);
+                        setPermitePedidos(false);
+                        setPermiteTraslados(false);
+                        setVisibleVendedores(false);
+                        setRequiereAutorizacion(false);
+                        setPermiteIngresos(false);
+                      }
+                    }}
+                    disabled={!canManage}
+                  />
+                }
+                label="Es bodega de transito"
+              />
             </Stack>
+            {esTransito && (
+              <Alert severity="info">
+                La mercaderia queda aqui mientras viaja entre tiendas: sale del origen al despachar
+                y llega al destino cuando este confirma la recepcion. Solo una bodega puede ser la
+                de transito; al guardar, se desmarca cualquier otra.
+              </Alert>
+            )}
             <TextField label="Observaciones" value={observaciones} onChange={(e) => setObservaciones(e.target.value)} fullWidth multiline minRows={2} disabled={!canManage} />
           </Stack>
         </DialogContent>
