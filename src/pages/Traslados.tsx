@@ -177,6 +177,39 @@ const formatDateTime = (value?: string | null) => {
   });
 };
 
+// La base guarda los estados en crudo (PENDIENTE_APROBACION, EN_TRANSITO...) y
+// se mostraban tal cual. Ademas "PENDIENTE_APROBACION" y "PENDIENTE" se leian
+// casi igual, cuando significan cosas opuestas: una todavia no esta autorizada
+// y la otra ya lo esta.
+const ESTADO_ETIQUETA: Record<string, string> = {
+  PENDIENTE_APROBACION: "Esperando autorizacion",
+  PENDIENTE: "Autorizada, por enviar",
+  PREPARADO: "Preparada",
+  EN_TRANSITO: "En transito",
+  RECIBIDO_PARCIAL: "Recibida parcial",
+  RECIBIDO: "Recibida",
+  CANCELADO: "Rechazada o cancelada",
+};
+
+const estadoEtiqueta = (estado?: string | null) => ESTADO_ETIQUETA[`${estado || ""}`] || estado || "N/D";
+
+/**
+ * Hacia donde se mueve el producto visto desde la tienda del usuario.
+ *
+ * El listado mostraba solo "Origen" y "Destino" con nombres de bodega, asi que
+ * cada quien tenia que acordarse del nombre de su propia tienda para saber si
+ * le estaban pidiendo algo o si el pidio. De ahi la confusion.
+ */
+const direccionDe = (
+  solicitud: { desdeBodegaId?: number | null; haciaBodegaId?: number | null },
+  miBodegaId: number | null,
+): "entrada" | "salida" | "ajena" => {
+  if (!miBodegaId) return "ajena";
+  if (Number(solicitud.desdeBodegaId) === miBodegaId) return "salida";
+  if (Number(solicitud.haciaBodegaId) === miBodegaId) return "entrada";
+  return "ajena";
+};
+
 export default function Traslados() {
   const today = useMemo(() => toInputDate(new Date()), []);
   const [vista, setVista] = useState<"listado" | "nuevo">("listado");
@@ -896,8 +929,9 @@ export default function Traslados() {
                 <TableCell>Solicitud</TableCell>
                 <TableCell>Venta</TableCell>
                 <TableCell>Fecha</TableCell>
-                <TableCell>Origen</TableCell>
-                <TableCell>Destino</TableCell>
+                <TableCell>Movimiento</TableCell>
+                <TableCell>Sale de</TableCell>
+                <TableCell>Llega a</TableCell>
                 <TableCell align="center">Items</TableCell>
                 <TableCell>Estado</TableCell>
                 <TableCell align="right">Acciones</TableCell>
@@ -906,7 +940,7 @@ export default function Traslados() {
             <TableBody>
               {loadingTraslados ? (
                 <TableRow>
-                  <TableCell colSpan={8} align="center">Cargando solicitudes...</TableCell>
+                  <TableCell colSpan={9} align="center">Cargando solicitudes...</TableCell>
                 </TableRow>
               ) : solicitudes.length ? (
                 solicitudes.map((solicitud) => {
@@ -916,6 +950,11 @@ export default function Traslados() {
                   // corresponde a la tienda dueña del stock (o a un admin).
                   const esSoloElSolicitante =
                     !canAccessAllBodegas && Number(userBodegaId) === solicitud.haciaBodegaId;
+                  const miBodegaId = userBodegaId ? Number(userBodegaId) : null;
+                  const direccion = direccionDe(solicitud, miBodegaId);
+                  const esperandoAprobacion = solicitud.estado === "PENDIENTE_APROBACION";
+                  const marcarPropia = (nombre: string | undefined, bodegaId?: number | null) =>
+                    Number(bodegaId) === miBodegaId ? `${nombre || "N/D"} (tu tienda)` : nombre || "N/D";
                   return (
                     <TableRow key={solicitud.id} hover>
                       <TableCell>
@@ -923,8 +962,21 @@ export default function Traslados() {
                       </TableCell>
                       <TableCell>{solicitud.venta?.folio || (solicitud.venta?.id ? `Venta #${solicitud.venta.id}` : "-")}</TableCell>
                       <TableCell>{formatDateTime(solicitud.fecha)}</TableCell>
-                      <TableCell>{solicitud.desdeBodega?.nombre || "N/D"}</TableCell>
-                      <TableCell>{solicitud.haciaBodega?.nombre || "N/D"}</TableCell>
+                      <TableCell>
+                        {direccion === "salida" ? (
+                          <Chip size="small" color="warning" label="Te lo piden" />
+                        ) : direccion === "entrada" ? (
+                          <Chip size="small" color="info" label="Tu pediste" />
+                        ) : (
+                          <Chip size="small" variant="outlined" label="Entre otras tiendas" />
+                        )}
+                      </TableCell>
+                      <TableCell sx={direccion === "salida" ? { fontWeight: 700 } : undefined}>
+                        {marcarPropia(solicitud.desdeBodega?.nombre, solicitud.desdeBodegaId)}
+                      </TableCell>
+                      <TableCell sx={direccion === "entrada" ? { fontWeight: 700 } : undefined}>
+                        {marcarPropia(solicitud.haciaBodega?.nombre, solicitud.haciaBodegaId)}
+                      </TableCell>
                       <TableCell align="center">
                         <Stack spacing={0.25} alignItems="center">
                           <Typography variant="body2">{items}</Typography>
@@ -936,34 +988,57 @@ export default function Traslados() {
                         </Stack>
                       </TableCell>
                       <TableCell>
-                        <Chip size="small" color={estadoColor(solicitud.estado) as any} label={solicitud.estado} />
+                        <Chip
+                          size="small"
+                          color={estadoColor(solicitud.estado) as any}
+                          label={estadoEtiqueta(solicitud.estado)}
+                        />
                       </TableCell>
                       <TableCell align="right">
-                        <Stack direction="row" spacing={0.5} justifyContent="flex-end">
-                          {solicitud.estado === "PENDIENTE_APROBACION" && !esSoloElSolicitante && (
-                            <Button size="small" onClick={() => cambiarEstadoSolicitud(solicitud, "PENDIENTE")}>
-                              Aprobar
-                            </Button>
-                          )}
-                          {solicitud.estado === "PENDIENTE_APROBACION" && esSoloElSolicitante && (
-                            <Chip size="small" variant="outlined" label="Esperando autorizacion" />
-                          )}
-                          {solicitud.estado !== "RECIBIDO" && solicitud.estado !== "CANCELADO" && (
+                        <Stack direction="row" spacing={0.5} justifyContent="flex-end" alignItems="center">
+                          {esperandoAprobacion && !esSoloElSolicitante && (
                             <>
-                              <Button size="small" onClick={() => cambiarEstadoSolicitud(solicitud, "EN_TRANSITO")}>
-                                En transito
-                              </Button>
-                              <Button size="small" color="warning" onClick={() => recibirParcialSolicitud(solicitud)}>
-                                Parcial
-                              </Button>
-                              <Button size="small" color="success" onClick={() => cambiarEstadoSolicitud(solicitud, "RECIBIDO")}>
-                                Recibir
+                              <Button
+                                size="small"
+                                variant="contained"
+                                color="success"
+                                onClick={() => cambiarEstadoSolicitud(solicitud, "PENDIENTE")}
+                              >
+                                Autorizar
                               </Button>
                               <Button size="small" color="error" onClick={() => cambiarEstadoSolicitud(solicitud, "CANCELADO")}>
-                                Cancelar
+                                Rechazar
                               </Button>
                             </>
                           )}
+                          {esperandoAprobacion && esSoloElSolicitante && (
+                            <Chip
+                              size="small"
+                              variant="outlined"
+                              label={`Esperando a ${solicitud.desdeBodega?.nombre || "la otra tienda"}`}
+                            />
+                          )}
+                          {/* Mientras espera autorizacion no se ofrece nada que mueva
+                              inventario: el backend ahora lo rechaza, y ofrecerlo aqui
+                              era justo lo que permitia saltarse la autorizacion. */}
+                          {!esperandoAprobacion &&
+                            solicitud.estado !== "RECIBIDO" &&
+                            solicitud.estado !== "CANCELADO" && (
+                              <>
+                                <Button size="small" onClick={() => cambiarEstadoSolicitud(solicitud, "EN_TRANSITO")}>
+                                  En transito
+                                </Button>
+                                <Button size="small" color="warning" onClick={() => recibirParcialSolicitud(solicitud)}>
+                                  Parcial
+                                </Button>
+                                <Button size="small" color="success" onClick={() => cambiarEstadoSolicitud(solicitud, "RECIBIDO")}>
+                                  Recibir
+                                </Button>
+                                <Button size="small" color="error" onClick={() => cambiarEstadoSolicitud(solicitud, "CANCELADO")}>
+                                  Cancelar
+                                </Button>
+                              </>
+                            )}
                         </Stack>
                       </TableCell>
                     </TableRow>
@@ -971,7 +1046,7 @@ export default function Traslados() {
                 })
               ) : (
                 <TableRow>
-                  <TableCell colSpan={8} align="center">
+                  <TableCell colSpan={9} align="center">
                     No hay solicitudes de traslado con los filtros seleccionados.
                   </TableCell>
                 </TableRow>
