@@ -210,6 +210,60 @@ const direccionDe = (
   return "ajena";
 };
 
+type AccionSolicitud =
+  | { tipo: "autorizar" | "enviar" | "recibir" }
+  | { tipo: "esperar"; texto: string }
+  | { tipo: "ninguna" };
+
+/**
+ * Que le toca hacer a QUIEN esta mirando la pantalla.
+ *
+ * Antes se mostraban los cuatro botones a todo el mundo en cualquier estado, y
+ * de ahi venia la confusion: no se sabia quien debia recibir ni donde apretar,
+ * y la tienda que enviaba podia darse por recibida a si misma.
+ *
+ * Cada paso lo da una tienda distinta: autoriza y envia la que tiene el
+ * producto, recibe la que lo pidio. A quien no le toca se le dice a quien esta
+ * esperando, en vez de ofrecerle un boton que el backend va a rechazar.
+ */
+const accionDeSolicitud = (
+  solicitud: {
+    estado: string;
+    ventaId?: number | null;
+    desdeBodega?: { nombre?: string | null } | null;
+    haciaBodega?: { nombre?: string | null } | null;
+  },
+  esOrigen: boolean,
+  esDestino: boolean,
+): AccionSolicitud => {
+  const origen = solicitud.desdeBodega?.nombre || "la tienda que lo tiene";
+  const destino = solicitud.haciaBodega?.nombre || "la tienda que lo pidio";
+
+  if (solicitud.estado === "RECIBIDO" || solicitud.estado === "CANCELADO") return { tipo: "ninguna" };
+
+  // Las solicitudes que nacen de una venta se liquidan al autorizarlas: el
+  // producto se lo lleva el cliente, no viaja a otra tienda.
+  if (solicitud.ventaId) {
+    if (solicitud.estado === "PENDIENTE_APROBACION") {
+      return esOrigen ? { tipo: "autorizar" } : { tipo: "esperar", texto: `Esperando a ${origen}` };
+    }
+    return { tipo: "ninguna" };
+  }
+
+  switch (solicitud.estado) {
+    case "PENDIENTE_APROBACION":
+      return esOrigen ? { tipo: "autorizar" } : { tipo: "esperar", texto: `Esperando autorizacion de ${origen}` };
+    case "PENDIENTE":
+    case "PREPARADO":
+      return esOrigen ? { tipo: "enviar" } : { tipo: "esperar", texto: `Esperando que ${origen} lo envie` };
+    case "EN_TRANSITO":
+    case "RECIBIDO_PARCIAL":
+      return esDestino ? { tipo: "recibir" } : { tipo: "esperar", texto: `En camino, lo recibe ${destino}` };
+    default:
+      return { tipo: "ninguna" };
+  }
+};
+
 export default function Traslados() {
   const today = useMemo(() => toInputDate(new Date()), []);
   const [vista, setVista] = useState<"listado" | "nuevo">("listado");
@@ -948,11 +1002,13 @@ export default function Traslados() {
                   const recibidos = solicitud.detalle?.reduce((sum, item) => sum + Number(item.cantidadRecibida || 0), 0) || 0;
                   // Quien solicita no puede autorizar su propia solicitud: eso le
                   // corresponde a la tienda dueña del stock (o a un admin).
-                  const esSoloElSolicitante =
-                    !canAccessAllBodegas && Number(userBodegaId) === solicitud.haciaBodegaId;
                   const miBodegaId = userBodegaId ? Number(userBodegaId) : null;
                   const direccion = direccionDe(solicitud, miBodegaId);
-                  const esperandoAprobacion = solicitud.estado === "PENDIENTE_APROBACION";
+                  // Un administrador multi-tienda puede actuar por ambas partes,
+                  // pero nunca por las dos en el mismo paso: el estado manda.
+                  const esOrigen = canAccessAllBodegas || Number(solicitud.desdeBodegaId) === miBodegaId;
+                  const esDestino = canAccessAllBodegas || Number(solicitud.haciaBodegaId) === miBodegaId;
+                  const accion = accionDeSolicitud(solicitud, esOrigen, esDestino);
                   const marcarPropia = (nombre: string | undefined, bodegaId?: number | null) =>
                     Number(bodegaId) === miBodegaId ? `${nombre || "N/D"} (tu tienda)` : nombre || "N/D";
                   return (
@@ -996,7 +1052,7 @@ export default function Traslados() {
                       </TableCell>
                       <TableCell align="right">
                         <Stack direction="row" spacing={0.5} justifyContent="flex-end" alignItems="center">
-                          {esperandoAprobacion && !esSoloElSolicitante && (
+                          {accion.tipo === "autorizar" && (
                             <>
                               <Button
                                 size="small"
@@ -1011,34 +1067,38 @@ export default function Traslados() {
                               </Button>
                             </>
                           )}
-                          {esperandoAprobacion && esSoloElSolicitante && (
-                            <Chip
-                              size="small"
-                              variant="outlined"
-                              label={`Esperando a ${solicitud.desdeBodega?.nombre || "la otra tienda"}`}
-                            />
+                          {accion.tipo === "enviar" && (
+                            <>
+                              <Button
+                                size="small"
+                                variant="contained"
+                                onClick={() => cambiarEstadoSolicitud(solicitud, "EN_TRANSITO")}
+                              >
+                                Marcar enviado
+                              </Button>
+                              <Button size="small" color="error" onClick={() => cambiarEstadoSolicitud(solicitud, "CANCELADO")}>
+                                Cancelar
+                              </Button>
+                            </>
                           )}
-                          {/* Mientras espera autorizacion no se ofrece nada que mueva
-                              inventario: el backend ahora lo rechaza, y ofrecerlo aqui
-                              era justo lo que permitia saltarse la autorizacion. */}
-                          {!esperandoAprobacion &&
-                            solicitud.estado !== "RECIBIDO" &&
-                            solicitud.estado !== "CANCELADO" && (
-                              <>
-                                <Button size="small" onClick={() => cambiarEstadoSolicitud(solicitud, "EN_TRANSITO")}>
-                                  En transito
-                                </Button>
-                                <Button size="small" color="warning" onClick={() => recibirParcialSolicitud(solicitud)}>
-                                  Parcial
-                                </Button>
-                                <Button size="small" color="success" onClick={() => cambiarEstadoSolicitud(solicitud, "RECIBIDO")}>
-                                  Recibir
-                                </Button>
-                                <Button size="small" color="error" onClick={() => cambiarEstadoSolicitud(solicitud, "CANCELADO")}>
-                                  Cancelar
-                                </Button>
-                              </>
-                            )}
+                          {accion.tipo === "recibir" && (
+                            <>
+                              <Button
+                                size="small"
+                                variant="contained"
+                                color="success"
+                                onClick={() => cambiarEstadoSolicitud(solicitud, "RECIBIDO")}
+                              >
+                                Confirmar recepcion
+                              </Button>
+                              <Button size="small" color="warning" onClick={() => recibirParcialSolicitud(solicitud)}>
+                                Recibi solo una parte
+                              </Button>
+                            </>
+                          )}
+                          {accion.tipo === "esperar" && (
+                            <Chip size="small" variant="outlined" label={accion.texto} />
+                          )}
                         </Stack>
                       </TableCell>
                     </TableRow>
