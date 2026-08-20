@@ -35,6 +35,18 @@ jobs:
           CI: false
         run: npm run build
 
+      - name: Preparar metadatos del frontend
+        run: |
+          VERSION_APP=$(node -p "require('./package.json').version")
+          cat > build/version.json <<EOF
+          {
+            "version": "$VERSION_APP",
+            "commit": "$GITHUB_SHA",
+            "builtAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "deploymentRun": "$GITHUB_RUN_ID"
+          }
+          EOF
+
       - name: Verificar que apunta a la API correcta
         run: |
           if ! grep -rq 'api\.uniformaguatemala\.com' build/static/js/; then
@@ -62,6 +74,7 @@ jobs:
           put index.html
           put asset-manifest.json
           put manifest.json
+          put version.json
           put favicon.ico
           put favicon.png
           put logo192.png

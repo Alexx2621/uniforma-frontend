@@ -4,7 +4,9 @@ import {
   Box,
   Button,
   Chip,
+  Divider,
   Grid,
+  LinearProgress,
   Paper,
   Stack,
   Table,
@@ -24,14 +26,100 @@ import Swal from "sweetalert2";
 type OperativoPayload = {
   checkedAt?: string;
   details?: any;
+  services?: any;
+  production?: {
+    deployment?: {
+      version?: string;
+      commit?: string | null;
+      builtAt?: string | null;
+      deploymentRun?: string | null;
+      node?: string;
+      environment?: string;
+      startedAt?: string;
+      uptimeSeconds?: number;
+    };
+    prisma?: {
+      ok?: boolean;
+      status?: string;
+      clientVersion?: string | null;
+      schemaHash?: string | null;
+      clientSchemaHash?: string | null;
+      message?: string;
+    };
+    migrations?: {
+      ok?: boolean;
+      status?: string;
+      localTotal?: number;
+      appliedTotal?: number;
+      pending?: string[];
+      failed?: Array<{
+        name: string;
+        logs?: string | null;
+        startedAt?: string;
+      }>;
+      checksumMismatch?: string[];
+      startup?: {
+        status?: string;
+        message?: string;
+        applied?: string[];
+        blocked?: string[];
+      };
+    };
+    backups?: {
+      available?: boolean;
+      ok?: boolean;
+      stale?: boolean | null;
+      count?: number;
+      latest?: { name: string; bytes: number; modifiedAt: string } | null;
+      ageHours?: number | null;
+      message?: string;
+    };
+    crons?: Array<{
+      key: string;
+      label: string;
+      ok: boolean;
+      lastRunAt?: string | null;
+      lastResult?: string | null;
+      ageHours?: number | null;
+      stale?: boolean;
+    }>;
+    recentErrors?: Array<{
+      id: number;
+      usuario?: string;
+      endpoint?: string;
+      metodo?: string;
+      fecha?: string;
+      resultado?: string;
+    }>;
+  };
   tableSizes?: Array<{ tableName: string; rowsApprox: number; bytes: number }>;
-  inconsistencies?: Array<{ key: string; title: string; description: string; severity: string; count: number; ok: boolean }>;
+  inconsistencies?: Array<{
+    key: string;
+    title: string;
+    description: string;
+    severity: string;
+    count: number;
+    ok: boolean;
+  }>;
   drafts?: {
     abiertosAntiguos?: number;
     bloqueadosActivos?: number;
-    byType?: Array<{ estado: string; tipoDocumento: string; total: number; oldestUpdatedAt?: string; newestUpdatedAt?: string }>;
+    byType?: Array<{
+      estado: string;
+      tipoDocumento: string;
+      total: number;
+      oldestUpdatedAt?: string;
+      newestUpdatedAt?: string;
+    }>;
   };
-  migrations?: Array<{ name: string; status: string; startedAt?: string; finishedAt?: string; rolledBackAt?: string; logs?: string | null }>;
+  migrations?: Array<{
+    name: string;
+    status: string;
+    startedAt?: string;
+    finishedAt?: string;
+    rolledBackAt?: string;
+    logs?: string | null;
+  }>;
 };
 
 const formatBytes = (value?: number) => {
@@ -53,15 +141,34 @@ const formatDate = (value?: string | null) => {
   return Number.isNaN(date.getTime()) ? "N/D" : date.toLocaleString("es-GT");
 };
 
-const severityColor = (severity?: string): "success" | "warning" | "error" | "info" => {
+const severityColor = (
+  severity?: string,
+): "success" | "warning" | "error" | "info" => {
   const normalized = `${severity || ""}`.toLowerCase();
   if (normalized === "critica" || normalized === "alta") return "error";
   if (normalized === "media") return "warning";
   return "info";
 };
 
+const shortCommit = (value?: string | null) =>
+  value ? value.slice(0, 8) : "N/D";
+
+const uptimeLabel = (seconds?: number) => {
+  const total = Number(seconds || 0);
+  if (!total) return "N/D";
+  const days = Math.floor(total / 86400);
+  const hours = Math.floor((total % 86400) / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  return days
+    ? `${days} d ${hours} h`
+    : hours
+      ? `${hours} h ${minutes} min`
+      : `${minutes} min`;
+};
+
 export default function SaludOperativa() {
   const [data, setData] = useState<OperativoPayload | null>(null);
+  const [frontendVersion, setFrontendVersion] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -69,10 +176,18 @@ export default function SaludOperativa() {
     setLoading(true);
     setError("");
     try {
-      const resp = await api.get("/status/operativo");
+      const [resp, frontendResp] = await Promise.all([
+        api.get("/status/operativo"),
+        fetch(`/version.json?t=${Date.now()}`, { cache: "no-store" })
+          .then((response) => (response.ok ? response.json() : null))
+          .catch(() => null),
+      ]);
       setData(resp.data || {});
+      setFrontendVersion(frontendResp);
     } catch (err: any) {
-      setError(err?.response?.data?.message || "No se pudo cargar la salud operativa");
+      setError(
+        err?.response?.data?.message || "No se pudo cargar la salud operativa",
+      );
     } finally {
       setLoading(false);
     }
@@ -97,7 +212,11 @@ export default function SaludOperativa() {
       );
       await cargar();
     } catch (err: any) {
-      Swal.fire("Error", err?.response?.data?.message || "No se pudo limpiar preliminares", "error");
+      Swal.fire(
+        "Error",
+        err?.response?.data?.message || "No se pudo limpiar preliminares",
+        "error",
+      );
     }
   };
 
@@ -105,17 +224,38 @@ export default function SaludOperativa() {
     void cargar();
   }, []);
 
-  const mysqlStatus = data?.details?.mysql?.status || {};
-  const mysqlVariables = data?.details?.mysql?.variables || {};
-  const apiMemory = data?.details?.api?.memory || {};
   const inconsistencies = data?.inconsistencies || [];
-  const pendingIssues = inconsistencies.reduce((sum, item) => sum + Number(item.count || 0), 0);
+  const pendingIssues = inconsistencies.reduce(
+    (sum, item) => sum + Number(item.count || 0),
+    0,
+  );
+  const production = data?.production;
+  const deployment = production?.deployment;
+  const prisma = production?.prisma;
+  const migrationHealth = production?.migrations;
+  const backups = production?.backups;
+  const crons = production?.crons || [];
+  const cronIssues = crons.filter((item) => !item.ok).length;
+  const recentErrors = production?.recentErrors || [];
+  const database = data?.services?.database;
+  const pdfRenderer = data?.services?.pdfRenderer;
+  const productionWarnings = [
+    !prisma?.ok ? "Cliente Prisma desactualizado" : null,
+    !migrationHealth?.ok ? "Migraciones requieren atención" : null,
+    !backups?.ok ? "Respaldo no confirmado" : null,
+    cronIssues ? `${cronIssues} automatización(es) sin confirmar` : null,
+  ].filter(Boolean);
 
   const tableColumns = useMemo<GridColDef[]>(
     () => [
       { field: "tableName", headerName: "Tabla", flex: 1 },
       { field: "rowsApprox", headerName: "Filas aprox.", width: 130 },
-      { field: "bytes", headerName: "Tamaño", width: 130, valueFormatter: (value) => formatBytes(Number(value)) },
+      {
+        field: "bytes",
+        headerName: "Tamaño",
+        width: 130,
+        valueFormatter: (value) => formatBytes(Number(value)),
+      },
     ],
     [],
   );
@@ -128,65 +268,437 @@ export default function SaludOperativa() {
         headerName: "Estado",
         width: 130,
         renderCell: (params) => (
-          <Chip size="small" label={params.value || "N/D"} color={params.value === "aplicada" ? "success" : "warning"} />
+          <Chip
+            size="small"
+            label={params.value || "N/D"}
+            color={params.value === "aplicada" ? "success" : "warning"}
+          />
         ),
       },
-      { field: "startedAt", headerName: "Inicio", width: 180, valueFormatter: (value) => formatDate(value as string) },
-      { field: "finishedAt", headerName: "Fin", width: 180, valueFormatter: (value) => formatDate(value as string) },
+      {
+        field: "startedAt",
+        headerName: "Inicio",
+        width: 180,
+        valueFormatter: (value) => formatDate(value as string),
+      },
+      {
+        field: "finishedAt",
+        headerName: "Fin",
+        width: 180,
+        valueFormatter: (value) => formatDate(value as string),
+      },
     ],
     [],
   );
 
   return (
-    <Paper sx={{ p: 3 }}>
-      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }} gap={2}>
+    <Paper sx={{ p: { xs: 1.5, md: 2.5 }, bgcolor: "background.default" }}>
+      <Stack
+        direction={{ xs: "column", sm: "row" }}
+        alignItems={{ xs: "stretch", sm: "center" }}
+        justifyContent="space-between"
+        sx={{ mb: 2 }}
+        gap={2}
+      >
         <Stack direction="row" alignItems="center" spacing={1}>
           <HealthAndSafetyOutlined color="primary" />
           <Box>
-            <Typography variant="h4">Salud operativa</Typography>
+            <Typography variant="h5" fontWeight={600}>
+              Salud operativa
+            </Typography>
             <Typography variant="body2" color="text.secondary">
-              Estado del servidor, base de datos, migraciones, preliminares e inconsistencias.
+              Diagnóstico de producción, automatizaciones, datos y servicios
+              críticos.
             </Typography>
           </Box>
         </Stack>
-        <Button variant="outlined" startIcon={<RefreshOutlined />} onClick={() => void cargar()} disabled={loading}>
+        <Button
+          variant="outlined"
+          startIcon={<RefreshOutlined />}
+          onClick={() => void cargar()}
+          disabled={loading}
+        >
           Recargar
         </Button>
       </Stack>
 
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
+      {loading && <LinearProgress sx={{ mb: 2, borderRadius: 2 }} />}
+      {!loading && productionWarnings.length > 0 && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          {productionWarnings.join(" · ")}
+        </Alert>
+      )}
+      {!loading && production && productionWarnings.length === 0 && (
+        <Alert severity="success" sx={{ mb: 2 }}>
+          Producción está sincronizada y sus servicios principales responden
+          correctamente.
+        </Alert>
+      )}
 
       <Grid container spacing={2} sx={{ mb: 2 }}>
-        <Grid size={{ xs: 12, md: 3 }}>
+        <Grid size={{ xs: 12, sm: 6, lg: 2 }}>
           <Paper variant="outlined" sx={{ p: 2, height: "100%" }}>
-            <Typography variant="body2" color="text.secondary">Conexiones MySQL</Typography>
-            <Typography variant="h5">{mysqlStatus.Threads_connected || mysqlStatus.threads_connected || "N/D"}</Typography>
+            <Typography variant="caption" color="text.secondary">
+              API
+            </Typography>
+            <Typography variant="h6">
+              {data?.services?.status === "online"
+                ? "En línea"
+                : data?.services?.status || "N/D"}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Activa: {uptimeLabel(deployment?.uptimeSeconds)}
+            </Typography>
           </Paper>
         </Grid>
-        <Grid size={{ xs: 12, md: 3 }}>
+        <Grid size={{ xs: 12, sm: 6, lg: 2 }}>
           <Paper variant="outlined" sx={{ p: 2, height: "100%" }}>
-            <Typography variant="body2" color="text.secondary">Buffer pool</Typography>
-            <Typography variant="h5">{formatBytes(Number(mysqlVariables.innodb_buffer_pool_size || 0))}</Typography>
+            <Typography variant="caption" color="text.secondary">
+              Base de datos
+            </Typography>
+            <Typography
+              variant="h6"
+              color={database?.ok ? "success.main" : "error.main"}
+            >
+              {database?.ok ? "Disponible" : "Con error"}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {database?.latencyMs ?? "N/D"} ms
+            </Typography>
           </Paper>
         </Grid>
-        <Grid size={{ xs: 12, md: 3 }}>
+        <Grid size={{ xs: 12, sm: 6, lg: 2 }}>
           <Paper variant="outlined" sx={{ p: 2, height: "100%" }}>
-            <Typography variant="body2" color="text.secondary">Memoria API</Typography>
-            <Typography variant="h5">{formatBytes(Number(apiMemory.rss || 0))}</Typography>
+            <Typography variant="caption" color="text.secondary">
+              Prisma
+            </Typography>
+            <Typography
+              variant="h6"
+              color={prisma?.ok ? "success.main" : "error.main"}
+            >
+              {prisma?.ok ? "Sincronizado" : "Revisar"}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              v{prisma?.clientVersion || "N/D"}
+            </Typography>
           </Paper>
         </Grid>
-        <Grid size={{ xs: 12, md: 3 }}>
+        <Grid size={{ xs: 12, sm: 6, lg: 2 }}>
           <Paper variant="outlined" sx={{ p: 2, height: "100%" }}>
-            <Typography variant="body2" color="text.secondary">Inconsistencias</Typography>
-            <Typography variant="h5" color={pendingIssues ? "error.main" : "success.main"}>{pendingIssues}</Typography>
+            <Typography variant="caption" color="text.secondary">
+              Migraciones
+            </Typography>
+            <Typography
+              variant="h6"
+              color={migrationHealth?.ok ? "success.main" : "warning.main"}
+            >
+              {migrationHealth?.pending?.length || 0} pendientes
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {migrationHealth?.appliedTotal ?? 0} aplicadas
+            </Typography>
+          </Paper>
+        </Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 2 }}>
+          <Paper variant="outlined" sx={{ p: 2, height: "100%" }}>
+            <Typography variant="caption" color="text.secondary">
+              Último respaldo
+            </Typography>
+            <Typography
+              variant="h6"
+              color={backups?.ok ? "success.main" : "warning.main"}
+            >
+              {backups?.ageHours != null
+                ? `${backups.ageHours} h`
+                : "Sin confirmar"}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {backups?.latest?.name || "No disponible"}
+            </Typography>
+          </Paper>
+        </Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 2 }}>
+          <Paper variant="outlined" sx={{ p: 2, height: "100%" }}>
+            <Typography variant="caption" color="text.secondary">
+              Alertas operativas
+            </Typography>
+            <Typography
+              variant="h6"
+              color={
+                pendingIssues || recentErrors.length
+                  ? "error.main"
+                  : "success.main"
+              }
+            >
+              {pendingIssues + recentErrors.length}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Datos y errores recientes
+            </Typography>
           </Paper>
         </Grid>
       </Grid>
 
+      <Grid container spacing={2} sx={{ mb: 2 }}>
+        <Grid size={{ xs: 12, lg: 6 }}>
+          <Paper variant="outlined" sx={{ p: 2, height: "100%" }}>
+            <Stack
+              direction="row"
+              justifyContent="space-between"
+              alignItems="center"
+              gap={1}
+            >
+              <Typography variant="h6">Versión desplegada</Typography>
+              <Chip
+                size="small"
+                label={deployment?.environment || "N/D"}
+                variant="outlined"
+              />
+            </Stack>
+            <Divider sx={{ my: 1.5 }} />
+            <Grid container spacing={1.5}>
+              <Grid size={{ xs: 6 }}>
+                <Typography variant="caption" color="text.secondary">
+                  Backend
+                </Typography>
+                <Typography>{shortCommit(deployment?.commit)}</Typography>
+              </Grid>
+              <Grid size={{ xs: 6 }}>
+                <Typography variant="caption" color="text.secondary">
+                  Frontend
+                </Typography>
+                <Typography>{shortCommit(frontendVersion?.commit)}</Typography>
+              </Grid>
+              <Grid size={{ xs: 6 }}>
+                <Typography variant="caption" color="text.secondary">
+                  Backend compilado
+                </Typography>
+                <Typography>{formatDate(deployment?.builtAt)}</Typography>
+              </Grid>
+              <Grid size={{ xs: 6 }}>
+                <Typography variant="caption" color="text.secondary">
+                  Frontend compilado
+                </Typography>
+                <Typography>{formatDate(frontendVersion?.builtAt)}</Typography>
+              </Grid>
+              <Grid size={{ xs: 6 }}>
+                <Typography variant="caption" color="text.secondary">
+                  Node
+                </Typography>
+                <Typography>{deployment?.node || "N/D"}</Typography>
+              </Grid>
+              <Grid size={{ xs: 6 }}>
+                <Typography variant="caption" color="text.secondary">
+                  Ejecución
+                </Typography>
+                <Typography>{deployment?.deploymentRun || "N/D"}</Typography>
+              </Grid>
+            </Grid>
+            <Alert severity={prisma?.ok ? "success" : "error"} sx={{ mt: 1.5 }}>
+              {prisma?.message || "No se pudo verificar el cliente Prisma"}
+            </Alert>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: "block", mt: 1 }}
+            >
+              Esquema {prisma?.schemaHash || "N/D"} · Cliente{" "}
+              {prisma?.clientSchemaHash || "N/D"}
+            </Typography>
+          </Paper>
+        </Grid>
+
+        <Grid size={{ xs: 12, lg: 6 }}>
+          <Paper variant="outlined" sx={{ p: 2, height: "100%" }}>
+            <Typography variant="h6">Servicios y automatizaciones</Typography>
+            <Divider sx={{ my: 1.5 }} />
+            <Stack spacing={1.25}>
+              <Stack
+                direction="row"
+                justifyContent="space-between"
+                alignItems="center"
+              >
+                <Box>
+                  <Typography variant="body2">Generador de PDF</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {pdfRenderer?.label || "Sin datos"}
+                  </Typography>
+                </Box>
+                <Chip
+                  size="small"
+                  label={pdfRenderer?.ok ? "Disponible" : "Revisar"}
+                  color={pdfRenderer?.ok ? "success" : "error"}
+                />
+              </Stack>
+              <Stack
+                direction="row"
+                justifyContent="space-between"
+                alignItems="center"
+              >
+                <Box>
+                  <Typography variant="body2">
+                    Respaldo de base de datos
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {backups?.message || "Sin datos"}
+                    {backups?.latest
+                      ? ` · ${formatBytes(backups.latest.bytes)}`
+                      : ""}
+                  </Typography>
+                </Box>
+                <Chip
+                  size="small"
+                  label={backups?.ok ? "Vigente" : "Revisar"}
+                  color={backups?.ok ? "success" : "warning"}
+                />
+              </Stack>
+              {crons.map((cron) => (
+                <Stack
+                  key={cron.key}
+                  direction="row"
+                  justifyContent="space-between"
+                  alignItems="center"
+                >
+                  <Box>
+                    <Typography variant="body2">{cron.label}</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Última ejecución: {formatDate(cron.lastRunAt)}
+                    </Typography>
+                  </Box>
+                  <Chip
+                    size="small"
+                    label={
+                      cron.ok
+                        ? "Al día"
+                        : cron.lastRunAt
+                          ? "Atrasado"
+                          : "Sin confirmar"
+                    }
+                    color={cron.ok ? "success" : "warning"}
+                  />
+                </Stack>
+              ))}
+            </Stack>
+          </Paper>
+        </Grid>
+
+        <Grid size={{ xs: 12 }}>
+          <Paper variant="outlined" sx={{ p: 2 }}>
+            <Stack
+              direction={{ xs: "column", sm: "row" }}
+              justifyContent="space-between"
+              gap={1}
+              sx={{ mb: 1 }}
+            >
+              <Box>
+                <Typography variant="h6">
+                  Errores recientes del servidor
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Solicitudes que devolvieron un error 500.
+                </Typography>
+              </Box>
+              <Chip
+                size="small"
+                label={`${recentErrors.length} recientes`}
+                color={recentErrors.length ? "error" : "success"}
+              />
+            </Stack>
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Referencia</TableCell>
+                    <TableCell>Fecha</TableCell>
+                    <TableCell>Operación</TableCell>
+                    <TableCell>Usuario</TableCell>
+                    <TableCell align="right">Resultado</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {recentErrors.length ? (
+                    recentErrors.map((item) => (
+                      <TableRow key={item.id}>
+                        <TableCell>
+                          <Typography variant="body2" fontFamily="monospace">
+                            ERR-{item.id}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>{formatDate(item.fecha)}</TableCell>
+                        <TableCell>
+                          {item.metodo} {item.endpoint}
+                        </TableCell>
+                        <TableCell>{item.usuario || "Sistema"}</TableCell>
+                        <TableCell align="right">
+                          <Chip
+                            size="small"
+                            color="error"
+                            label={item.resultado || "500"}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={5}>
+                        <Typography
+                          color="text.secondary"
+                          align="center"
+                          sx={{ py: 2 }}
+                        >
+                          No hay errores 500 recientes registrados.
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Paper>
+        </Grid>
+      </Grid>
+
+      {migrationHealth?.pending?.length ||
+      migrationHealth?.failed?.length ||
+      migrationHealth?.checksumMismatch?.length ? (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          <Typography variant="subtitle2">
+            El esquema necesita atención
+          </Typography>
+          {!!migrationHealth?.pending?.length && (
+            <Typography variant="body2">
+              Pendientes: {migrationHealth.pending.join(", ")}
+            </Typography>
+          )}
+          {!!migrationHealth?.failed?.length && (
+            <Typography variant="body2">
+              Fallidas:{" "}
+              {migrationHealth.failed.map((item) => item.name).join(", ")}
+            </Typography>
+          )}
+          {!!migrationHealth?.checksumMismatch?.length && (
+            <Typography variant="body2">
+              Contenido modificado:{" "}
+              {migrationHealth.checksumMismatch.join(", ")}
+            </Typography>
+          )}
+          <Typography variant="caption">
+            {migrationHealth?.startup?.message}
+          </Typography>
+        </Alert>
+      ) : null}
+
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, lg: 6 }}>
           <Paper variant="outlined" sx={{ p: 2 }}>
-            <Typography variant="h6" sx={{ mb: 1 }}>Centro de inconsistencias</Typography>
+            <Typography variant="h6" sx={{ mb: 1 }}>
+              Centro de inconsistencias
+            </Typography>
             <TableContainer>
               <Table size="small">
                 <TableHead>
@@ -201,10 +713,18 @@ export default function SaludOperativa() {
                     <TableRow key={item.key}>
                       <TableCell>
                         <Typography variant="body2">{item.title}</Typography>
-                        <Typography variant="caption" color="text.secondary">{item.description}</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {item.description}
+                        </Typography>
                       </TableCell>
                       <TableCell>
-                        <Chip size="small" label={item.severity} color={item.ok ? "success" : severityColor(item.severity)} />
+                        <Chip
+                          size="small"
+                          label={item.severity}
+                          color={
+                            item.ok ? "success" : severityColor(item.severity)
+                          }
+                        />
                       </TableCell>
                       <TableCell align="right">{item.count}</TableCell>
                     </TableRow>
@@ -217,11 +737,37 @@ export default function SaludOperativa() {
 
         <Grid size={{ xs: 12, lg: 6 }}>
           <Paper variant="outlined" sx={{ p: 2 }}>
-            <Typography variant="h6" sx={{ mb: 1 }}>Preliminares</Typography>
-            <Stack direction="row" spacing={1} sx={{ mb: 1 }} flexWrap="wrap" alignItems="center">
-              <Chip label={`Abiertos antiguos: ${data?.drafts?.abiertosAntiguos ?? 0}`} color={(data?.drafts?.abiertosAntiguos || 0) > 0 ? "warning" : "success"} />
-              <Chip label={`Bloqueados activos: ${data?.drafts?.bloqueadosActivos ?? 0}`} color={(data?.drafts?.bloqueadosActivos || 0) > 0 ? "info" : "default"} />
-              <Button size="small" variant="outlined" onClick={() => void limpiarPreliminares()}>
+            <Typography variant="h6" sx={{ mb: 1 }}>
+              Preliminares
+            </Typography>
+            <Stack
+              direction="row"
+              spacing={1}
+              sx={{ mb: 1 }}
+              flexWrap="wrap"
+              alignItems="center"
+            >
+              <Chip
+                label={`Abiertos antiguos: ${data?.drafts?.abiertosAntiguos ?? 0}`}
+                color={
+                  (data?.drafts?.abiertosAntiguos || 0) > 0
+                    ? "warning"
+                    : "success"
+                }
+              />
+              <Chip
+                label={`Bloqueados activos: ${data?.drafts?.bloqueadosActivos ?? 0}`}
+                color={
+                  (data?.drafts?.bloqueadosActivos || 0) > 0
+                    ? "info"
+                    : "default"
+                }
+              />
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => void limpiarPreliminares()}
+              >
                 Limpiar
               </Button>
             </Stack>
@@ -237,7 +783,9 @@ export default function SaludOperativa() {
                 </TableHead>
                 <TableBody>
                   {(data?.drafts?.byType || []).map((item, index) => (
-                    <TableRow key={`${item.tipoDocumento}-${item.estado}-${index}`}>
+                    <TableRow
+                      key={`${item.tipoDocumento}-${item.estado}-${index}`}
+                    >
                       <TableCell>{item.tipoDocumento}</TableCell>
                       <TableCell>{item.estado}</TableCell>
                       <TableCell align="right">{item.total}</TableCell>
@@ -252,10 +800,15 @@ export default function SaludOperativa() {
 
         <Grid size={{ xs: 12, lg: 6 }}>
           <Paper variant="outlined" sx={{ p: 2 }}>
-            <Typography variant="h6" sx={{ mb: 1 }}>Tablas más pesadas</Typography>
+            <Typography variant="h6" sx={{ mb: 1 }}>
+              Tablas más pesadas
+            </Typography>
             <Box sx={{ height: 360 }}>
               <DataGrid
-                rows={(data?.tableSizes || []).map((row, id) => ({ id, ...row }))}
+                rows={(data?.tableSizes || []).map((row, id) => ({
+                  id,
+                  ...row,
+                }))}
                 columns={tableColumns}
                 loading={loading}
                 pageSizeOptions={[10]}
@@ -267,10 +820,15 @@ export default function SaludOperativa() {
 
         <Grid size={{ xs: 12, lg: 6 }}>
           <Paper variant="outlined" sx={{ p: 2 }}>
-            <Typography variant="h6" sx={{ mb: 1 }}>Migraciones recientes</Typography>
+            <Typography variant="h6" sx={{ mb: 1 }}>
+              Migraciones recientes
+            </Typography>
             <Box sx={{ height: 360 }}>
               <DataGrid
-                rows={(data?.migrations || []).map((row, id) => ({ id, ...row }))}
+                rows={(data?.migrations || []).map((row, id) => ({
+                  id,
+                  ...row,
+                }))}
                 columns={migrationColumns}
                 loading={loading}
                 pageSizeOptions={[10]}
