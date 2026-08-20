@@ -6,6 +6,7 @@ import Navbar from "./Navbar";
 import Sidebar from "./Sidebar";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
+import AsistenteFlotante from "../components/AsistenteFlotante";
 
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -76,6 +77,8 @@ export default function Layout() {
           <Outlet />
         </Box>
       </Box>
+
+      <AsistenteFlotante />
     </Box>
   );
 }
