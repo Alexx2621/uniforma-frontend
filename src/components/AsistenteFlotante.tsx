@@ -22,6 +22,7 @@ import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined
 import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
 import { api } from "../api/axios";
 import RobotAsistente from "./RobotAsistente";
+import { useDocumentoEnCurso } from "./DocumentoEnCurso";
 
 const CLAVE_POSICION = "uniforma.asistente.posicion";
 const CLAVE_OCULTO = "uniforma.asistente.oculto";
@@ -161,7 +162,9 @@ type LineaExplicada = {
 
 type Analisis = {
   tipo: string;
-  folio: string | null;
+  folio?: string | null;
+  /** Viene de la revision en pantalla: todavia no existe en la base. */
+  enConstruccion?: boolean;
   cuadra: boolean;
   resumen: Record<string, number>;
   lineas?: LineaExplicada[];
@@ -187,6 +190,7 @@ const FILAS_RESUMEN: { clave: string; etiqueta: string; fuerte?: boolean; soloSi
   { clave: "total", etiqueta: "Total del documento", fuerte: true },
   { clave: "anticipoTotal", etiqueta: "Anticipo" },
   { clave: "pagado", etiqueta: "Pagado" },
+  { clave: "esperado", etiqueta: "Lo que cobraste", fuerte: true },
   { clave: "saldo", etiqueta: "Saldo pendiente", fuerte: true },
   { clave: "saldoTotal", etiqueta: "Saldo pendiente", fuerte: true },
 ];
@@ -220,6 +224,8 @@ export default function AsistenteFlotante() {
   const [analizando, setAnalizando] = useState(false);
   const [analisis, setAnalisis] = useState<Analisis | null>(null);
   const [errorAnalisis, setErrorAnalisis] = useState<string | null>(null);
+  const enCurso = useDocumentoEnCurso();
+  const [cobrado, setCobrado] = useState("");
 
   // Se distingue arrastrar de hacer clic por la distancia recorrida: sin esto,
   // soltar el robot tras moverlo abria el panel sin querer.
@@ -295,6 +301,32 @@ export default function AsistenteFlotante() {
 
   const alSoltarBoton = () => {
     if (!arrastre.current.movido) setAbierto((v) => !v);
+  };
+
+  /**
+   * Revisa lo que hay en pantalla, sin guardar nada.
+   *
+   * Es lo que permite ayudar mientras se arma el documento y no despues: para
+   * cuando un descuadre llega a la base, el cliente ya se fue.
+   */
+  const revisarEnCurso = async () => {
+    const doc = enCurso?.leer();
+    if (!doc) return;
+    setAnalisis(null);
+    setErrorAnalisis(null);
+    setAnalizando(true);
+    try {
+      const montoCobrado = Number(`${cobrado}`.replace(/[^\d.,-]/g, "").replace(",", "."));
+      const { data } = await api.post("/consistencia/revisar-borrador", {
+        ...doc,
+        esperado: Number.isFinite(montoCobrado) && montoCobrado > 0 ? montoCobrado : null,
+      });
+      setAnalisis(data);
+    } catch (error: any) {
+      setErrorAnalisis(error?.response?.data?.message || "No pude revisar el documento");
+    } finally {
+      setAnalizando(false);
+    }
   };
 
   /**
@@ -443,6 +475,37 @@ export default function AsistenteFlotante() {
           <Box sx={{ p: 1.5, overflowY: "auto" }}>
             {aviso && <Alert severity="info" sx={{ mb: 1.5 }} onClose={() => setAviso(null)}>{aviso}</Alert>}
 
+            {/*
+              Va arriba de todo y solo aparece mientras se arma un documento.
+              Es la ayuda que llega a tiempo: despues de guardar, el descuadre
+              ya esta en la base y el cliente ya se fue.
+            */}
+            {enCurso?.hayDocumento && (
+              <Paper variant="outlined" sx={{ p: 1.25, mb: 1.5, borderColor: "primary.main" }}>
+                <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.75 }}>
+                  Estas armando un documento
+                </Typography>
+                <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+                  Puedo revisarlo sin guardarlo. Si me dices cuanto cobraste, busco donde esta la diferencia.
+                </Typography>
+                <Stack direction="row" spacing={0.5}>
+                  <TextField
+                    size="small"
+                    fullWidth
+                    placeholder="Cuanto cobraste? (opcional)"
+                    value={cobrado}
+                    onChange={(e) => setCobrado(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") revisarEnCurso();
+                    }}
+                  />
+                  <Button size="small" variant="contained" onClick={revisarEnCurso} disabled={analizando}>
+                    {analizando ? "..." : "Revisar"}
+                  </Button>
+                </Stack>
+              </Paper>
+            )}
+
             <Stack direction="row" spacing={0.5} sx={{ mb: 1.5 }}>
               <TextField
                 size="small"
@@ -468,7 +531,11 @@ export default function AsistenteFlotante() {
             {analisis && (
               <Paper variant="outlined" sx={{ p: 1.25, mb: 1.5 }}>
                 <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.75 }}>
-                  <Chip size="small" color={analisis.cuadra ? "success" : "warning"} label={analisis.folio || "documento"} />
+                  <Chip
+                    size="small"
+                    color={analisis.cuadra ? "success" : "warning"}
+                    label={analisis.folio || (analisis.enConstruccion ? "Sin guardar" : "documento")}
+                  />
                   <Typography variant="caption" color="text.secondary">{analisis.tipo.replace("_", " ")}</Typography>
                   <Box sx={{ flexGrow: 1 }} />
                   <IconButton size="small" onClick={() => setAnalisis(null)}>
@@ -495,7 +562,9 @@ export default function AsistenteFlotante() {
 
                 {analisis.cuadra && (
                   <Alert severity="success" variant="outlined" sx={{ mb: 1.25, py: 0.25 }}>
-                    Las cuentas de este documento dan bien. Asi las calcule:
+                    {analisis.enConstruccion
+                      ? "Las cuentas de lo que llevas dan bien. Asi las calcule:"
+                      : "Las cuentas de este documento dan bien. Asi las calcule:"}
                   </Alert>
                 )}
 

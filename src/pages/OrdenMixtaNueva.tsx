@@ -39,6 +39,7 @@ import PrecisionManufacturingOutlined from "@mui/icons-material/PrecisionManufac
 import TuneOutlined from "@mui/icons-material/TuneOutlined";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import Swal from "sweetalert2";
+import { usePublicarDocumento } from "../components/DocumentoEnCurso";
 import { io, Socket } from "socket.io-client";
 import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api/axios";
@@ -451,6 +452,33 @@ export default function OrdenMixtaNueva() {
   const saldoTotal = Math.max(0, total - Number(anticipoTotal || 0));
   const anticipoExcedeTotal = Number(anticipoTotal || 0) > total;
   const pedidoSinAnticipo = subtotalPedido > 0 && anticipoPedido <= 0 && metodoPago !== "orden_compra";
+
+  // Se le pasa al asistente lo que va armado, para que pueda revisarlo antes
+  // de guardar. Solo los numeros de cada linea: ni cliente ni datos de pago,
+  // que no hacen falta para cuadrar y no tienen por que salir de la pantalla.
+  usePublicarDocumento(
+    lineas.length
+      ? {
+          tipo: "orden_mixta",
+          etiqueta: "esta orden mixta",
+          envio: envioMonto,
+          anticipo: Number(anticipoTotal || 0),
+          lineas: lineas.map((linea) => ({
+            tipoOperacion: linea.tipoOperacion,
+            producto:
+              productos.find((p) => Number(p.id) === Number(linea.productoId))?.nombre ||
+              linea.descripcion ||
+              null,
+            cantidad: Number(linea.cantidad || 0),
+            precioUnit: Number(linea.precioUnit || 0),
+            bordado: Number(linea.bordado || 0),
+            descuento: Number(linea.descuento || 0),
+            estiloEspecial: Boolean(linea.estiloEspecial),
+            estiloEspecialMonto: Number(linea.estiloEspecialMonto || 0),
+          })),
+        }
+      : null,
+  );
 
   useEffect(() => {
     if (total >= 0 && Number(anticipoTotal || 0) > total) {

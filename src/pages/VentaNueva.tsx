@@ -38,6 +38,7 @@ import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import Autocomplete from "@mui/material/Autocomplete";
 import Swal from "sweetalert2";
 import { api } from "../api/axios";
+import { usePublicarDocumento } from "../components/DocumentoEnCurso";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../auth/useAuthStore";
 import LOGO_URL from "../assets/3-logos.png";
@@ -408,6 +409,31 @@ export default function VentaNueva() {
   // La entrega sin cobro solo aplica a trabajadores. Se oculta el boton para
   // el resto en vez de dejarlo salir con un error: no tiene sentido ofrecer
   // algo que el servidor va a rechazar.
+  // El asistente puede revisar la venta antes de guardarla. Solo viajan los
+  // numeros de cada linea: para cuadrar no hace falta nada mas.
+  usePublicarDocumento(
+    detalle.length
+      ? {
+          tipo: "venta" as const,
+          etiqueta: "esta venta",
+          envio: Math.max(0, Number(envio) || 0),
+          lineas: detalle.map((linea) => ({
+            tipoOperacion: "venta" as const,
+            producto:
+              productos.find((p) => Number(p.id) === Number(linea.productoId))?.nombre ||
+              linea.descripcion ||
+              null,
+            cantidad: Number(linea.cantidad || 0),
+            precioUnit: Number(linea.precio || 0),
+            bordado: Number(linea.bordado || 0),
+            descuento: Number(linea.descuento || 0),
+            estiloEspecial: Boolean(linea.estiloEspecial),
+            estiloEspecialMonto: Number(linea.estiloEspecialMonto || 0),
+          })),
+        }
+      : null,
+  );
+
   const clienteEsTrabajador =
     `${clienteSeleccionado?.tipoCliente || ""}`.trim().toLowerCase() === "trabajador";
 

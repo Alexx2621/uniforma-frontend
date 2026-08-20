@@ -7,6 +7,7 @@ import Sidebar from "./Sidebar";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import AsistenteFlotante from "../components/AsistenteFlotante";
+import { ProveedorDocumentoEnCurso } from "../components/DocumentoEnCurso";
 
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -19,6 +20,9 @@ export default function Layout() {
   const sidebarWidth = isMobile ? 292 : drawerWidth;
 
   return (
+    // El proveedor envuelve a los dos lados: la pantalla del documento publica
+    // lo que lleva armado y el asistente lo lee cuando se lo piden.
+    <ProveedorDocumentoEnCurso>
     <Box sx={{ display: "flex", minHeight: "100vh", width: "100%", overflowX: "hidden", backgroundColor: "background.default" }}>
       <Navbar sidebarWidth={drawerWidth} showMenuButton={isMobile} onMenuClick={() => setMobileSidebarOpen(true)} />
 
@@ -80,5 +84,6 @@ export default function Layout() {
 
       <AsistenteFlotante />
     </Box>
+    </ProveedorDocumentoEnCurso>
   );
 }
