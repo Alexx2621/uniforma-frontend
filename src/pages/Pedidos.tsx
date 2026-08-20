@@ -652,7 +652,8 @@ export default function Pedidos() {
   useEffect(() => {
     const socket = io(api.defaults.baseURL || window.location.origin, {
       withCredentials: true,
-      transports: ["websocket", "polling"],
+      transports: ["polling"],
+      upgrade: false,
       reconnection: true,
     });
 
