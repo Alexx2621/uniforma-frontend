@@ -239,6 +239,16 @@ export default function SaludOperativa() {
   const recentErrors = production?.recentErrors || [];
   const database = data?.services?.database;
   const pdfRenderer = data?.services?.pdfRenderer;
+  const serviceIssues = production
+    ? [
+        !prisma?.ok,
+        !migrationHealth?.ok,
+        !backups?.ok,
+        Boolean(database && !database.ok),
+        Boolean(pdfRenderer && !pdfRenderer.ok),
+      ].filter(Boolean).length
+    : 0;
+  const activeIssues = pendingIssues + cronIssues + serviceIssues;
   const productionWarnings = [
     !prisma?.ok ? "Cliente Prisma desactualizado" : null,
     !migrationHealth?.ok ? "Migraciones requieren atención" : null,
@@ -425,20 +435,16 @@ export default function SaludOperativa() {
         <Grid size={{ xs: 12, sm: 6, lg: 2 }}>
           <Paper variant="outlined" sx={{ p: 2, height: "100%" }}>
             <Typography variant="caption" color="text.secondary">
-              Alertas operativas
+              Situaciones activas
             </Typography>
             <Typography
               variant="h6"
-              color={
-                pendingIssues || recentErrors.length
-                  ? "error.main"
-                  : "success.main"
-              }
+              color={activeIssues ? "error.main" : "success.main"}
             >
-              {pendingIssues + recentErrors.length}
+              {activeIssues}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              Datos y errores recientes
+              Datos, servicios y automatizaciones
             </Typography>
           </Paper>
         </Grid>
@@ -605,7 +611,7 @@ export default function SaludOperativa() {
               </Box>
               <Chip
                 size="small"
-                label={`${recentErrors.length} recientes`}
+                label={`${recentErrors.length} en 7 días`}
                 color={recentErrors.length ? "error" : "success"}
               />
             </Stack>
