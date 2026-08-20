@@ -141,6 +141,7 @@ export default function Autorizaciones() {
         await api.patch(`/traslados/solicitudes/${row.sourceId}/estado`, {
           estado: accion === "aprobar" ? "PENDIENTE" : "CANCELADO",
           observaciones: comentario.value || undefined,
+          resolverAutorizacion: true,
         });
       } else if (row.tipo === "postventa") {
         await api.post(`/postventa/${row.sourceId}/${accion === "aprobar" ? "cerrar" : "anular"}`);
@@ -161,6 +162,10 @@ export default function Autorizaciones() {
       await cargar();
     } catch (error: any) {
       Swal.fire("Error", error?.response?.data?.message || "No se pudo resolver la autorizacion", "error");
+      if (error?.response?.status === 409) {
+        setSelected(null);
+        await cargar();
+      }
     }
   }, [cargar]);
   const { run: resolver, running: resolviendo } = useSingleFlight(resolverBase);

@@ -1172,7 +1172,11 @@ function useNavbarController() {
       const comentario = `${result.value || ""}`.trim();
       const estado = result.isConfirmed ? "PENDIENTE" : "CANCELADO";
       try {
-        await api.patch(`/traslados/solicitudes/${solicitudId}/estado`, { estado, observaciones: comentario || undefined });
+        await api.patch(`/traslados/solicitudes/${solicitudId}/estado`, {
+          estado,
+          observaciones: comentario || undefined,
+          resolverAutorizacion: true,
+        });
         await marcarLeida(alerta.id);
         await Swal.fire(
           result.isConfirmed ? "Solicitud autorizada" : "Solicitud rechazada",
@@ -1182,7 +1186,17 @@ function useNavbarController() {
           result.isConfirmed ? "success" : "info",
         );
       } catch (error: any) {
-        await Swal.fire("Error", error?.response?.data?.message || "No se pudo resolver la solicitud", "error");
+        const message = error?.response?.data?.message || "No se pudo resolver la solicitud";
+        // Si otra persona respondio mientras el modal estaba abierto, esta
+        // alerta deja de ser accionable en esta sesion inmediatamente.
+        if (error?.response?.status === 409) {
+          await marcarLeida(alerta.id);
+        }
+        await Swal.fire(
+          error?.response?.status === 409 ? "Solicitud ya resuelta" : "Error",
+          message,
+          error?.response?.status === 409 ? "info" : "error",
+        );
       }
     },
     [],
