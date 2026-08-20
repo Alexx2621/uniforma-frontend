@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import {
   Box,
+  Alert,
   Button,
   Chip,
   Dialog,
@@ -83,6 +84,7 @@ export default function Autorizaciones() {
   const [estado, setEstado] = useState("pendiente");
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<AutorizacionRow | null>(null);
+  const [warnings, setWarnings] = useState<Array<{ tipo: string; code: string }>>([]);
 
   const cargar = useCallback(async () => {
     if (!canView) return;
@@ -96,6 +98,7 @@ export default function Autorizaciones() {
       });
       setRows(Array.isArray(data?.rows) ? data.rows : []);
       setStats(data?.stats || {});
+      setWarnings(Array.isArray(data?.warnings) ? data.warnings : []);
     } catch (error: any) {
       Swal.fire("Error", error?.response?.data?.message || "No se pudo cargar la bandeja de autorizaciones", "error");
     } finally {
@@ -297,6 +300,12 @@ export default function Autorizaciones() {
           Filtrar
         </Button>
       </Stack>
+
+      {warnings.length > 0 && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          Se cargaron las autorizaciones disponibles, pero falta actualizar en cPanel: {warnings.map((item) => item.tipo).join(", ")}.
+        </Alert>
+      )}
 
       <Box sx={{ height: 590, width: "100%" }}>
         <DataGrid
