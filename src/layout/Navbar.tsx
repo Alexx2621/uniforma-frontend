@@ -1,5 +1,5 @@
 // src/layout/Navbar.tsx
-import { useCallback, useEffect, useReducer, useRef } from "react";
+import { useCallback, useEffect, useEffectEvent, useReducer, useRef } from "react";
 import {
   AppBar,
   Toolbar,
@@ -27,6 +27,7 @@ import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import DarkModeRoundedIcon from "@mui/icons-material/DarkModeRounded";
 import WbSunnyRoundedIcon from "@mui/icons-material/WbSunnyRounded";
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
+import { io, Socket } from "socket.io-client";
 import Swal from "sweetalert2";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useNavigate } from "react-router-dom";
@@ -41,7 +42,6 @@ interface AlertaInterna {
   leida: boolean;
   creadaEn: string;
   payload?: {
-    action?: string;
     pedidoId?: number;
     autorizacionPedidoId?: number;
     autorizacionTipo?: string | null;
@@ -883,6 +883,7 @@ function useNavbarController() {
   } = state;
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastUnreadCountRef = useRef<number | null>(null);
+  const alertasSocketRef = useRef<Socket | null>(null);
   const seenAlertIdsRef = useRef<Set<number> | null>(null);
   if (seenAlertIdsRef.current === null) {
     seenAlertIdsRef.current = new Set<number>();
@@ -1331,20 +1332,6 @@ function useNavbarController() {
   );
 
   const mostrarAlertaEmergente = useCallback(async (alerta: AlertaInterna) => {
-    if (alerta.payload?.action === "force-logout") {
-      await Swal.fire({
-        title: alerta.titulo || "Actualizacion del sistema",
-        text: alerta.mensaje || "Se aplico una actualizacion. Inicia sesion nuevamente.",
-        icon: "info",
-        confirmButtonText: "Entendido",
-        allowOutsideClick: false,
-        allowEscapeKey: false,
-      });
-      logout();
-      window.location.href = "/login";
-      return;
-    }
-
     if (alerta.payload?.autorizacionPedidoId && alerta.payload?.estado !== "aprobado" && alerta.payload?.estado !== "rechazado") {
       await gestionarAutorizacionPedido(alerta);
       return;
@@ -1384,7 +1371,7 @@ function useNavbarController() {
         // La alerta queda disponible en la campana si no se pudo marcar.
       }
     }
-  }, [gestionarAutorizacionPedido, gestionarSolicitudTraslado, gestionarAutorizacionCliente, logout]);
+  }, [gestionarAutorizacionPedido, gestionarSolicitudTraslado, gestionarAutorizacionCliente]);
 
   const cargarAlertas = useCallback(async (options?: { emergente?: boolean }) => {
     try {
@@ -1433,15 +1420,69 @@ function useNavbarController() {
     void cargarAlertas();
 
     const intervalId = window.setInterval(() => {
-      if (document.visibilityState === "visible") {
-        void cargarAlertas({ emergente: true });
-      }
-    }, 15000);
+      void cargarAlertas();
+    }, 30000);
 
     return () => {
       window.clearInterval(intervalId);
     };
   }, [cargarAlertas]);
+
+  const refrescarAlertasSocket = useEffectEvent((options?: { emergente?: boolean }) => {
+    void cargarAlertas(options);
+  });
+
+  const cerrarSesionPorActualizacion = useEffectEvent(() => {
+    logout();
+    window.location.href = "/login";
+  });
+
+  useEffect(() => {
+    const socket = io(api.defaults.baseURL || window.location.origin, {
+      withCredentials: true,
+      // Passenger conserva una instancia mientras exista un WebSocket abierto.
+      // El long-polling corta cada peticion y permite retirar procesos antiguos
+      // despues de un despliegue sin perder los eventos en tiempo real.
+      transports: ["polling"],
+      upgrade: false,
+      reconnection: true,
+    });
+
+    alertasSocketRef.current = socket;
+
+    const refrescarAlertas = () => {
+      refrescarAlertasSocket();
+    };
+    const refrescarAlertasEmergente = () => {
+      refrescarAlertasSocket({ emergente: true });
+    };
+    const manejarActualizacionSistema = (payload: { titulo?: string; mensaje?: string }) => {
+      void Swal.fire({
+        title: payload?.titulo || "Actualizacion del sistema",
+        text: payload?.mensaje || "Se aplico una actualizacion. Inicia sesion nuevamente.",
+        icon: "info",
+        confirmButtonText: "Entendido",
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+      }).then(() => {
+        cerrarSesionPorActualizacion();
+      });
+    };
+
+    socket.on("connect", refrescarAlertas);
+    socket.on("alertas:actualizadas", refrescarAlertasEmergente);
+    socket.on("sistema:actualizacion", manejarActualizacionSistema);
+
+    return () => {
+      socket.off("connect", refrescarAlertas);
+      socket.off("alertas:actualizadas", refrescarAlertasEmergente);
+      socket.off("sistema:actualizacion", manejarActualizacionSistema);
+      socket.disconnect();
+      alertasSocketRef.current = null;
+    };
+    // Effect Events always read the latest values without becoming reactive deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const unreadCount = alertas.filter((alerta) => !alerta.leida).length;

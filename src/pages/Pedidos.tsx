@@ -30,6 +30,7 @@ import PictureAsPdfOutlined from "@mui/icons-material/PictureAsPdfOutlined";
 import RestartAltOutlined from "@mui/icons-material/RestartAltOutlined";
 import { useLocation, useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
+import { io, Socket } from "socket.io-client";
 import { api } from "../api/axios";
 import { hasPermission } from "../auth/permissions";
 import { useAuthStore } from "../auth/useAuthStore";
@@ -286,6 +287,7 @@ export default function Pedidos() {
   const loadingPedidosSeqRef = useRef(0);
   const pedidosLoadAbortRef = useRef<AbortController | null>(null);
   const cargarPedidosRef = useRef<((silent?: boolean) => Promise<void>) | null>(null);
+  const pedidosSocketRef = useRef<Socket | null>(null);
   const skipInitialPaginationResetRef = useRef(Boolean(restoredPedidosState));
   const pendingRestoreSelectionRef = useRef(Boolean(restoredPedidosState?.selectedId));
   const { rol, permisos, bodegaId: userBodegaId, id: userId } = useAuthStore();
@@ -644,6 +646,35 @@ export default function Pedidos() {
       window.clearInterval(intervalId);
       window.removeEventListener("focus", refrescarSilencioso);
       document.removeEventListener("visibilitychange", refrescarSilencioso);
+    };
+  }, []);
+
+  useEffect(() => {
+    const socket = io(api.defaults.baseURL || window.location.origin, {
+      withCredentials: true,
+      transports: ["polling"],
+      upgrade: false,
+      reconnection: true,
+    });
+
+    pedidosSocketRef.current = socket;
+
+    const manejarPedidosActualizados = () => {
+      void cargarPedidosRef.current?.(true);
+    };
+
+    const manejarConexion = () => {
+      void cargarPedidosRef.current?.(true);
+    };
+
+    socket.on("connect", manejarConexion);
+    socket.on("produccion:pedidos-actualizados", manejarPedidosActualizados);
+
+    return () => {
+      socket.off("connect", manejarConexion);
+      socket.off("produccion:pedidos-actualizados", manejarPedidosActualizados);
+      socket.disconnect();
+      pedidosSocketRef.current = null;
     };
   }, []);
 

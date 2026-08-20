@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Autocomplete,
@@ -40,6 +40,7 @@ import TuneOutlined from "@mui/icons-material/TuneOutlined";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import Swal from "sweetalert2";
 import { usePublicarDocumento } from "../components/DocumentoEnCurso";
+import { io, Socket } from "socket.io-client";
 import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api/axios";
 import { hasPermission } from "../auth/permissions";
@@ -257,7 +258,7 @@ export default function OrdenMixtaNueva() {
   const autoguardadoBorradorBloqueadoRef = useRef(false);
   const ultimoBorradorJsonRef = useRef("");
   const savingRef = useRef(false);
-  const autorizacionPollingRef = useRef(false);
+  const autorizacionSocketRef = useRef<Socket | null>(null);
   const autorizacionPendienteRef = useRef<number | null>(null);
   const complementoSugeridoProductoIdRef = useRef<number | null>(null);
 
@@ -752,7 +753,16 @@ export default function OrdenMixtaNueva() {
     void syncProducto();
   }, [productoDetectado, linea.bodegaId, linea.tipoOperacion, bodegaId, bodegas, fetchStock]);
 
-  const manejarResolucion = useEffectEvent((payload: any) => {
+  useEffect(() => {
+    const socket = io(api.defaults.baseURL || window.location.origin, {
+      withCredentials: true,
+      transports: ["polling"],
+      upgrade: false,
+      reconnection: true,
+    });
+    autorizacionSocketRef.current = socket;
+
+    const manejarResolucion = (payload: any) => {
       const solicitudId = Number(payload?.solicitudId || 0);
       if (!autorizacionPendienteRef.current || solicitudId !== autorizacionPendienteRef.current) return;
 
@@ -770,45 +780,16 @@ export default function OrdenMixtaNueva() {
       if (payload?.estado === "rechazado") {
         void Swal.fire("Solicitud rechazada", payload?.comentario || "La orden mixta no fue autorizada.", "warning");
       }
-    });
-
-  useEffect(() => {
-    let activo = true;
-    const revisarAutorizacion = async () => {
-      const solicitudId = autorizacionPendienteRef.current;
-      if (!activo || !solicitudId || autorizacionPollingRef.current || document.visibilityState !== "visible") return;
-      autorizacionPollingRef.current = true;
-      try {
-        const { data } = await api.get("/alertas");
-        const alertas = Array.isArray(data) ? data : [];
-        const resuelta = alertas.find(
-          (alerta: any) =>
-            Number(alerta?.payload?.autorizacionPedidoId || 0) === solicitudId &&
-            ["aprobado", "rechazado"].includes(`${alerta?.payload?.estado || ""}`),
-        );
-        if (!resuelta) return;
-        manejarResolucion({
-          solicitudId,
-          estado: resuelta?.payload?.estado,
-          ordenMixta: { id: Number(resuelta?.payload?.ordenMixtaId || 0) },
-          comentario: resuelta?.mensaje,
-        });
-      } catch {
-        // Se vuelve a intentar mientras la solicitud siga pendiente.
-      } finally {
-        autorizacionPollingRef.current = false;
-      }
     };
 
-    const intervalId = window.setInterval(() => void revisarAutorizacion(), 2500);
+    socket.on("produccion:autorizacion-resuelta", manejarResolucion);
 
     return () => {
-      activo = false;
-      window.clearInterval(intervalId);
+      socket.off("produccion:autorizacion-resuelta", manejarResolucion);
+      socket.disconnect();
+      autorizacionSocketRef.current = null;
     };
-    // `manejarResolucion` es un Effect Event estable y siempre ve el estado mas reciente.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [navigate]);
 
   const seleccionarCliente = (value: Cliente | null) => {
     setCliente(value);
