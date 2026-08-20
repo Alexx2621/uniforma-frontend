@@ -40,7 +40,7 @@ import TuneOutlined from "@mui/icons-material/TuneOutlined";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import Swal from "sweetalert2";
 import { usePublicarDocumento } from "../components/DocumentoEnCurso";
-import { io, Socket } from "socket.io-client";
+import { createRealtimeSocket, Socket } from "../realtime/socket";
 import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api/axios";
 import { hasPermission } from "../auth/permissions";
@@ -754,14 +754,7 @@ export default function OrdenMixtaNueva() {
   }, [productoDetectado, linea.bodegaId, linea.tipoOperacion, bodegaId, bodegas, fetchStock]);
 
   useEffect(() => {
-    const socket = io(api.defaults.baseURL || window.location.origin, {
-      withCredentials: true,
-      transports: ["websocket"],
-      upgrade: false,
-      reconnection: true,
-      reconnectionDelay: 500,
-      reconnectionDelayMax: 5000,
-    });
+    const socket = createRealtimeSocket();
     autorizacionSocketRef.current = socket;
 
     const manejarResolucion = (payload: any) => {

@@ -40,7 +40,7 @@ import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import TuneOutlined from "@mui/icons-material/TuneOutlined";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import Swal from "sweetalert2";
-import { io, Socket } from "socket.io-client";
+import { createRealtimeSocket, Socket } from "../realtime/socket";
 import { api } from "../api/axios";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { hasPermission } from "../auth/permissions";
@@ -2683,14 +2683,7 @@ export default function PedidoNuevo() {
     });
 
   useEffect(() => {
-    const socket = io(api.defaults.baseURL || window.location.origin, {
-      withCredentials: true,
-      transports: ["websocket"],
-      upgrade: false,
-      reconnection: true,
-      reconnectionDelay: 500,
-      reconnectionDelayMax: 5000,
-    });
+    const socket = createRealtimeSocket();
     autorizacionSocketRef.current = socket;
 
     socket.on("produccion:autorizacion-resuelta", manejarAutorizacionResuelta);

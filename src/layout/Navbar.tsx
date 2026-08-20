@@ -27,7 +27,7 @@ import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import DarkModeRoundedIcon from "@mui/icons-material/DarkModeRounded";
 import WbSunnyRoundedIcon from "@mui/icons-material/WbSunnyRounded";
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
-import { io, Socket } from "socket.io-client";
+import { createRealtimeSocket, Socket } from "../realtime/socket";
 import Swal from "sweetalert2";
 import { useAuthStore } from "../auth/useAuthStore";
 import { useNavigate } from "react-router-dom";
@@ -1438,16 +1438,7 @@ function useNavbarController() {
   });
 
   useEffect(() => {
-    const socket = io(api.defaults.baseURL || window.location.origin, {
-      withCredentials: true,
-      // Railway mantiene una conexion WebSocket real: menor latencia, menos
-      // solicitudes HTTP y sin depender de afinidad entre peticiones polling.
-      transports: ["websocket"],
-      upgrade: false,
-      reconnection: true,
-      reconnectionDelay: 500,
-      reconnectionDelayMax: 5000,
-    });
+    const socket = createRealtimeSocket();
 
     alertasSocketRef.current = socket;
 

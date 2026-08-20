@@ -30,7 +30,7 @@ import PictureAsPdfOutlined from "@mui/icons-material/PictureAsPdfOutlined";
 import RestartAltOutlined from "@mui/icons-material/RestartAltOutlined";
 import { useLocation, useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
-import { io, Socket } from "socket.io-client";
+import { createRealtimeSocket, Socket } from "../realtime/socket";
 import { api } from "../api/axios";
 import { hasPermission } from "../auth/permissions";
 import { useAuthStore } from "../auth/useAuthStore";
@@ -650,14 +650,7 @@ export default function Pedidos() {
   }, []);
 
   useEffect(() => {
-    const socket = io(api.defaults.baseURL || window.location.origin, {
-      withCredentials: true,
-      transports: ["websocket"],
-      upgrade: false,
-      reconnection: true,
-      reconnectionDelay: 500,
-      reconnectionDelayMax: 5000,
-    });
+    const socket = createRealtimeSocket();
 
     pedidosSocketRef.current = socket;
 
