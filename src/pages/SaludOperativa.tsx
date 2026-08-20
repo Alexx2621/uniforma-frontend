@@ -23,6 +23,20 @@ import { DataGrid, GridColDef } from "@mui/x-data-grid";
 import { api } from "../api/axios";
 import Swal from "sweetalert2";
 
+type CronStatus = {
+  key: string;
+  label: string;
+  ok: boolean;
+  state?: "al_dia" | "atrasada" | "fallida" | "ejecutando" | "sin_configurar";
+  lastRunAt?: string | null;
+  lastFinishedAt?: string | null;
+  lastResult?: string | null;
+  durationMs?: number | null;
+  error?: string | null;
+  ageHours?: number | null;
+  stale?: boolean;
+};
+
 type OperativoPayload = {
   checkedAt?: string;
   details?: any;
@@ -74,15 +88,7 @@ type OperativoPayload = {
       ageHours?: number | null;
       message?: string;
     };
-    crons?: Array<{
-      key: string;
-      label: string;
-      ok: boolean;
-      lastRunAt?: string | null;
-      lastResult?: string | null;
-      ageHours?: number | null;
-      stale?: boolean;
-    }>;
+    crons?: CronStatus[];
     recentErrors?: Array<{
       id: number;
       usuario?: string;
@@ -164,6 +170,21 @@ const uptimeLabel = (seconds?: number) => {
     : hours
       ? `${hours} h ${minutes} min`
       : `${minutes} min`;
+};
+
+const cronVisual = (cron: CronStatus) => {
+  switch (cron.state) {
+    case "al_dia":
+      return { label: "Al día", color: "success" as const };
+    case "fallida":
+      return { label: "Falló", color: "error" as const };
+    case "ejecutando":
+      return { label: "Ejecutando", color: "info" as const };
+    case "atrasada":
+      return { label: "Atrasado", color: "warning" as const };
+    default:
+      return { label: "Sin configurar", color: "warning" as const };
+  }
 };
 
 export default function SaludOperativa() {
@@ -573,19 +594,24 @@ export default function SaludOperativa() {
                   <Box>
                     <Typography variant="body2">{cron.label}</Typography>
                     <Typography variant="caption" color="text.secondary">
-                      Última ejecución: {formatDate(cron.lastRunAt)}
+                      {cron.lastRunAt
+                        ? `Última ejecución: ${formatDate(cron.lastRunAt)}${cron.durationMs != null ? ` · ${cron.durationMs} ms` : ""}`
+                        : "No se ha recibido ninguna ejecución desde cPanel"}
                     </Typography>
+                    {cron.error && (
+                      <Typography
+                        variant="caption"
+                        color="error.main"
+                        sx={{ display: "block", maxWidth: 520 }}
+                      >
+                        {cron.error}
+                      </Typography>
+                    )}
                   </Box>
                   <Chip
                     size="small"
-                    label={
-                      cron.ok
-                        ? "Al día"
-                        : cron.lastRunAt
-                          ? "Atrasado"
-                          : "Sin confirmar"
-                    }
-                    color={cron.ok ? "success" : "warning"}
+                    label={cronVisual(cron).label}
+                    color={cronVisual(cron).color}
                   />
                 </Stack>
               ))}
