@@ -40,7 +40,6 @@ import ArrowBackOutlined from "@mui/icons-material/ArrowBackOutlined";
 import TuneOutlined from "@mui/icons-material/TuneOutlined";
 import ExpandMoreOutlined from "@mui/icons-material/ExpandMoreOutlined";
 import Swal from "sweetalert2";
-import { io, Socket } from "socket.io-client";
 import { api } from "../api/axios";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { hasPermission } from "../auth/permissions";
@@ -591,7 +590,7 @@ export default function PedidoNuevo() {
   const [documentoBorradorId, setDocumentoBorradorId] = useState<number | null>(null);
   const [borradorGuardadoEn, setBorradorGuardadoEn] = useState("");
   const [borradorEstado, setBorradorEstado] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const autorizacionSocketRef = useRef<Socket | null>(null);
+  const autorizacionPollingRef = useRef(false);
   const borradorInicializadoRef = useRef(false);
   const restaurandoBorradorRef = useRef(false);
   const autoguardadoBorradorBloqueadoRef = useRef(false);
@@ -2683,22 +2682,52 @@ export default function PedidoNuevo() {
     });
 
   useEffect(() => {
-    const socket = io(api.defaults.baseURL || window.location.origin, {
-      withCredentials: true,
-      transports: ["polling"],
-      upgrade: false,
-      reconnection: true,
-    });
-    autorizacionSocketRef.current = socket;
+    let activo = true;
+    const revisarAutorizacion = async () => {
+      const pendiente = autorizacionPendienteRef.current;
+      if (!activo || !pendiente || autorizacionPollingRef.current || document.visibilityState !== "visible") return;
+      autorizacionPollingRef.current = true;
+      try {
+        const { data } = await api.get("/alertas");
+        const alertas = Array.isArray(data) ? data : [];
+        const resuelta = alertas.find(
+          (alerta: any) =>
+            Number(alerta?.payload?.autorizacionPedidoId || 0) === pendiente.id &&
+            ["aprobado", "rechazado", "reemplazada"].includes(`${alerta?.payload?.estado || ""}`),
+        );
+        if (!resuelta) return;
 
-    socket.on("produccion:autorizacion-resuelta", manejarAutorizacionResuelta);
+        const pedidoId = Number(resuelta?.payload?.pedidoId || 0);
+        let pedido: any = pedidoId > 0 ? { id: pedidoId } : null;
+        if (resuelta?.payload?.estado === "aprobado" && pedidoId > 0) {
+          try {
+            pedido = (await api.get(`/produccion/${pedidoId}`)).data || pedido;
+          } catch {
+            // El id basta para continuar si el detalle tarda en estar visible.
+          }
+        }
+        manejarAutorizacionResuelta({
+          solicitudId: pendiente.id,
+          solicitanteId: userId,
+          estado: resuelta?.payload?.estado,
+          pedidoId,
+          pedido,
+          comentario: resuelta?.mensaje,
+        });
+      } catch {
+        // Se vuelve a intentar mientras la solicitud siga pendiente.
+      } finally {
+        autorizacionPollingRef.current = false;
+      }
+    };
+
+    const intervalId = window.setInterval(() => void revisarAutorizacion(), 2500);
 
     return () => {
-      socket.off("produccion:autorizacion-resuelta", manejarAutorizacionResuelta);
-      socket.disconnect();
-      autorizacionSocketRef.current = null;
+      activo = false;
+      window.clearInterval(intervalId);
     };
-    // Effect Events read the latest values without forcing a socket re-subscription.
+    // `manejarAutorizacionResuelta` es un Effect Event estable y siempre ve el estado mas reciente.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
