@@ -1440,12 +1440,13 @@ function useNavbarController() {
   useEffect(() => {
     const socket = io(api.defaults.baseURL || window.location.origin, {
       withCredentials: true,
-      // Passenger conserva una instancia mientras exista un WebSocket abierto.
-      // El long-polling corta cada peticion y permite retirar procesos antiguos
-      // despues de un despliegue sin perder los eventos en tiempo real.
-      transports: ["polling"],
+      // Railway mantiene una conexion WebSocket real: menor latencia, menos
+      // solicitudes HTTP y sin depender de afinidad entre peticiones polling.
+      transports: ["websocket"],
       upgrade: false,
       reconnection: true,
+      reconnectionDelay: 500,
+      reconnectionDelayMax: 5000,
     });
 
     alertasSocketRef.current = socket;
