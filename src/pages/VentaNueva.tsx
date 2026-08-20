@@ -50,6 +50,7 @@ interface Cliente {
   id: number;
   nombre: string;
   telefono?: string | null;
+  tipoCliente?: string | null;
   usuarioId?: number | null;
   usuario?: { id?: number; nombre?: string | null; usuario?: string | null } | null;
 }
@@ -404,6 +405,11 @@ export default function VentaNueva() {
     return hasCf ? clientes : [CLIENTE_CF_OPTION, ...clientes];
   }, [clientes]);
   const clienteSeleccionado = clientesConCf.find((c) => c.id === clienteId) || null;
+  // La entrega sin cobro solo aplica a trabajadores. Se oculta el boton para
+  // el resto en vez de dejarlo salir con un error: no tiene sentido ofrecer
+  // algo que el servidor va a rechazar.
+  const clienteEsTrabajador =
+    `${clienteSeleccionado?.tipoCliente || ""}`.trim().toLowerCase() === "trabajador";
 
   const normalizarUbicacion = (val?: string | null) => {
     if (!val) return "";
@@ -1563,7 +1569,8 @@ export default function VentaNueva() {
     }
   };
 
-  const guardar = async () => {
+  const guardar = async (modo: "venta" | "entrega" = "venta") => {
+    const esEntrega = modo === "entrega";
     if (savingRef.current) return;
     const liberarGuardadoVenta = () => {
       savingRef.current = false;
@@ -1597,13 +1604,18 @@ export default function VentaNueva() {
       liberarGuardadoVenta();
       return;
     }
-    if (metodoRequiereReferencia && !`${referenciaPago}`.trim()) {
+    if (!esEntrega && metodoRequiereReferencia && !`${referenciaPago}`.trim()) {
       Swal.fire("Validacion", "Ingresa la referencia o numero de transaccion", "warning");
       liberarGuardadoVenta();
       return;
     }
-    if (metodoRequiereBanco && !bancoPago.trim()) {
+    if (!esEntrega && metodoRequiereBanco && !bancoPago.trim()) {
       Swal.fire("Validacion", "Ingresa el banco del deposito", "warning");
+      liberarGuardadoVenta();
+      return;
+    }
+    if (esEntrega && !(Number(clienteId) > 0)) {
+      Swal.fire("Validacion", "Elige al trabajador que recibe el producto", "warning");
       liberarGuardadoVenta();
       return;
     }
@@ -1657,6 +1669,20 @@ export default function VentaNueva() {
       };
 
     try {
+      if (esEntrega) {
+        // No se registra la venta todavia: queda esperando a un ADMIN y el
+        // inventario no se toca hasta que la autorice.
+        await api.post("/ventas-especiales", payload);
+        autoguardadoBorradorBloqueadoRef.current = true;
+        await finalizarBorradorActual({ tipo: "venta", id: null, folio: null });
+        await Swal.fire(
+          "Solicitud enviada",
+          "Un administrador debe autorizar la entrega. El producto no sale del inventario hasta entonces.",
+          "success",
+        );
+        navigate("/ventas");
+        return;
+      }
       const resp = await api.post("/ventas", payload);
       autoguardadoBorradorBloqueadoRef.current = true;
       await finalizarBorradorActual({
@@ -2418,7 +2444,22 @@ export default function VentaNueva() {
         <Button variant="outlined" onClick={() => navigate("/ventas")} disabled={saving}>
           Cancelar
         </Button>
-        <Button variant="contained" color="success" onClick={guardar} disabled={saving}>
+        {/*
+          Solo aparece con un trabajador seleccionado. Va en outlined y no en
+          contained para que no compita con el boton de guardar: es la
+          excepcion, no el camino normal.
+        */}
+        {clienteEsTrabajador && (
+          <Button
+            variant="outlined"
+            color="warning"
+            onClick={() => guardar("entrega")}
+            disabled={saving}
+          >
+            {saving ? "Enviando..." : "Solicitar entrega sin cobro"}
+          </Button>
+        )}
+        <Button variant="contained" color="success" onClick={() => guardar()} disabled={saving}>
           {saving ? "Guardando..." : "Guardar venta"}
         </Button>
       </Stack>

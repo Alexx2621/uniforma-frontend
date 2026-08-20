@@ -33,7 +33,7 @@ interface AutorizacionRow {
   id: string;
   sourceId: number;
   pedidoId?: number | null;
-  tipo: "pedido" | "traslado" | "postventa" | "ajuste_pago";
+  tipo: "pedido" | "traslado" | "postventa" | "ajuste_pago" | "venta_especial";
   subtipo?: string;
   titulo: string;
   referencia: string;
@@ -73,6 +73,9 @@ export default function Autorizaciones() {
   const canApproveTraslados = hasPermission(rol, permisos, "inventario.trasladar");
   const canManagePostventa = hasPermission(rol, permisos, "postventa.manage");
   const canApproveAdjustments = hasPermission(rol, permisos, "correcciones.manage");
+  // La entrega sin cobro la autoriza un ADMIN y nadie mas. El servidor lo
+  // vuelve a exigir: esto solo evita mostrar botones que no van a funcionar.
+  const canApproveVentaEspecial = `${rol || ""}`.trim().toUpperCase() === "ADMIN";
   const navigate = useNavigate();
   const [rows, setRows] = useState<AutorizacionRow[]>([]);
   const [stats, setStats] = useState<Record<string, number>>({});
@@ -138,6 +141,10 @@ export default function Autorizaciones() {
         });
       } else if (row.tipo === "postventa") {
         await api.post(`/postventa/${row.sourceId}/${accion === "aprobar" ? "cerrar" : "anular"}`);
+      } else if (row.tipo === "venta_especial") {
+        await api.post(`/ventas-especiales/${row.sourceId}/${accion === "aprobar" ? "aprobar" : "rechazar"}`, {
+          comentario: comentario.value || "",
+        });
       } else if (row.tipo === "ajuste_pago") {
         response = await api.post(`/ajustes-pagos-pedidos/${row.sourceId}/${accion === "aprobar" ? "aprobar" : "rechazar"}`, {
           comentario: comentario.value || "",
@@ -160,8 +167,9 @@ export default function Autorizaciones() {
       (row.tipo === "pedido" && canApprovePedidos) ||
       (row.tipo === "traslado" && canApproveTraslados) ||
       (row.tipo === "postventa" && canManagePostventa) ||
-      (row.tipo === "ajuste_pago" && canApproveAdjustments),
-    [canApproveAdjustments, canApprovePedidos, canApproveTraslados, canManagePostventa],
+      (row.tipo === "ajuste_pago" && canApproveAdjustments) ||
+      (row.tipo === "venta_especial" && canApproveVentaEspecial),
+    [canApproveAdjustments, canApprovePedidos, canApproveTraslados, canApproveVentaEspecial, canManagePostventa],
   );
 
   const estaPendiente = (row: AutorizacionRow) => ["pendiente", "pendiente_segunda_aprobacion"].includes(row.estado);
@@ -272,6 +280,7 @@ export default function Autorizaciones() {
           <MenuItem value="">Todos</MenuItem>
           <MenuItem value="pedido">Pedidos</MenuItem>
           <MenuItem value="traslado">Traslados</MenuItem>
+          <MenuItem value="venta_especial">Entregas a trabajadores</MenuItem>
           <MenuItem value="postventa">Postventa</MenuItem>
           <MenuItem value="ajuste_pago">Ajustes de pago</MenuItem>
         </TextField>

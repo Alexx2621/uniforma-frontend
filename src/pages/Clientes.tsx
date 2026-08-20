@@ -66,7 +66,10 @@ interface ClientesNavigationState {
   };
 }
 
-const tipos = ["mayorista", "minorista", "corporativo", "frecuente"];
+// "trabajador" habilita la entrega sin cobro: solo a un cliente de este tipo
+// se le puede registrar una venta especial, y el servidor lo vuelve a
+// comprobar al solicitar y al aprobar.
+const tipos = ["mayorista", "minorista", "corporativo", "frecuente", "trabajador"];
 
 const getImageUrl = (path?: string | null) => {
   if (!path) return "";
