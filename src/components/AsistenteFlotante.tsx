@@ -148,14 +148,48 @@ type Problema = {
   detalle?: string;
 };
 
+type LineaExplicada = {
+  n: number;
+  producto: string;
+  cantidad: number;
+  precioUnit: number;
+  descuento: number;
+  bordado: number;
+  subtotal: number;
+  formula: string;
+};
+
 type Analisis = {
   tipo: string;
   folio: string | null;
   cuadra: boolean;
   resumen: Record<string, number>;
+  lineas?: LineaExplicada[];
   problemas: Problema[];
   hijos?: Analisis[];
 };
+
+const moneda = (valor: number) =>
+  `Q${(Number(valor) || 0).toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/**
+ * Que filas del resumen mostrar y en que orden. `soloSiHay` esconde envio y
+ * recargo cuando van en cero, que es lo normal: son ruido en la mayoria de
+ * documentos y estorban en un panel angosto.
+ */
+const FILAS_RESUMEN: { clave: string; etiqueta: string; fuerte?: boolean; soloSiHay?: boolean }[] = [
+  { clave: "sumaLineas", etiqueta: "Suma de lineas" },
+  { clave: "subtotalVenta", etiqueta: "Parte de venta" },
+  { clave: "subtotalPedido", etiqueta: "Parte de pedido" },
+  { clave: "envio", etiqueta: "Envio", soloSiHay: true },
+  { clave: "recargo", etiqueta: "Recargo", soloSiHay: true },
+  { clave: "totalRegistrado", etiqueta: "Total del documento", fuerte: true },
+  { clave: "total", etiqueta: "Total del documento", fuerte: true },
+  { clave: "anticipoTotal", etiqueta: "Anticipo" },
+  { clave: "pagado", etiqueta: "Pagado" },
+  { clave: "saldo", etiqueta: "Saldo pendiente", fuerte: true },
+  { clave: "saldoTotal", etiqueta: "Saldo pendiente", fuerte: true },
+];
 
 const severidadColor = (severidad: string) =>
   severidad === "critica" ? "error" : severidad === "alta" ? "warning" : "info";
@@ -442,10 +476,9 @@ export default function AsistenteFlotante() {
                   </IconButton>
                 </Stack>
 
-                {analisis.cuadra ? (
-                  <Alert severity="success" variant="outlined">Este documento cuadra.</Alert>
-                ) : (
-                  <Stack spacing={0.75}>
+                {/* Los problemas primero: es lo que la persona vino a buscar. */}
+                {!analisis.cuadra && (
+                  <Stack spacing={0.75} sx={{ mb: 1.25 }}>
                     {[...analisis.problemas, ...(analisis.hijos || []).flatMap((h) => h.problemas)].map((p, i) => (
                       <Box key={i} sx={{ borderLeft: 3, borderColor: p.nivel === "linea" ? "warning.main" : "error.main", pl: 1 }}>
                         <Typography variant="body2" sx={{ fontWeight: 500 }}>{p.titulo}</Typography>
@@ -459,6 +492,50 @@ export default function AsistenteFlotante() {
                     ))}
                   </Stack>
                 )}
+
+                {analisis.cuadra && (
+                  <Alert severity="success" variant="outlined" sx={{ mb: 1.25, py: 0.25 }}>
+                    Las cuentas de este documento dan bien. Asi las calcule:
+                  </Alert>
+                )}
+
+                {/*
+                  El desglose se muestra siempre, cuadre o no. Cuando cuadra es
+                  la respuesta al "por que"; cuando no cuadra, deja ver la linea
+                  floja al lado de la cuenta que la genera.
+                */}
+                {!!analisis.lineas?.length && (
+                  <Stack spacing={0.5} sx={{ mb: 1.25 }}>
+                    {analisis.lineas.map((l) => (
+                      <Box key={l.n} sx={{ display: "flex", gap: 1, alignItems: "baseline" }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ minWidth: 14 }}>{l.n}.</Typography>
+                        <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                          <Typography variant="body2" noWrap title={l.producto}>{l.producto}</Typography>
+                          <Typography variant="caption" color="text.secondary">{l.formula}</Typography>
+                        </Box>
+                        <Typography variant="body2" sx={{ fontWeight: 600, whiteSpace: "nowrap" }}>
+                          {moneda(l.subtotal)}
+                        </Typography>
+                      </Box>
+                    ))}
+                  </Stack>
+                )}
+
+                <Divider sx={{ mb: 0.75 }} />
+                <Stack spacing={0.25}>
+                  {FILAS_RESUMEN.filter((fila) => analisis.resumen?.[fila.clave] !== undefined)
+                    .filter((fila) => !fila.soloSiHay || Number(analisis.resumen[fila.clave]) !== 0)
+                    .map((fila) => (
+                      <Box key={fila.clave} sx={{ display: "flex", justifyContent: "space-between" }}>
+                        <Typography variant="caption" color={fila.fuerte ? "text.primary" : "text.secondary"} sx={{ fontWeight: fila.fuerte ? 700 : 400 }}>
+                          {fila.etiqueta}
+                        </Typography>
+                        <Typography variant="caption" sx={{ fontWeight: fila.fuerte ? 700 : 400 }}>
+                          {moneda(Number(analisis.resumen[fila.clave]))}
+                        </Typography>
+                      </Box>
+                    ))}
+                </Stack>
               </Paper>
             )}
 
