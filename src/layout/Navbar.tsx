@@ -1420,7 +1420,11 @@ function useNavbarController() {
     void cargarAlertas();
 
     const intervalId = window.setInterval(() => {
-      void cargarAlertas();
+      // El relay entrega los cambios al instante. El sondeo queda solamente
+      // como respaldo cuando Railway o la conexion del equipo no responden.
+      if (!alertasSocketRef.current?.connected) {
+        void cargarAlertas();
+      }
     }, 30000);
 
     return () => {

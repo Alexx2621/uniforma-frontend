@@ -635,6 +635,9 @@ export default function Pedidos() {
   useEffect(() => {
     const refrescarSilencioso = () => {
       if (document.visibilityState !== "visible") return;
+      // Mientras Socket.IO esta conectado, cada cambio relevante ya dispara
+      // una recarga. Conservamos este intervalo solo como tolerancia a fallos.
+      if (pedidosSocketRef.current?.connected) return;
       void cargarPedidosRef.current?.(true);
     };
 
